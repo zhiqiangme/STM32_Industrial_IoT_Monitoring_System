@@ -1,0 +1,123 @@
+###白名单目录：
+!文档/
+!文档/**
+!文档/build/
+!文档/build/**
+
+
+
+
+############################
+# OS / Editor
+############################
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*.tmp
+*.temp
+*.bak
+*.log
+
+############################
+# IDE (IntelliJ/Android Studio/DevEco)
+############################
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.code-workspace
+.classpath
+.project
+.settings/
+.metadata/
+
+############################
+# Android / Gradle
+############################
+# Gradle caches & build outputs
+**/.gradle/
+**/build/
+**/.kotlin/
+**/out/
+**/bin/
+**/gen/
+**/dist/
+
+# Local machine config (Android SDK path, etc.)
+**/local.properties
+
+# Android build artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Native build intermediates
+.externalNativeBuild/
+.cxx/
+captures/
+
+############################
+# Harmony / DevEco / hvigor / ohpm
+############################
+# hvigor generated cache/output
+**/.hvigor/
+
+# DevEco/IDEA local files already covered by .idea/, *.iml
+
+# ohpm dependency cache
+**/oh_modules/
+**/.ohpm/
+
+# App analyzer output/cache
+**/.appanalyzer/
+
+############################
+# Node/JS toolchains (if used)
+############################
+**/node_modules/
+
+############################
+# Secrets / keys (strongly recommended)
+############################
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.mobileprovision
+
+
+
+# --- STM32 / Keil MDK 忽略规则 ---
+*.o
+*.d
+*.crf
+*.dep
+*.axf
+*.htm
+*.lnp
+*.sct
+*.lst
+*.map
+*.iex
+*.uvguix.*
+*.uvoptx
+*.bak
+JLinkLog.txt
+*.scvd
+
+Objects/
+Listings/
+
+# 如果使用 STM32CubeIDE
+Debug/
+Release/
+.settings/
+
+*.mxproject
+*.backup
