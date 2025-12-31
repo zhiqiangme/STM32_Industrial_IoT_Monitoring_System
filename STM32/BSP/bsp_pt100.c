@@ -52,9 +52,11 @@ uint8_t PT100_Read_Temperature(float *temp_val)
     tx_buf[6] = (uint8_t)(crc & 0xFF);      // CRC低字节
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF); // CRC高字节
     
+    /* 调试输出 (保留,需要时取消注释)
     printf("[PT100_DBG] TX: ");
     for(int i=0; i<8; i++) printf("%02X ", tx_buf[i]);
     printf("\r\n");
+    */
     
     /* 2. 发送请求 */
     RS485_Send_Data(tx_buf, 8);
@@ -65,19 +67,21 @@ uint8_t PT100_Read_Temperature(float *temp_val)
     
     if (ret != HAL_OK)
     {
-        printf("[PT100_DBG] RX Timeout/Error (HAL=%d)\r\n", ret);
+        /* printf("[PT100_DBG] RX Timeout/Error (HAL=%d)\r\n", ret); */
         return 1; // 超时或错误
     }
     
+    /* 调试输出 (保留,需要时取消注释)
     printf("[PT100_DBG] RX: ");
     for(int i=0; i<7; i++) printf("%02X ", rx_buf[i]);
     printf("\r\n");
+    */
     
     /* 4. 校验响应 */
     // 检查地址和功能码
     if (rx_buf[0] != PT100_SLAVE_ID || rx_buf[1] != PT100_FUNC_READ)
     {
-        printf("[PT100_DBG] Invalid Addr/Func\r\n");
+        /* printf("[PT100_DBG] Invalid Addr/Func\r\n"); */
         return 1; // 响应错误
     }
     
@@ -88,8 +92,7 @@ uint8_t PT100_Read_Temperature(float *temp_val)
     
     if (crc_l != rx_buf[5] || crc_h != rx_buf[6])
     {
-        printf("[PT100_DBG] CRC Error (expect %02X %02X, got %02X %02X)\r\n",
-               crc_l, crc_h, rx_buf[5], rx_buf[6]);
+        /* printf("[PT100_DBG] CRC Error\r\n"); */
         return 1; // CRC校验失败
     }
     
@@ -97,7 +100,7 @@ uint8_t PT100_Read_Temperature(float *temp_val)
     // 字节数应为2
     if (rx_buf[2] != 0x02)
     {
-        printf("[PT100_DBG] Invalid byte count\r\n");
+        /* printf("[PT100_DBG] Invalid byte count\r\n"); */
         return 1; 
     }
 
@@ -106,7 +109,7 @@ uint8_t PT100_Read_Temperature(float *temp_val)
     // 检查是否无效值 (0xFFFF)
     if (raw_data == 0xFFFF)
     {
-        printf("[PT100_DBG] Sensor fault (0xFFFF)\r\n");
+        /* printf("[PT100_DBG] Sensor fault (0xFFFF)\r\n"); */
         return 1; 
     }
     
@@ -125,7 +128,7 @@ uint8_t PT100_Read_Temperature(float *temp_val)
         *temp_val = val;
     }
     
-    printf("[PT100_DBG] Temp OK: %.1f C\r\n", val);
+    /* printf("[PT100_DBG] Temp OK: %.1f C\r\n", val); */
     
     return 0; // 成功
 }

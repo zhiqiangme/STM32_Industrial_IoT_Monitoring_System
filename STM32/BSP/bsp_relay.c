@@ -212,9 +212,11 @@ uint8_t Relay_Read_Input_Pack(uint16_t *mask)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
     
+    /* 调试输出 (保留,需要时取消注释)
     printf("[RELAY_DBG] TX: ");
     for(int i=0; i<8; i++) printf("%02X ", tx_buf[i]);
     printf("\r\n");
+    */
     
     RS485_Send_Data(tx_buf, 8);
     
@@ -223,17 +225,19 @@ uint8_t Relay_Read_Input_Pack(uint16_t *mask)
     
     if (ret != HAL_OK)
     {
-        printf("[RELAY_DBG] RX超时 (ret=%d)\r\n", ret);
+        /* printf("[RELAY_DBG] RX超时 (ret=%d)\r\n", ret); */
         return 1;
     }
     
+    /* 调试输出 (保留,需要时取消注释)
     printf("[RELAY_DBG] RX: ");
     for(int i=0; i<7; i++) printf("%02X ", rx_buf[i]);
     printf("\r\n");
+    */
     
     if (rx_buf[0] != RELAY_SLAVE_ID || rx_buf[1] != RELAY_FC_READ_INPUT)
     {
-        printf("[RELAY_DBG] 地址或功能码错误\r\n");
+        /* printf("[RELAY_DBG] 地址或功能码错误\r\n"); */
         return 1;
     }
     
@@ -241,7 +245,7 @@ uint8_t Relay_Read_Input_Pack(uint16_t *mask)
     crc = Modbus_CRC16(rx_buf, 5);
     if ((crc & 0xFF) != rx_buf[5] || ((crc >> 8) & 0xFF) != rx_buf[6])
     {
-        printf("[RELAY_DBG] CRC错误\r\n");
+        /* printf("[RELAY_DBG] CRC错误\r\n"); */
         return 1;
     }
     

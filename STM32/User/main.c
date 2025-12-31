@@ -123,10 +123,14 @@ int main(void)
             if (Relay_Read_Input_Pack(&input_mask) == 0)
             {
                 printf("[INPUT] 0x%04X\r\n", input_mask);
+				printf("\r\n");
             }
             /* 超时不显示错误，避免刷屏 */
+			
+			
         }
         
+		
         /* 小延时避免CPU空转 */
         delay_ms(10);
     }
