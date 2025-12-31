@@ -434,6 +434,16 @@
               <FileType>1</FileType>
               <FilePath>..\BSP\flow_meter.c</FilePath>
             </File>
+            <File>
+              <FileName>bsp_pt100.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\bsp_pt100.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_rs485.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\bsp_rs485.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

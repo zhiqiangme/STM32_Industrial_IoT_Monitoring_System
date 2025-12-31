@@ -1,46 +1,62 @@
 #include "main.h"
+#include "bsp_rs485.h"
+#include "bsp_pt100.h"
 
 extern TIM_HandleTypeDef g_tim2_handle;
 
-#define PULSES_PER_LITER   660.0f     // 每升水对应的脉冲数 (YF-B7规格)
-#define HZ_PER_LPM         11.0f      // 流量(L/min)与频率(Hz)的换算系数
+#define PULSES_PER_LITER   660.0f     // Pulses per Liter (YF-B7)
+#define HZ_PER_LPM         11.0f      // Hz to L/min conversion factor
 
-// 定义采样周期 (ms)
+// Sample Period (ms)
 #define SAMPLE_PERIOD_MS   1000UL
 
-static FlowMeter_HandleTypeDef g_flow_meter;  // 流量计实例对象
+static FlowMeter_HandleTypeDef g_flow_meter;
 
 int main(void)
 {
+    /* 1. System Init */
     STM32_Init();
+    
+    /* 2. RS485 Init */
+    RS485_Init();
 
-    // 开启定时器 (确保已配置为外部时钟模式)
+    /* 3. Timer Init for Flow Meter (External Clock Mode) */
     HAL_TIM_Base_Start(&g_tim2_handle);
 
-    printf("YF-B7 flow sensor demo start...\r\n");
+    printf("STM32 Mill Control System Start...\r\n");
+    printf("Flow Meter: YF-B7\r\n");
+    printf("Temp Sensor: PT100 Modbus (Addr=1)\r\n");
 
-    // 初始化流量计参数
+    /* 4. Flow Meter Init */
     FlowMeter_Init(&g_flow_meter, &g_tim2_handle,
                    SAMPLE_PERIOD_MS, PULSES_PER_LITER, HZ_PER_LPM);
 
     while (1)
     {
-        // LED 闪烁指示系统运行
+        /* Blink LED to indicate running */
         LED_R_TOGGLE();
         delay_ms(500);
 
-        float flow_lpm = 0.0f;  // 瞬时流量 (L/min)
-        float total_l = 0.0f;   // 累计流量 (L)
-        float freq_hz = 0.0f;   // 实时频率 (Hz)
+        /* --- Flow Meter Update --- */
+        float flow_lpm = 0.0f;
+        float total_l = 0.0f;
+        float freq_hz = 0.0f;
 
-        // 定期更新并读取流量计数据
         if (FlowMeter_Update(&g_flow_meter, &flow_lpm, &total_l, &freq_hz))
         {
-            // 打印调试信息: 频率、瞬时流量、累计流量
-            printf("f=%.1f Hz, Flow=%.2f L/min, Total=%.3f L\r\n",
+            printf("[FLOW] f=%.1f Hz, Rate=%.2f L/min, Total=%.3f L\r\n",
                    freq_hz, flow_lpm, total_l);
         }
-
-       
+        
+        /* --- PT100 Temperature Update --- */
+        float temp_val = 0.0f;
+        if (PT100_Read_Temperature(&temp_val) == 0)
+        {
+            printf("[TEMP] PT100: %.1f C\r\n", temp_val);
+        }
+        else
+        {
+            printf("[TEMP] PT100: Error/Timeout\r\n");
+        }
     }
 }
