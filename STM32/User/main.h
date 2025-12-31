@@ -14,6 +14,7 @@
 #include "usart.h"
 
 #include "tim2.h"
+#include "flow_meter.h"
 
 #include "LED.h"
 #include "Key.h"

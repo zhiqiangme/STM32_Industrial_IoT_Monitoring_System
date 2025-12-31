@@ -429,6 +429,11 @@
               <FileType>1</FileType>
               <FilePath>..\BSP\OLED_Data.c</FilePath>
             </File>
+            <File>
+              <FileName>flow_meter.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\flow_meter.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

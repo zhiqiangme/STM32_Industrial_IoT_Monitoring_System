@@ -10,10 +10,9 @@ extern TIM_HandleTypeDef g_tim2_handle;
 /* 采样周期（ms） */
 #define SAMPLE_PERIOD_MS   1000UL
 
-/* 计数相关 */
-static uint16_t last_cnt = 0;
-static uint32_t total_pulses = 0;
-static uint32_t last_tick = 0;
+static FlowMeter_HandleTypeDef g_flow_meter;
+
+
 
 
 int main(void)
@@ -26,8 +25,10 @@ int main(void)
 
     printf("YF-B7 flow sensor demo start...\r\n");
 
-    last_tick = HAL_GetTick();
-    last_cnt  = tim2_get_cnt();
+    FlowMeter_Init(&g_flow_meter, &g_tim2_handle,
+                   SAMPLE_PERIOD_MS, PULSES_PER_LITER, HZ_PER_LPM);
+
+
 
     while (1)
     {
@@ -35,27 +36,16 @@ int main(void)
 		LED_R_TOGGLE();
 		delay_ms(500);
 		
-        uint32_t now = HAL_GetTick();
-        if ((now - last_tick) >= SAMPLE_PERIOD_MS)
+        float flow_lpm = 0.0f;
+        float total_l = 0.0f;
+        float freq_hz = 0.0f;
+
+        if (FlowMeter_Update(&g_flow_meter, &flow_lpm, &total_l, &freq_hz))
         {
-            last_tick += SAMPLE_PERIOD_MS; // 减少长期漂移
-
-            uint16_t cur_cnt = tim2_get_cnt();
-
-            /* 16位计数差分，自动处理回绕（只要采样周期内脉冲数 << 65535 即可） */
-            uint16_t delta16 = (uint16_t)(cur_cnt - last_cnt);
-            last_cnt = cur_cnt;
-
-            total_pulses += (uint32_t)delta16;
-
-            /* 计算：1秒窗口 -> delta16 近似等于 Hz */
-            float freq_hz = (float)delta16 * (1000.0f / (float)SAMPLE_PERIOD_MS);
-            float flow_lpm = freq_hz / HZ_PER_LPM;
-            float total_l  = (float)total_pulses / PULSES_PER_LITER;
-
-            printf("f=%.1f Hz, Flow=%.2f L/min, Total=%.3f L (pulses=%lu)\r\n",
-                   freq_hz, flow_lpm, total_l, (unsigned long)total_pulses);
+            printf("f=%.1f Hz, Flow=%.2f L/min, Total=%.3f L\r\n",
+                   freq_hz, flow_lpm, total_l);
         }
+
 
         /* 这里不做其他联动，保持示例纯粹 */
 		
