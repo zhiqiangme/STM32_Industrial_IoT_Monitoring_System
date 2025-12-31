@@ -108,15 +108,18 @@ int main(void)
             if (PT100_Read_Temperature(&temp_val) == 0)
                 printf("[TEMP] %.1fC\r\n", temp_val);
             
-            Check_Keys();  /* 中间检查按键 */
+            Check_Keys();
+            delay_ms(30);  /* 总线间隔延时 */
 
             /* ZSG4称重 */
             int32_t weight_g = 0;
             if (ZSG4_Read_Weight(&weight_g) == 0)
                 printf("[WEIGHT] %ldg\r\n", (long)weight_g);
+            else
+                printf("[WEIGHT] --\r\n");  /* 显示占位符表示读取失败 */
             
-            Check_Keys();  /* 中间检查按键 */
-            delay_ms(20);  /* 总线间隔延时 */
+            Check_Keys();
+            delay_ms(30);  /* 总线间隔延时 */
             
             /* 继电器输入状态 */
             uint16_t input_mask = 0;
