@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Drivers\CMSIS\Device\ST\STM32F1xx\Include;..\Drivers\CMSIS\Include;..\Drivers\STM32F1xx_HAL_Driver\Inc;..\User;..\BSP;..\System</IncludePath>
+              <IncludePath>..\Drivers\CMSIS\Device\ST\STM32F1xx\Include;..\Drivers\CMSIS\Include;..\Drivers\STM32F1xx_HAL_Driver\Inc;..\User;..\BSP;..\System;..\APP</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -402,6 +402,16 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>APP</GroupName>
+          <Files>
+            <File>
+              <FileName>telemetry.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APP\telemetry.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>BSP</GroupName>
           <Files>
             <File>
@@ -453,6 +463,11 @@
               <FileName>bsp_relay.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_relay.c</FilePath>
+            </File>
+            <File>
+              <FileName>rs4853_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\rs4853_uart.c</FilePath>
             </File>
           </Files>
         </Group>

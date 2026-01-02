@@ -32,9 +32,19 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 
     if (htim->Instance == TIM2)
     {
+        /* 使能时钟 */
         TIM2_CH1_GPIO_CLK_ENABLE();
         TIM2_CLK_ENABLE();
+        TIM2_AFIO_CLK_ENABLE();
+        
+        /* TIM2重映射: PA15/PB3/PA2/PA3 (Partial Remap 1) */
+        /* 使用 AFIO_MAPR 的 TIM2_REMAP[1:0] = 01 */
+        __HAL_AFIO_REMAP_TIM2_PARTIAL_1();
+        
+        /* 同时需要禁用JTAG以释放PA15 (保留SWD) */
+        __HAL_AFIO_REMAP_SWJ_NOJTAG();
 
+        /* 配置PA15为复用输入 */
         gpio_init_struct.Pin = TIM2_CH1_GPIO_PIN;
         gpio_init_struct.Mode = GPIO_MODE_AF_INPUT;
         gpio_init_struct.Pull = GPIO_NOPULL;
