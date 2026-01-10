@@ -450,11 +450,6 @@
               <FilePath>..\BSP\bsp_pt100.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_rs485.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\BSP\bsp_rs485.c</FilePath>
-            </File>
-            <File>
               <FileName>bsp_zsg4.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\bsp_zsg4.c</FilePath>
@@ -468,6 +463,16 @@
               <FileName>rs4853_uart.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\rs4853_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>485.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\485.c</FilePath>
+            </File>
+            <File>
+              <FileName>modbus_slave.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\modbus_slave.c</FilePath>
             </File>
           </Files>
         </Group>

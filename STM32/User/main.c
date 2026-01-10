@@ -1,10 +1,11 @@
 #include "main.h"
-#include "bsp_rs485.h"
+#include "485.h"
 #include "bsp_pt100.h"
 #include "bsp_zsg4.h"
 #include "bsp_relay.h"
 #include "rs4853_uart.h"
 #include "telemetry.h"
+#include "modbus_slave.h"
 
 extern TIM_HandleTypeDef g_tim2_handle;
 
@@ -75,8 +76,9 @@ static void Check_Keys(void)
 int main(void)
 {
     STM32_Init();
-    RS485_Init();       /* Modbus RS485 */
-    RS4853_Init();      /* 上云 RS485 */
+    RS485_Init();       /* 总线1: Modbus主站 (USART3+PA5) */
+    ModbusSlave_Init(); /* 总线2: Modbus从站 (USART2+PD7) 供G780S读取 */
+    // RS4853_Init();   /* 已禁用: 与ModbusSlave冲突 */
     HAL_TIM_Base_Start(&g_tim2_handle);
 
     printf("\r\n\r\n");
@@ -86,7 +88,7 @@ int main(void)
     printf("PT100:  Addr=1, CH4\r\n");
     printf("Relay:  Addr=2\r\n");
     printf("ZSG4:   Addr=3, CH3\r\n");
-    printf("G780S:  USART3 (60s period)\r\n");
+    printf("G780S:  USART2+PD7 Slave Addr=10\r\n");
     printf("----------------------------------------\r\n");
     printf("KEY0(PE4): CH1  KEY1(PE3): CH2\r\n");
     printf("PA0: Manual Report\r\n");
@@ -121,7 +123,8 @@ int main(void)
     {
         /* ===== 高优先级任务 ===== */
         Check_Keys();
-        RS4853_Task();
+        ModbusSlave_Task();  /* 响应G780S读取请求 */
+        // RS4853_Task();    /* 已禁用 */
         Telemetry_Task();
         
         /* LED闪烁 */
@@ -213,6 +216,73 @@ int main(void)
             
             /* 更新设备状态 */
             Telemetry_UpdateDeviceStatus(pt100_ok, zsg4_ok, relay_ok);
+            
+            /* ===== 更新Modbus从站寄存器 (供G780S读取) ===== */
+            {
+                static uint16_t s_push_seq = 0;      /* 上报序号计数器 */
+                static int16_t s_last_temp[4] = {0}; /* 上次温度值 (×10) */
+                static uint8_t s_first_run = 1;      /* 首次运行标志 */
+                ModbusSlaveData_t slave_data = {0};
+                
+                /* 当前温度值 (×10) */
+                int16_t cur_temp[4];
+                cur_temp[0] = 0;  /* CH1未连接 */
+                cur_temp[1] = 0;  /* CH2未连接 */
+                cur_temp[2] = 0;  /* CH3未连接 */
+                cur_temp[3] = (int16_t)(g_telemetry_temp * 10.0f);  /* CH4 */
+                
+                /* 检测温度变化超过1℃ (10×0.1℃) */
+                uint8_t temp_changed = 0;
+                for (int i = 0; i < 4; i++)
+                {
+                    int16_t diff = cur_temp[i] - s_last_temp[i];
+                    if (diff < 0) diff = -diff;  /* 取绝对值 */
+                    if (diff >= 10)  /* 10 = 1.0℃ */
+                    {
+                        temp_changed = 1;
+                        break;
+                    }
+                }
+                
+                /* 首次运行或温度变化超过3℃时，递增序号 */
+                if (s_first_run || temp_changed)
+                {
+                    s_push_seq++;
+                    /* 更新上次温度值 */
+                    for (int i = 0; i < 4; i++)
+                        s_last_temp[i] = cur_temp[i];
+                    s_first_run = 0;
+                    printf("[PUSH_SEQ] %u (temp changed)\r\n", s_push_seq);
+                }
+                
+                /* 地址0: 上报序号 */
+                slave_data.push_seq = s_push_seq;
+                
+                /* PT100温度 */
+                slave_data.pt100_ch[0] = cur_temp[0];  /* 地址1: CH1 */
+                slave_data.pt100_ch[1] = cur_temp[1];  /* 地址2: CH2 */
+                slave_data.pt100_ch[2] = cur_temp[2];  /* 地址3: CH3 */
+                slave_data.pt100_ch[3] = cur_temp[3];  /* 地址4: CH4 */
+                
+                /* 以下暂时注释，只显示温度 */
+                // /* 重量 (g) - 地址5,6 */
+                // slave_data.weight = g_telemetry_weight;
+                // 
+                // /* 继电器 - 地址7,8 */
+                // slave_data.relay_do = g_telemetry_do;
+                // slave_data.relay_di = g_telemetry_di;
+                // 
+                // /* 流量 (×100 L/min) 和累计 (×1000 L) - 地址9,10,11 */
+                // slave_data.flow_rate = (uint16_t)(g_telemetry_flow * 100.0f);
+                // slave_data.flow_total = (uint32_t)(g_telemetry_total * 1000.0f);
+                // 
+                // /* 状态位 - 地址12 */
+                // slave_data.status = (pt100_ok ? 0x01 : 0) | 
+                //                     (zsg4_ok ? 0x02 : 0) | 
+                //                     (relay_ok ? 0x04 : 0);
+                
+                ModbusSlave_UpdateData(&slave_data);
+            }
         }
         
         delay_ms(5);

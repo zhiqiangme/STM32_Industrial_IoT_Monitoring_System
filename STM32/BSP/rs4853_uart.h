@@ -1,8 +1,8 @@
 /**
  * @file    rs4853_uart.h
- * @brief   RS485-B上云链路驱动 (USART3 + MAX485)
- * @note    用于STM32与G780S网关通信，实现云端数据上报
- *          硬件连接: PB10(TX)->DI, PB11(RX)<-RO, PF15->DE/RE
+ * @brief   RS485-B上云链路驱动 (USART2 + TP3485)
+ * @note    用于STM32与G780S网关通信 (Modbus从站)
+ *          硬件连接: PA2(TX), PA3(RX), PD7->DE/RE
  *          波特率: 38400 8N1
  */
 
@@ -80,5 +80,11 @@ void RS4853_TxCpltCallback(void);
  * @param  byte: 接收到的字节
  */
 void RS4853_RxCallback(uint8_t byte);
+
+/**
+ * @brief  获取USART3句柄指针
+ * @retval UART_HandleTypeDef指针
+ */
+UART_HandleTypeDef* RS4853_GetHandle(void);
 
 #endif
