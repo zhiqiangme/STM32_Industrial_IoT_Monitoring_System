@@ -29,6 +29,9 @@ volatile float    g_telemetry_total  = 0.0f;
 volatile uint16_t g_telemetry_do     = 0;
 volatile uint16_t g_telemetry_di     = 0;
 
+/* Modbus PUSH_SEQ (上报序号) */
+static volatile uint16_t g_push_seq = 0;
+
 /**
  * @brief  检查并处理按键事件
  */
@@ -64,11 +67,23 @@ static void Check_Keys(void)
     }
     g_key1_last = key1_now;
     
-    /* KEY_A (PA0) - 上升沿触发 (按下=高) -> 立即上报 */
+    /* KEY_UP (PA0) - 上升沿触发 (按下=高) -> 增加PUSH_SEQ (触发上传) */
     if (g_keyA_last == 0 && keyA_now == 1)
     {
-        printf("[KEY] PA0 -> Report\r\n");
-        Telemetry_TriggerEventReport();
+		LED_G_TOGGLE();
+        g_push_seq += 5;
+        printf("[KEY] PA0 -> PUSH_SEQ +5 (Now: %u)\r\n", g_push_seq);
+        
+        /* 旧测试代码: 发送HEX数据
+        static const uint8_t test_data[] = {0x0A, 0x04, 0x02, 0x01, 0x04, 0x1C, 0xA2};
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_SET);
+        for(volatile int i=0; i<500; i++);
+        UART_HandleTypeDef *huart = ModbusSlave_GetHandle();
+        HAL_UART_Transmit(huart, (uint8_t*)test_data, sizeof(test_data), 100);
+        while(__HAL_UART_GET_FLAG(huart, UART_FLAG_TC) == RESET);
+        for(volatile int i=0; i<200; i++);
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_RESET);
+        */
     }
     g_keyA_last = keyA_now;
 }
@@ -133,6 +148,53 @@ int main(void)
         {
             led_tick = HAL_GetTick();
             LED_R_TOGGLE();
+        }
+        
+        /* ===== 处理云端继电器控制命令 ===== */
+        /* 输入值含义: 0=全部关闭, 1-16=翻转对应通道 */
+        {
+            static uint16_t last_relay_ctrl = 0xFFFF;  /* 初始化为无效值 */
+            uint16_t relay_ctrl = ModbusSlave_GetRelayCtrl();
+            
+            if (relay_ctrl != last_relay_ctrl)
+            {
+                printf("[Cloud] RELAY_CTRL: %u\r\n", relay_ctrl);
+                
+                if (relay_ctrl == 0)
+                {
+                    /* 0 = 全部关闭 */
+                    printf("[Cloud] All OFF\r\n");
+                    Relay_Set_Output_Mask(0);
+                }
+                else if (relay_ctrl >= 1 && relay_ctrl <= 16)
+                {
+                    /* 1-16 = 翻转对应通道 */
+                    printf("[Cloud] Toggle CH%u\r\n", relay_ctrl);
+                    Relay_Toggle_Output((uint8_t)relay_ctrl);
+                }
+                else
+                {
+                    printf("[Cloud] Invalid value: %u\r\n", relay_ctrl);
+                }
+                
+                last_relay_ctrl = relay_ctrl;
+            }
+        }
+        
+        /* ===== 处理云端按位控制命令 ===== */
+        {
+            static uint16_t last_relay_bits = 0;
+            uint16_t relay_bits = ModbusSlave_GetRelayBits();
+            
+            if (relay_bits != last_relay_bits)
+            {
+                printf("[Cloud] RELAY_BITS: 0x%04X -> 0x%04X\r\n", last_relay_bits, relay_bits);
+                
+                /* 按位控制继电器输出 */
+                Relay_Set_Output_Mask(relay_bits);
+                
+                last_relay_bits = relay_bits;
+            }
         }
 
         /* ===== 传感器采集 (每2秒) ===== */
@@ -219,7 +281,7 @@ int main(void)
             
             /* ===== 更新Modbus从站寄存器 (供G780S读取) ===== */
             {
-                static uint16_t s_push_seq = 0;      /* 上报序号计数器 */
+                // static uint16_t s_push_seq = 0;   /* 移除局部变量，使用全局 g_push_seq */
                 static int16_t s_last_temp[4] = {0}; /* 上次温度值 (×10) */
                 static uint8_t s_first_run = 1;      /* 首次运行标志 */
                 ModbusSlaveData_t slave_data = {0};
@@ -244,19 +306,19 @@ int main(void)
                     }
                 }
                 
-                /* 首次运行或温度变化超过3℃时，递增序号 */
+                /* 首次运行或温度变化超过1℃时，递增序号 */
                 if (s_first_run || temp_changed)
                 {
-                    s_push_seq++;
+                    g_push_seq++;
                     /* 更新上次温度值 */
                     for (int i = 0; i < 4; i++)
                         s_last_temp[i] = cur_temp[i];
                     s_first_run = 0;
-                    printf("[PUSH_SEQ] %u (temp changed)\r\n", s_push_seq);
+                    printf("[PUSH_SEQ] %u (temp changed)\r\n", g_push_seq);
                 }
                 
                 /* 地址0: 上报序号 */
-                slave_data.push_seq = s_push_seq;
+                slave_data.push_seq = g_push_seq;
                 
                 /* PT100温度 */
                 slave_data.pt100_ch[0] = cur_temp[0];  /* 地址1: CH1 */
@@ -264,22 +326,24 @@ int main(void)
                 slave_data.pt100_ch[2] = cur_temp[2];  /* 地址3: CH3 */
                 slave_data.pt100_ch[3] = cur_temp[3];  /* 地址4: CH4 */
                 
-                /* 以下暂时注释，只显示温度 */
-                // /* 重量 (g) - 地址5,6 */
-                // slave_data.weight = g_telemetry_weight;
-                // 
-                // /* 继电器 - 地址7,8 */
-                // slave_data.relay_do = g_telemetry_do;
-                // slave_data.relay_di = g_telemetry_di;
-                // 
-                // /* 流量 (×100 L/min) 和累计 (×1000 L) - 地址9,10,11 */
-                // slave_data.flow_rate = (uint16_t)(g_telemetry_flow * 100.0f);
-                // slave_data.flow_total = (uint32_t)(g_telemetry_total * 1000.0f);
-                // 
-                // /* 状态位 - 地址12 */
-                // slave_data.status = (pt100_ok ? 0x01 : 0) | 
-                //                     (zsg4_ok ? 0x02 : 0) | 
-                //                     (relay_ok ? 0x04 : 0);
+                /* ZSG4称重 - 只有CH3连接，其他写-1 (32位格式) */
+                slave_data.zsg4_ch[0] = -1;  /* 地址5-6: CH1未连接 */
+                slave_data.zsg4_ch[1] = -1;  /* 地址7-8: CH2未连接 */
+                slave_data.zsg4_ch[2] = g_telemetry_weight;  /* 地址9-10: CH3 */
+                slave_data.zsg4_ch[3] = -1;  /* 地址11-12: CH4未连接 */
+                
+                /* 流量 (×100 L/min) 和累计 (×1000 L) */
+                slave_data.flow_rate = (uint16_t)(g_telemetry_flow * 100.0f);   /* 地址13 */
+                slave_data.flow_total = (uint32_t)(g_telemetry_total * 1000.0f); /* 地址14-15 */
+                
+                /* 继电器 (16位位图) */
+                slave_data.relay_do = g_telemetry_do;  /* 地址16 */
+                slave_data.relay_di = g_telemetry_di;  /* 地址17 */
+                
+                /* 状态位 */
+                slave_data.status = (pt100_ok ? 0x01 : 0) |   /* 地址18 */
+                                    (zsg4_ok ? 0x02 : 0) | 
+                                    (relay_ok ? 0x04 : 0);
                 
                 ModbusSlave_UpdateData(&slave_data);
             }

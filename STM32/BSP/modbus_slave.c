@@ -186,12 +186,103 @@ static void HandleReadInputRegs(uint8_t *frame, uint16_t len)
     SendResponse(g_tx_buf, idx);
 }
 
+/*----------------------- 处理写单个寄存器 (FC06) -----------------------*/
+static void HandleWriteSingleReg(uint8_t *frame, uint16_t len)
+{
+    if (len < 8) return;
+    
+    uint16_t reg_addr = ((uint16_t)frame[2] << 8) | frame[3];
+    uint16_t reg_val = ((uint16_t)frame[4] << 8) | frame[5];
+    
+    /* 调试输出：打印收到的FC06请求 */
+    printf("[FC06] Addr=%u Val=0x%04X (RAW: ", reg_addr, reg_val);
+    for (uint16_t i = 0; i < len && i < 10; i++) printf("%02X ", frame[i]);
+    printf(")\r\n");
+    
+    /* 只允许写入继电器控制寄存器 */
+    if (reg_addr != REG_RELAY_CTRL && reg_addr != REG_RELAY_BITS)
+    {
+        printf("[FC06] Rejected: Addr %u not allowed\r\n", reg_addr);
+        SendException(FC_WRITE_SINGLE_REG, 0x02);  /* 非法数据地址 */
+        return;
+    }
+    
+    /* 写入寄存器 */
+    g_registers[reg_addr] = reg_val;
+    
+    if (reg_addr == REG_RELAY_CTRL)
+        printf("[Slave] Write RELAY_CTRL = 0x%04X\r\n", reg_val);
+    else
+        printf("[Slave] Write RELAY_BITS = 0x%04X\r\n", reg_val);
+    
+    /* 响应 (原样返回请求帧) */
+    memcpy(g_tx_buf, frame, 6);
+    SendResponse(g_tx_buf, 6);
+}
+
+/*----------------------- 处理写单个线圈 (FC05) -----------------------*/
+static void HandleWriteSingleCoil(uint8_t *frame, uint16_t len)
+{
+    if (len < 8) return;
+    
+    uint16_t coil_addr = ((uint16_t)frame[2] << 8) | frame[3];
+    uint16_t coil_val = ((uint16_t)frame[4] << 8) | frame[5];
+    
+    /* 调试输出 */
+    printf("[FC05] CoilAddr=%u Val=0x%04X (RAW: ", coil_addr, coil_val);
+    for (uint16_t i = 0; i < len && i < 10; i++) printf("%02X ", frame[i]);
+    printf(")\r\n");
+    
+    /* 计算寄存器地址和位号 */
+    /* 云端保持寄存器4.21.0的线圈地址可能是: (21-1)*16+0=320 或其他格式 */
+    /* 这里假设线圈地址直接对应位号 (0-15 对应 REG_RELAY_BITS 的 bit0-bit15) */
+    
+    uint16_t bit_num = coil_addr % 16;  /* 位号 0-15 */
+    uint16_t reg_idx = coil_addr / 16;  /* 寄存器索引 */
+    
+    printf("[FC05] RegIdx=%u BitNum=%u\r\n", reg_idx, bit_num);
+    
+    /* 只允许控制 REG_RELAY_BITS 对应的线圈 */
+    /* 假设 REG_RELAY_BITS(地址0x14=20) 对应线圈地址 20*16=320 到 320+15 */
+    /* 或者简单地：线圈地址20.0-20.15对应位0-15 */
+    
+    /* 为了兼容性，我们接受任何线圈地址，直接作为位号 */
+    if (bit_num > 15)
+    {
+        SendException(FC_WRITE_SINGLE_COIL, 0x02);
+        return;
+    }
+    
+    /* 读取当前寄存器值 */
+    uint16_t current = g_registers[REG_RELAY_BITS];
+    
+    /* 修改对应位 */
+    if (coil_val == 0xFF00)  /* ON */
+        current |= (1 << bit_num);
+    else if (coil_val == 0x0000)  /* OFF */
+        current &= ~(1 << bit_num);
+    else
+    {
+        SendException(FC_WRITE_SINGLE_COIL, 0x03);  /* 非法数据值 */
+        return;
+    }
+    
+    /* 写入寄存器 */
+    g_registers[REG_RELAY_BITS] = current;
+    printf("[FC05] RELAY_BITS bit%u -> %s, Now=0x%04X\r\n", 
+           bit_num, (coil_val == 0xFF00) ? "ON" : "OFF", current);
+    
+    /* 响应 (原样返回请求帧) */
+    memcpy(g_tx_buf, frame, 6);
+    SendResponse(g_tx_buf, 6);
+}
+
 /*----------------------- 处理帧 -----------------------*/
 static void ProcessFrame(void)
 {
     if (g_rx_len < 4) return;  /* 最小帧长度 */
     
-#if 0  /* 调试输出 */
+#if 1  /* 调试输出 */
     printf("[Slave_RX] ");
     for(uint16_t i = 0; i < g_rx_len; i++) printf("%02X ", g_rx_buf[i]);
     printf("\r\n");
@@ -219,6 +310,14 @@ static void ProcessFrame(void)
         case FC_READ_INPUT_REGS:
         case FC_READ_HOLD_REGS:  /* 也支持FC03 */
             HandleReadInputRegs(g_rx_buf, g_rx_len);
+            break;
+        
+        case FC_WRITE_SINGLE_REG:  /* 写单个寄存器 */
+            HandleWriteSingleReg(g_rx_buf, g_rx_len);
+            break;
+        
+        case FC_WRITE_SINGLE_COIL:  /* 写单个线圈 (云端按位控制) */
+            HandleWriteSingleCoil(g_rx_buf, g_rx_len);
             break;
             
         default:
@@ -266,18 +365,24 @@ void ModbusSlave_UpdateData(const ModbusSlaveData_t *data)
     g_registers[REG_PT100_CH3] = (uint16_t)data->pt100_ch[2];
     g_registers[REG_PT100_CH4] = (uint16_t)data->pt100_ch[3];
     
-    /* 重量 (int32拆分) */
-    g_registers[REG_WEIGHT_LOW] = (uint16_t)(data->weight & 0xFFFF);
-    g_registers[REG_WEIGHT_HIGH] = (uint16_t)((data->weight >> 16) & 0xFFFF);
-    
-    /* 继电器 */
-    g_registers[REG_RELAY_DO] = data->relay_do;
-    g_registers[REG_RELAY_DI] = data->relay_di;
+    /* ZSG4称重 (4通道, 32位大端模式) */
+    g_registers[REG_ZSG4_CH1_H] = (uint16_t)((data->zsg4_ch[0] >> 16) & 0xFFFF);
+    g_registers[REG_ZSG4_CH1_L] = (uint16_t)(data->zsg4_ch[0] & 0xFFFF);
+    g_registers[REG_ZSG4_CH2_H] = (uint16_t)((data->zsg4_ch[1] >> 16) & 0xFFFF);
+    g_registers[REG_ZSG4_CH2_L] = (uint16_t)(data->zsg4_ch[1] & 0xFFFF);
+    g_registers[REG_ZSG4_CH3_H] = (uint16_t)((data->zsg4_ch[2] >> 16) & 0xFFFF);
+    g_registers[REG_ZSG4_CH3_L] = (uint16_t)(data->zsg4_ch[2] & 0xFFFF);
+    g_registers[REG_ZSG4_CH4_H] = (uint16_t)((data->zsg4_ch[3] >> 16) & 0xFFFF);
+    g_registers[REG_ZSG4_CH4_L] = (uint16_t)(data->zsg4_ch[3] & 0xFFFF);
     
     /* 流量 */
     g_registers[REG_FLOW_RATE] = data->flow_rate;
     g_registers[REG_FLOW_TOTAL_LOW] = (uint16_t)(data->flow_total & 0xFFFF);
     g_registers[REG_FLOW_TOTAL_HIGH] = (uint16_t)((data->flow_total >> 16) & 0xFFFF);
+    
+    /* 继电器 (16位位图) */
+    g_registers[REG_RELAY_DO] = data->relay_do;
+    g_registers[REG_RELAY_DI] = data->relay_di;
     
     /* 状态 */
     g_registers[REG_SYSTEM_STATUS] = data->status;
@@ -289,4 +394,16 @@ void ModbusSlave_UpdateData(const ModbusSlaveData_t *data)
 UART_HandleTypeDef* ModbusSlave_GetHandle(void)
 {
     return &g_huart2;
+}
+
+/*----------------------- 获取继电器控制值 -----------------------*/
+uint16_t ModbusSlave_GetRelayCtrl(void)
+{
+    return g_registers[REG_RELAY_CTRL];
+}
+
+/*----------------------- 获取继电器按位控制值 -----------------------*/
+uint16_t ModbusSlave_GetRelayBits(void)
+{
+    return g_registers[REG_RELAY_BITS];
 }
