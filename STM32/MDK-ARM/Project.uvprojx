@@ -402,23 +402,8 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>APP</GroupName>
-          <Files>
-            <File>
-              <FileName>telemetry.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\APP\telemetry.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
           <GroupName>BSP</GroupName>
           <Files>
-            <File>
-              <FileName>Init.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\BSP\Init.c</FilePath>
-            </File>
             <File>
               <FileName>LED.c</FileName>
               <FileType>1</FileType>
@@ -440,39 +425,44 @@
               <FilePath>..\BSP\OLED_Data.c</FilePath>
             </File>
             <File>
-              <FileName>flow_meter.c</FileName>
+              <FileName>Flowmeter.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\flow_meter.c</FilePath>
+              <FilePath>..\BSP\Flowmeter.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_pt100.c</FileName>
+              <FileName>Temperature.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\bsp_pt100.c</FilePath>
+              <FilePath>..\BSP\Temperature.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_zsg4.c</FileName>
+              <FileName>Weight.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\bsp_zsg4.c</FilePath>
+              <FilePath>..\BSP\Weight.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_relay.c</FileName>
+              <FileName>Relay.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\bsp_relay.c</FilePath>
+              <FilePath>..\BSP\Relay.c</FilePath>
             </File>
             <File>
-              <FileName>rs4853_uart.c</FileName>
+              <FileName>RS485_Slave.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\rs4853_uart.c</FilePath>
+              <FilePath>..\BSP\RS485_Slave.c</FilePath>
             </File>
             <File>
-              <FileName>485.c</FileName>
+              <FileName>RS485_Master.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\485.c</FilePath>
+              <FilePath>..\BSP\RS485_Master.c</FilePath>
             </File>
             <File>
-              <FileName>modbus_slave.c</FileName>
+              <FileName>G780s_Slave.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\BSP\modbus_slave.c</FilePath>
+              <FilePath>..\BSP\G780s_Slave.c</FilePath>
+            </File>
+            <File>
+              <FileName>G780s_Telemetry.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\G780s_Telemetry.c</FilePath>
             </File>
           </Files>
         </Group>
