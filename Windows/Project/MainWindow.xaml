@@ -1,0 +1,220 @@
+﻿<Window x:Class="Project.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Project"
+        mc:Ignorable="d"
+        Title="Modbus上位机" Height="700" Width="1100"
+        WindowStartupLocation="CenterScreen"
+        Foreground="White"
+        Background="Transparent">
+
+    <Window.Resources>
+        <!-- Colors -->
+        <Color x:Key="CardBackgroundColor">#202020</Color>
+        <Color x:Key="AccentColor">#4CAF50</Color>
+        <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackgroundColor}" Opacity="0.6"/>
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#AAAAAA"/>
+        <SolidColorBrush x:Key="DividerBrush" Color="#404040"/>
+
+        <!-- Styles -->
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBackgroundBrush}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="Margin" Value="8"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="Black" Opacity="0.3" BlurRadius="10" ShadowDepth="2"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="GroupBox">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+
+        <!-- Converters -->
+        <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- Header -->
+            <RowDefinition Height="Auto"/> <!-- Main Dashboard -->
+            <RowDefinition Height="*"/>    <!-- Details/Log -->
+            <RowDefinition Height="Auto"/> <!-- Status Bar -->
+        </Grid.RowDefinitions>
+
+        <!-- Header: Control Bar -->
+        <Border Grid.Row="0" Margin="0,0,0,16" Padding="12" Background="#151515" CornerRadius="8" Opacity="0.8">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="COM:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                <ComboBox x:Name="PortComboBox" Width="100" Margin="0,0,16,0" Style="{StaticResource {x:Static ToolBar.ComboBoxStyleKey}}"/>
+                <Button Content="刷新" Click="RefreshPorts_Click" Margin="0,0,16,0" Padding="8,4"/>
+
+                <TextBlock Text="波特率:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                <ComboBox x:Name="BaudComboBox" Width="100" Margin="0,0,16,0" IsEditable="True">
+                    <ComboBoxItem Content="115200" IsSelected="True"/>
+                    <ComboBoxItem Content="9600"/>
+                    <ComboBoxItem Content="38400"/>
+                </ComboBox>
+
+                <Button x:Name="ConnectButton" Content="连接设备" Click="ConnectButton_Click" 
+                        Width="100" Background="#2196F3" Foreground="White" FontWeight="Bold" Margin="0,0,16,0" Padding="8,4"/>
+                
+                <ToggleButton x:Name="TogglePollButton" Content="自动轮询" Click="TogglePoll_Click" Width="100" Margin="0,0,16,0" IsEnabled="False"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Dashboard Cards -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Card 1: Weight -->
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="称重 (Weight)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                        <TextBlock x:Name="MainWeightText" Text="0.00" FontSize="48" FontWeight="Bold" Foreground="#FF5252"/>
+                        <TextBlock x:Name="MainWeightUnit" Text="g" FontSize="20" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="4,0,0,6"/>
+                    </StackPanel>
+                    <TextBlock Text="通道: CH3" HorizontalAlignment="Right" FontSize="10" Foreground="#666" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 2: Temperature -->
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="温度 (Temp)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                        <TextBlock x:Name="MainTempText" Text="0.0" FontSize="48" FontWeight="Bold" Foreground="#448AFF"/>
+                        <TextBlock Text="°C" FontSize="20" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="4,0,0,6"/>
+                    </StackPanel>
+                    <TextBlock Text="通道: CH4" HorizontalAlignment="Right" FontSize="10" Foreground="#666" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 3: Flow Rate -->
+            <Border Grid.Column="2" Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="瞬时流量 (Flow Rate)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                        <TextBlock x:Name="MainFlowText" Text="0.00" FontSize="48" FontWeight="Bold" Foreground="#69F0AE"/>
+                        <TextBlock Text="L/min" FontSize="20" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="4,0,0,6"/>
+                    </StackPanel>
+                    <TextBlock x:Name="TotalFlowText" Text="累计: 0.000 m³" HorizontalAlignment="Center" FontSize="14" Foreground="#CCC" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Secondary Info & Details -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.5*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Device Status & Relays -->
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="8,0,8,8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="系统状态" Foreground="{StaticResource TextSecondaryBrush}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16"/>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Relay Outputs (DO) -->
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="继电器输出 (DO)" FontSize="16" FontWeight="Bold" Foreground="#69F0AE" Margin="0,0,0,12"/>
+                            <UniformGrid Rows="2" Columns="8" HorizontalAlignment="Left">
+                                <Ellipse x:Name="DO0" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO0"/>
+                                <Ellipse x:Name="DO1" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO1"/>
+                                <Ellipse x:Name="DO2" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO2"/>
+                                <Ellipse x:Name="DO3" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO3"/>
+                                <Ellipse x:Name="DO4" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO4"/>
+                                <Ellipse x:Name="DO5" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO5"/>
+                                <Ellipse x:Name="DO6" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO6"/>
+                                <Ellipse x:Name="DO7" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO7"/>
+                                <Ellipse x:Name="DO8" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO8"/>
+                                <Ellipse x:Name="DO9" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO9"/>
+                                <Ellipse x:Name="DO10" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO10"/>
+                                <Ellipse x:Name="DO11" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO11"/>
+                                <Ellipse x:Name="DO12" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO12"/>
+                                <Ellipse x:Name="DO13" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO13"/>
+                                <Ellipse x:Name="DO14" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO14"/>
+                                <Ellipse x:Name="DO15" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO15"/>
+                            </UniformGrid>
+                            <TextBlock x:Name="RelayDoHex" Text="0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
+                        </StackPanel>
+
+                        <!-- Relay Inputs (DI) -->
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="继电器输入 (DI)" FontSize="16" FontWeight="Bold" Foreground="#448AFF" Margin="0,0,0,12"/>
+                            <UniformGrid Rows="2" Columns="8" HorizontalAlignment="Left">
+                                <Ellipse x:Name="DI0" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI0"/>
+                                <Ellipse x:Name="DI1" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI1"/>
+                                <Ellipse x:Name="DI2" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI2"/>
+                                <Ellipse x:Name="DI3" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI3"/>
+                                <Ellipse x:Name="DI4" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI4"/>
+                                <Ellipse x:Name="DI5" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI5"/>
+                                <Ellipse x:Name="DI6" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI6"/>
+                                <Ellipse x:Name="DI7" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI7"/>
+                                <Ellipse x:Name="DI8" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI8"/>
+                                <Ellipse x:Name="DI9" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI9"/>
+                                <Ellipse x:Name="DI10" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI10"/>
+                                <Ellipse x:Name="DI11" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI11"/>
+                                <Ellipse x:Name="DI12" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI12"/>
+                                <Ellipse x:Name="DI13" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI13"/>
+                                <Ellipse x:Name="DI14" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI14"/>
+                                <Ellipse x:Name="DI15" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI15"/>
+                            </UniformGrid>
+                            <TextBlock x:Name="RelayDiHex" Text="0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- Right: Raw Data Log/List -->
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0,8,8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="详细数据 (通道 1-2, 状态位)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="DetailLogText" Foreground="#DDD" FontFamily="Consolas" FontSize="14" TextWrapping="Wrap" LineHeight="22"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="3" Background="#111" Padding="8,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText" Text="就绪" Foreground="#888"/>
+                <TextBlock x:Name="LastUpdateText" Grid.Column="1" Text="上次更新: -" Foreground="#666" Margin="10,0,0,0"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -187,5 +187,8 @@ Harmony/**/node_modules/
 *.mobileprovision
 *.cer
 *.crt
+
+
 secrets.json
 credentials.json
+.vscode/
