@@ -19,6 +19,10 @@ ehthumbs.db
 *.temp
 *~
 
+# --- git和Vscode文件 ---
+.git/
+.vscode/
+
 ####################################
 # STM32 目录 (Keil MDK / STM32CubeIDE / IAR)
 ####################################
@@ -187,8 +191,7 @@ Harmony/**/node_modules/
 *.mobileprovision
 *.cer
 *.crt
-
-
 secrets.json
 credentials.json
-.vscode/
+
+
