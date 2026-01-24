@@ -12,7 +12,7 @@
         Icon="pack://application:,,,/Resources/v1.0.0/STM32_Mill_v1.0.0.ico">
 
     <Window.Resources>
-        <!-- Colors -->
+        <!-- 颜色资源定义 -->
         <Color x:Key="CardBackgroundColor">#202020</Color>
         <Color x:Key="AccentColor">#4CAF50</Color>
         <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackgroundColor}" Opacity="0.6"/>
@@ -20,7 +20,8 @@
         <SolidColorBrush x:Key="TextSecondaryBrush" Color="#AAAAAA"/>
         <SolidColorBrush x:Key="DividerBrush" Color="#404040"/>
 
-        <!-- Styles -->
+        <!-- 样式定义 -->
+        <!-- 卡片样式: 圆角、半透明背景、阴影效果 -->
         <Style x:Key="CardStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBackgroundBrush}"/>
             <Setter Property="CornerRadius" Value="12"/>
@@ -33,46 +34,155 @@
             </Setter>
         </Style>
 
+        <!-- 分组框样式 -->
         <Style TargetType="GroupBox">
             <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}"/>
             <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
 
-        <!-- Converters -->
+        <!-- 转换器资源 -->
+        <!-- 用于将布尔值 (true/false) 转换为颜色画刷 (绿色/灰色) -->
         <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
     </Window.Resources>
 
     <Grid Margin="16">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- Header -->
-            <RowDefinition Height="Auto"/> <!-- Main Dashboard -->
-            <RowDefinition Height="*"/>    <!-- Details/Log -->
-            <RowDefinition Height="Auto"/> <!-- Status Bar -->
+            <RowDefinition Height="Auto"/> <!-- 第一行: 顶部控制栏 -->
+            <RowDefinition Height="Auto"/> <!-- 第二行: 主数据仪表盘 -->
+            <RowDefinition Height="*"/>    <!-- 第三行: 详细日志区域 (自适应高度) -->
+            <RowDefinition Height="Auto"/> <!-- 第四行: 底部状态栏 -->
         </Grid.RowDefinitions>
 
-        <!-- Header: Control Bar -->
-        <Border Grid.Row="0" Margin="0,0,0,16" Padding="12" Background="#151515" CornerRadius="8" Opacity="0.8">
+        <!-- ============== 顶部控制栏 ============== -->
+        <Border Grid.Row="0" 
+                Margin="0,0,0,16" 
+                Padding="12" 
+                Background="#151515" 
+                CornerRadius="8" 
+                Opacity="0.8">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="COM:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                <ComboBox x:Name="PortComboBox" Width="100" Margin="0,0,16,0" Style="{StaticResource {x:Static ToolBar.ComboBoxStyleKey}}"/>
-                <Button Content="刷新" Click="RefreshPorts_Click" Margin="0,0,16,0" Padding="8,4"/>
+                
+                <!-- 串口选择 -->
+                <TextBlock Text="COM:" 
+                           VerticalAlignment="Center" 
+                           Foreground="{StaticResource TextSecondaryBrush}" 
+                           Margin="0,0,8,0"/>
+                <ComboBox x:Name="PortComboBox" 
+                          Width="100" 
+                          Height="25"
+                          VerticalContentAlignment="Center"
+                          Margin="0,0,16,0"
+                          PreviewMouseDown="PortComboBox_PreviewMouseDown">
+                    <!-- 1. 选择框显示：仅显示端口名 -->
 
-                <TextBlock Text="波特率:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                <ComboBox x:Name="BaudComboBox" Width="100" Margin="0,0,16,0" IsEditable="True">
-                    <ComboBoxItem Content="115200" IsSelected="True"/>
+                    
+                    <!-- 2. 下拉列表显示：显示完整描述 -->
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="ContentTemplate">
+                                <Setter.Value>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding PortName}"
+                                                       Margin="0,0,8,0"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding DisplayDescription}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
+                <!-- x:Name="PortComboBox" 用于在代码中访问此控件 -->
+                
+                <!-- 刷新串口按钮 -->
+                <Button Content="刷新" 
+                        Click="RefreshPorts_Click" 
+                        Height="25"
+                        Margin="0,0,16,0" 
+                        Padding="8,0"/>
+
+                <!-- 波特率选择 -->
+                <TextBlock Text="波特率:" 
+                           VerticalAlignment="Center" 
+                           Foreground="{StaticResource TextSecondaryBrush}" 
+                           Margin="0,0,8,0"/>
+                <ComboBox x:Name="BaudComboBox" 
+                          Width="100" 
+                          Height="25"
+                          VerticalContentAlignment="Center"
+                          Margin="0,0,16,0" 
+                          IsEditable="True">
+                    <!-- IsEditable="True" 允许用户手动输入波特率 -->
+                    <!-- 波特率从小到大排序 -->
+                    <ComboBoxItem Content="1200"/>
+                    <ComboBoxItem Content="2400"/>
+                    <ComboBoxItem Content="4800"/>
                     <ComboBoxItem Content="9600"/>
+                    <ComboBoxItem Content="19200"/>
                     <ComboBoxItem Content="38400"/>
+                    <ComboBoxItem Content="57600"/>
+                    <ComboBoxItem Content="115200" IsSelected="True"/>
+                    <ComboBoxItem Content="230400"/>
+                    <ComboBoxItem Content="460800"/>
+                    <ComboBoxItem Content="921600"/>
                 </ComboBox>
 
-                <Button x:Name="ConnectButton" Content="连接设备" Click="ConnectButton_Click" 
-                        Width="100" Background="#2196F3" Foreground="White" FontWeight="Bold" Margin="0,0,16,0" Padding="8,4"/>
+                <!-- 连接/断开按钮 -->
+                <Button x:Name="ConnectButton" 
+                        Content="连接设备" 
+                        Click="ConnectButton_Click" 
+                        Width="100" 
+                        Height="25"
+                        Background="#2196F3"
+                        Foreground="White" 
+                        FontWeight="Bold" 
+                        Margin="0,0,16,0" 
+                        Padding="8,0"/>
+                <!-- 连接时背景变为红色 #FF5252，文字变为"断开" -->
                 
-                <ToggleButton x:Name="TogglePollButton" Content="自动轮询" Click="TogglePoll_Click" Width="100" Margin="0,0,16,0" IsEnabled="False"/>
+                <!-- 自动轮询开关 -->
+                <ToggleButton x:Name="TogglePollButton" 
+                              Content="自动轮询" 
+                              Click="TogglePoll_Click" 
+                              Width="100" 
+                              Height="25"
+                              Margin="0,0,8,0" 
+                              IsEnabled="False"/>
+                
+                <!-- 轮询间隔设置 -->
+                <ComboBox x:Name="PollIntervalBox" 
+                          Width="80" 
+                          Height="25"
+                          VerticalContentAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          VerticalAlignment="Center"
+                          Margin="0,0,4,0" 
+                          Text="500" 
+                          IsEditable="True">
+                    <ComboBoxItem Content="100"/>
+                    <ComboBoxItem Content="200"/>
+                    <ComboBoxItem Content="500" IsSelected="True"/>
+                    <ComboBoxItem Content="1000"/>
+                    <ComboBoxItem Content="2000"/>
+                    <ComboBoxItem Content="5000"/>
+                </ComboBox>
+                <TextBlock Text="ms" 
+                           VerticalAlignment="Center" 
+                           Foreground="{StaticResource TextSecondaryBrush}" 
+                           Margin="0,0,0,0"/>
+                <!-- 轮询间隔单位：毫秒，连接后禁止修改 -->
             </StackPanel>
         </Border>
 
-        <!-- Main Dashboard Cards -->
+        <!-- 中部: 主要数据卡片 -->
         <Grid Grid.Row="1" Margin="0,0,0,16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -80,7 +190,7 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Card 1: Weight -->
+            <!-- 卡片 1: 称重显示 -->
             <Border Grid.Column="0" Style="{StaticResource CardStyle}">
                 <StackPanel>
                     <TextBlock Text="称重 (Weight)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
@@ -92,7 +202,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- Card 2: Temperature -->
+            <!-- 卡片 2: 温度显示 -->
             <Border Grid.Column="1" Style="{StaticResource CardStyle}">
                 <StackPanel>
                     <TextBlock Text="温度 (Temp)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
@@ -104,7 +214,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- Card 3: Flow Rate -->
+            <!-- 卡片 3: 流量显示 -->
             <Border Grid.Column="2" Style="{StaticResource CardStyle}">
                 <StackPanel>
                     <TextBlock Text="瞬时流量 (Flow Rate)" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14"/>
@@ -117,14 +227,14 @@
             </Border>
         </Grid>
 
-        <!-- Secondary Info & Details -->
+        <!-- 下部: 详细信息区域 -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.5*"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Left: Device Status & Relays -->
+            <!-- 左侧: 系统状态 & 继电器矩阵 -->
             <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="8,0,8,8">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -140,7 +250,7 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- Relay Outputs (DO) -->
+                        <!-- 继电器输出 (DO) 指示灯 -->
                         <StackPanel Grid.Column="0" Margin="0,0,20,0">
                             <TextBlock Text="继电器输出 (DO)" FontSize="16" FontWeight="Bold" Foreground="#69F0AE" Margin="0,0,0,12"/>
                             <UniformGrid Rows="2" Columns="8" HorizontalAlignment="Left">
@@ -164,7 +274,7 @@
                             <TextBlock x:Name="RelayDoHex" Text="0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
                         </StackPanel>
 
-                        <!-- Relay Inputs (DI) -->
+                        <!-- 继电器输入 (DI) 指示灯 -->
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="继电器输入 (DI)" FontSize="16" FontWeight="Bold" Foreground="#448AFF" Margin="0,0,0,12"/>
                             <UniformGrid Rows="2" Columns="8" HorizontalAlignment="Left">
@@ -191,7 +301,7 @@
                 </Grid>
             </Border>
 
-            <!-- Right: Raw Data Log/List -->
+            <!-- 右侧: 原始数据滚动日志 -->
             <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0,8,8">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -206,7 +316,7 @@
             </Border>
         </Grid>
 
-        <!-- Status Bar -->
+        <!-- 底部: 状态栏 -->
         <Border Grid.Row="3" Background="#111" Padding="8,4">
             <Grid>
                 <Grid.ColumnDefinitions>
