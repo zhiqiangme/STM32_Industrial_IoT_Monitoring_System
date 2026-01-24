@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -191,8 +191,6 @@ namespace Project
         {
             // Helper to get reg value safely
             ushort Get(int addr) => addr < regs.Length ? regs[addr] : (ushort)0;
-            int ToInt32(ushort h, ushort l) => (int)((state_uint(h) << 16) | l);
-            uint state_uint(ushort v) => v; // cast helper
             
             // 1. Update Main Cards
             // Weight Ch3 -> Reg 9, 10 (unit: grams, convert to kg when >= 900)

@@ -8,7 +8,8 @@
         Title="Modbus上位机" Height="700" Width="1100"
         WindowStartupLocation="CenterScreen"
         Foreground="White"
-        Background="Transparent">
+        Background="Transparent"
+        Icon="pack://application:,,,/Resources/v1.0.0/STM32_Mill_v1.0.0.ico">
 
     <Window.Resources>
         <!-- Colors -->

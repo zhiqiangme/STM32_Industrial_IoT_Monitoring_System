@@ -110,6 +110,7 @@ Windows/**/[Dd]ebug/
 Windows/**/[Rr]elease/
 Windows/**/[Bb]in/
 Windows/**/[Oo]bj/
+Windows/**/[Ii]nstallers/
 
 ####################################
 # Android 目录 (Gradle / Android Studio)
