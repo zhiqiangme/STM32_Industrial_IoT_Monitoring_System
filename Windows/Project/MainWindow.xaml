@@ -156,7 +156,7 @@
                               Height="25"
                               Margin="0,0,8,0" 
                               IsEnabled="False"/>
-                
+
                 <!-- 轮询间隔设置 -->
                 <ComboBox x:Name="PollIntervalBox" 
                           Width="80" 
@@ -254,48 +254,61 @@
                         <StackPanel Grid.Column="0" Margin="0,0,20,0">
                             <TextBlock Text="继电器输出 (DO)" FontSize="16" FontWeight="Bold" Foreground="#69F0AE" Margin="0,0,0,12"/>
                             <UniformGrid Rows="2" Columns="8" HorizontalAlignment="Left">
-                                <Ellipse x:Name="DO0" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO0"/>
-                                <Ellipse x:Name="DO1" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO1"/>
-                                <Ellipse x:Name="DO2" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO2"/>
-                                <Ellipse x:Name="DO3" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO3"/>
-                                <Ellipse x:Name="DO4" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO4"/>
-                                <Ellipse x:Name="DO5" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO5"/>
-                                <Ellipse x:Name="DO6" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO6"/>
-                                <Ellipse x:Name="DO7" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO7"/>
-                                <Ellipse x:Name="DO8" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO8"/>
-                                <Ellipse x:Name="DO9" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO9"/>
-                                <Ellipse x:Name="DO10" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO10"/>
-                                <Ellipse x:Name="DO11" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO11"/>
-                                <Ellipse x:Name="DO12" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO12"/>
-                                <Ellipse x:Name="DO13" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO13"/>
-                                <Ellipse x:Name="DO14" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO14"/>
-                                <Ellipse x:Name="DO15" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO15"/>
+                                <Ellipse x:Name="DO0" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO1" Tag="1" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO1" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO2" Tag="2" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO2" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO3" Tag="3" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO3" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO4" Tag="4" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO4" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO5" Tag="5" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO5" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO6" Tag="6" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO6" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO7" Tag="7" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO7" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO8" Tag="8" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO8" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO9" Tag="9" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO9" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO10" Tag="10" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO10" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO11" Tag="11" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO11" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO12" Tag="12" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO12" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO13" Tag="13" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO13" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO14" Tag="14" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO14" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO15" Tag="15" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
+                                <Ellipse x:Name="DO15" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DO16" Tag="16" Cursor="Hand" MouseLeftButtonDown="RelayOutput_Click"/>
                             </UniformGrid>
-                            <TextBlock x:Name="RelayDoHex" Text="0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
+                            <TextBlock x:Name="RelayDoHex" Text="DO: 0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
+                            <TextBlock x:Name="RelayBitsHex" Text="状态位图(0x0014): 0x0000" FontSize="12" Foreground="#777" Margin="4,4,0,0"/>
+                            <Button Content="全关"
+                                    Click="RelayAllOff_Click"
+                                    Height="25"
+                                    Margin="4,8,0,0"
+                                    Padding="10,0"
+                                    Width="80"/>
                         </StackPanel>
 
                         <!-- 继电器输入 (DI) 指示灯 -->
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="继电器输入 (DI)" FontSize="16" FontWeight="Bold" Foreground="#448AFF" Margin="0,0,0,12"/>
                             <UniformGrid Rows="2" Columns="8" HorizontalAlignment="Left">
-                                <Ellipse x:Name="DI0" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI0"/>
-                                <Ellipse x:Name="DI1" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI1"/>
-                                <Ellipse x:Name="DI2" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI2"/>
-                                <Ellipse x:Name="DI3" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI3"/>
-                                <Ellipse x:Name="DI4" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI4"/>
-                                <Ellipse x:Name="DI5" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI5"/>
-                                <Ellipse x:Name="DI6" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI6"/>
-                                <Ellipse x:Name="DI7" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI7"/>
-                                <Ellipse x:Name="DI8" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI8"/>
-                                <Ellipse x:Name="DI9" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI9"/>
-                                <Ellipse x:Name="DI10" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI10"/>
-                                <Ellipse x:Name="DI11" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI11"/>
-                                <Ellipse x:Name="DI12" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI12"/>
-                                <Ellipse x:Name="DI13" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI13"/>
-                                <Ellipse x:Name="DI14" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI14"/>
-                                <Ellipse x:Name="DI15" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI15"/>
+                                <Ellipse x:Name="DI0" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI1" Tag="1" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI1" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI2" Tag="2" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI2" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI3" Tag="3" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI3" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI4" Tag="4" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI4" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI5" Tag="5" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI5" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI6" Tag="6" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI6" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI7" Tag="7" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI7" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI8" Tag="8" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI8" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI9" Tag="9" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI9" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI10" Tag="10" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI10" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI11" Tag="11" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI11" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI12" Tag="12" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI12" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI13" Tag="13" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI13" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI14" Tag="14" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI14" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI15" Tag="15" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
+                                <Ellipse x:Name="DI15" Width="20" Height="20" Margin="4" Fill="Gray" ToolTip="DI16" Tag="16" Cursor="Hand" MouseLeftButtonDown="RelayInput_MouseDown" MouseLeftButtonUp="RelayInput_MouseUp"/>
                             </UniformGrid>
-                            <TextBlock x:Name="RelayDiHex" Text="0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
+                            <TextBlock x:Name="RelayDiHex" Text="DI: 0x0000" FontSize="14" Foreground="#888" Margin="4,8,0,0"/>
+                            <Button Content="清除标记"
+                                    Click="ClearInputMarks_Click"
+                                    Height="25"
+                                    Margin="4,8,0,0"
+                                    Padding="10,0"
+                                    Width="80"/>
                         </StackPanel>
                     </Grid>
                 </Grid>

@@ -1,5 +1,5 @@
 #include "Temperature.h"
-#include "RS485_Master.h"
+#include "Modbus_Master.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -43,10 +43,10 @@ uint8_t Temperature_Read(float *temp_val)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
     /* 期望响应长度：ID + FC + Len + Data(2) + CRC(2) = 7 字节 */
-    if (RS485_MasterReceive(rx_buf, 7, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 7, 500) != HAL_OK)
     {
         return 1;
     }

@@ -44,15 +44,25 @@ namespace Project
         private const ushort REG_FLOW_RATE = 0x000D;      // 瞬时流量
         private const ushort REG_FLOW_TOTAL_HIGH = 0x000E;// 累计流量 (高16位)
         private const ushort REG_FLOW_TOTAL_LOW = 0x000F; // 累计流量 (低16位)
+        private const ushort REG_RELAY_CTRL = 0x0010;     // 继电器控制寄存器
         private const ushort REG_RELAY_DO = 0x0011;       // 继电器输出状态 (DO)
         private const ushort REG_RELAY_DI = 0x0012;       // 继电器输入状态 (DI)
         private const ushort REG_SYSTEM_STATUS = 0x0013;  // 系统状态寄存器
+        private const ushort REG_RELAY_BITS = 0x0014;     // 继电器状态位图
+        private const ushort REG_RELAY_CMD_BITS = 0x0015; // 继电器命令位图
 
         private readonly ModbusFactory _modbusFactory = new();
         private DispatcherTimer? _pollTimer;      // 轮询定时器
         private SerialPort? _serialPort;          // 串口对象
         private IModbusSerialMaster? _master;     // Modbus 主站对象
         private bool _isPolling;                  // 标志位：是否正在进行一次轮询
+        private bool _isWriting;                  // 标志位：是否正在写入继电器
+        private ushort _relayDoValue;             // 最新 DO 寄存器值
+        private ushort _softInputMarks;           // 软件触发后的输入指示标记
+        private ushort _desiredRelayMask;         // 期望的继电器输出位图
+        private bool _hasDesiredRelayMask;        // 是否已有期望位图
+        private bool _writePending;               // 是否有待写入的命令
+        private ushort _lastDiReg;                // 最新 DI 寄存器值
 
         public MainWindow()
         {
@@ -318,12 +328,7 @@ namespace Project
             // 称重 Ch3 -> 对应寄存器 9, 10
             // 逻辑处理：如果数值 >= 900，单位显示为 kg，否则显示为 g
             int weightValRaw = (int)((Get(REG_WEIGHT_CH3_H) << 16) | Get(REG_WEIGHT_CH3_L));
-            if (weightValRaw == -1) // 异常值处理
-            {
-                MainWeightText.Text = "---";
-                MainWeightUnit.Text = "g";
-            }
-            else if (weightValRaw >= 900)
+            if (weightValRaw >= 900)
             {
                 // 转换为 kg (除以 1000)
                 MainWeightText.Text = (weightValRaw / 1000.0).ToString("F2");
@@ -351,9 +356,19 @@ namespace Project
             // 2. 更新继电器状态 - 直接控制 Ellipse 颜色
             ushort doReg = Get(REG_RELAY_DO);
             ushort diReg = Get(REG_RELAY_DI);
+            _relayDoValue = doReg;
+            _lastDiReg = diReg;
+            if (!_isWriting && !_writePending)
+            {
+                _desiredRelayMask = doReg;
+                _hasDesiredRelayMask = true;
+            }
             
-            RelayDoHex.Text = $"0x{doReg:X4}";
-            RelayDiHex.Text = $"0x{diReg:X4}";
+            ushort bitsReg = Get(REG_RELAY_BITS);
+            
+            RelayDoHex.Text = $"DO: 0x{doReg:X4}";
+            RelayDiHex.Text = $"DI: 0x{diReg:X4}";
+            RelayBitsHex.Text = $"状态位图(0x0014): 0x{bitsReg:X4}";
 
             // 更新 16 个输出 (DO) 指示灯
             UpdateRelayDot(DO0, doReg, 0);
@@ -373,23 +388,23 @@ namespace Project
             UpdateRelayDot(DO14, doReg, 14);
             UpdateRelayDot(DO15, doReg, 15);
 
-            // 更新 16 个输入 (DI) 指示灯
-            UpdateRelayDot(DI0, diReg, 0);
-            UpdateRelayDot(DI1, diReg, 1);
-            UpdateRelayDot(DI2, diReg, 2);
-            UpdateRelayDot(DI3, diReg, 3);
-            UpdateRelayDot(DI4, diReg, 4);
-            UpdateRelayDot(DI5, diReg, 5);
-            UpdateRelayDot(DI6, diReg, 6);
-            UpdateRelayDot(DI7, diReg, 7);
-            UpdateRelayDot(DI8, diReg, 8);
-            UpdateRelayDot(DI9, diReg, 9);
-            UpdateRelayDot(DI10, diReg, 10);
-            UpdateRelayDot(DI11, diReg, 11);
-            UpdateRelayDot(DI12, diReg, 12);
-            UpdateRelayDot(DI13, diReg, 13);
-            UpdateRelayDot(DI14, diReg, 14);
-            UpdateRelayDot(DI15, diReg, 15);
+            // DI 圆点：物理开关按下时标蓝色，松手不强制变灰
+            UpdateRelayInputDot(DI0, diReg, 0);
+            UpdateRelayInputDot(DI1, diReg, 1);
+            UpdateRelayInputDot(DI2, diReg, 2);
+            UpdateRelayInputDot(DI3, diReg, 3);
+            UpdateRelayInputDot(DI4, diReg, 4);
+            UpdateRelayInputDot(DI5, diReg, 5);
+            UpdateRelayInputDot(DI6, diReg, 6);
+            UpdateRelayInputDot(DI7, diReg, 7);
+            UpdateRelayInputDot(DI8, diReg, 8);
+            UpdateRelayInputDot(DI9, diReg, 9);
+            UpdateRelayInputDot(DI10, diReg, 10);
+            UpdateRelayInputDot(DI11, diReg, 11);
+            UpdateRelayInputDot(DI12, diReg, 12);
+            UpdateRelayInputDot(DI13, diReg, 13);
+            UpdateRelayInputDot(DI14, diReg, 14);
+            UpdateRelayInputDot(DI15, diReg, 15);
 
             // 3. 更新详细日志文本
             var sb = new StringBuilder();
@@ -405,7 +420,7 @@ namespace Project
             
             sb.AppendLine("--- 状态寄存器 ---");
             sb.AppendLine($"系统状态: 0x{Get(REG_SYSTEM_STATUS):X4}");
-            sb.AppendLine($"继电器控制字: 0x{Get(0x0010):X4}"); // 寄存器 16 (0x0010)
+            sb.AppendLine($"继电器控制字: 0x{Get(REG_RELAY_CTRL):X4}"); // 寄存器 16 (0x0010)
             
             DetailLogText.Text = sb.ToString();
 
@@ -428,6 +443,147 @@ namespace Project
             // 检查对应位是否为 1
             bool isOn = ((regValue >> bitIndex) & 1) == 1;
             dot.Fill = isOn ? Brushes.LimeGreen : Brushes.Gray;
+        }
+
+        private void UpdateRelayInputDot(System.Windows.Shapes.Ellipse dot, ushort regValue, int bitIndex)
+        {
+            bool isOn = ((regValue >> bitIndex) & 1) == 1;
+            if (isOn)
+            {
+                dot.Fill = Brushes.DodgerBlue;
+                _softInputMarks = (ushort)(_softInputMarks & ~(1 << bitIndex));
+                return;
+            }
+
+            bool isSoft = ((_softInputMarks >> bitIndex) & 1) == 1;
+            dot.Fill = isSoft ? Brushes.LightGray : Brushes.Gray;
+        }
+
+        /// <summary>
+        /// 点击 DO 指示灯切换继电器输出
+        /// </summary>
+        private async Task ToggleRelayChannelAsync(int channel)
+        {
+            if (_master == null)
+            {
+                UpdateStatus("未连接设备");
+                return;
+            }
+
+            if (channel < 1 || channel > 16) return;
+            var bitIndex = channel - 1;
+
+            var baseValue = _hasDesiredRelayMask ? _desiredRelayMask : _relayDoValue;
+            var newValue = (ushort)(baseValue ^ (1 << bitIndex));
+            QueueRelayWrite(newValue, $"已设置 DO{channel}");
+        }
+
+        private void QueueRelayWrite(ushort newValue, string successStatus)
+        {
+            _desiredRelayMask = newValue;
+            _hasDesiredRelayMask = true;
+            _writePending = true;
+
+            if (_isWriting) return;
+            _ = WriteRelayMaskAsync(successStatus);
+        }
+
+        private async Task WriteRelayMaskAsync(string successStatus)
+        {
+            if (_master == null) return;
+            _isWriting = true;
+
+            var wasPolling = _pollTimer?.IsEnabled == true;
+            if (wasPolling) _pollTimer?.Stop();
+
+            try
+            {
+                while (_writePending)
+                {
+                    _writePending = false;
+                    var valueToWrite = _desiredRelayMask;
+                    await _master.WriteSingleRegisterAsync(SlaveId, REG_RELAY_CMD_BITS, valueToWrite);
+                    _relayDoValue = valueToWrite;
+                    await PollOnceAsync();
+                }
+                UpdateStatus(successStatus);
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"写入失败: {ex.Message}");
+            }
+            finally
+            {
+                if (wasPolling) _pollTimer?.Start();
+                _isWriting = false;
+            }
+        }
+
+        private async void RelayAllOff_Click(object sender, RoutedEventArgs e)
+        {
+            if (_master == null)
+            {
+                UpdateStatus("未连接设备");
+                return;
+            }
+
+            QueueRelayWrite(0, "已全关继电器");
+        }
+
+        private async void RelayOutput_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is not System.Windows.Shapes.Ellipse dot) return;
+            if (dot.Tag == null) return;
+            if (!int.TryParse(dot.Tag.ToString(), out var channel)) return;
+            await ToggleRelayChannelAsync(channel);
+        }
+
+        private void RelayInput_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is System.Windows.Shapes.Ellipse dot)
+            {
+                dot.Fill = Brushes.DodgerBlue;
+                if (dot.Tag != null && int.TryParse(dot.Tag.ToString(), out var channel) && channel >= 1 && channel <= 16)
+                {
+                    int bitIndex = channel - 1;
+                    _softInputMarks = (ushort)(_softInputMarks & ~(1 << bitIndex));
+                }
+            }
+        }
+
+        private async void RelayInput_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is not System.Windows.Shapes.Ellipse dot) return;
+            if (dot.Tag == null) return;
+            if (!int.TryParse(dot.Tag.ToString(), out var channel)) return;
+            if (channel >= 1 && channel <= 16)
+            {
+                int bitIndex = channel - 1;
+                _softInputMarks = (ushort)(_softInputMarks | (1 << bitIndex));
+                dot.Fill = Brushes.LightGray;
+            }
+            await ToggleRelayChannelAsync(channel);
+        }
+
+        private void ClearInputMarks_Click(object sender, RoutedEventArgs e)
+        {
+            _softInputMarks = 0;
+            UpdateRelayInputDot(DI0, _lastDiReg, 0);
+            UpdateRelayInputDot(DI1, _lastDiReg, 1);
+            UpdateRelayInputDot(DI2, _lastDiReg, 2);
+            UpdateRelayInputDot(DI3, _lastDiReg, 3);
+            UpdateRelayInputDot(DI4, _lastDiReg, 4);
+            UpdateRelayInputDot(DI5, _lastDiReg, 5);
+            UpdateRelayInputDot(DI6, _lastDiReg, 6);
+            UpdateRelayInputDot(DI7, _lastDiReg, 7);
+            UpdateRelayInputDot(DI8, _lastDiReg, 8);
+            UpdateRelayInputDot(DI9, _lastDiReg, 9);
+            UpdateRelayInputDot(DI10, _lastDiReg, 10);
+            UpdateRelayInputDot(DI11, _lastDiReg, 11);
+            UpdateRelayInputDot(DI12, _lastDiReg, 12);
+            UpdateRelayInputDot(DI13, _lastDiReg, 13);
+            UpdateRelayInputDot(DI14, _lastDiReg, 14);
+            UpdateRelayInputDot(DI15, _lastDiReg, 15);
         }
     }
 

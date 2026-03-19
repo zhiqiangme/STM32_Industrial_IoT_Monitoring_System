@@ -1,5 +1,5 @@
 #include "Weight.h"
-#include "RS485_Master.h"
+#include "Modbus_Master.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -42,9 +42,9 @@ uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 7, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 7, 500) != HAL_OK)
     {
         return 1;
     }
@@ -86,9 +86,9 @@ uint8_t Weight_WriteRegister(uint16_t reg_addr, uint16_t value)
 
     printf("[Weight] Write reg 0x%04X = 0x%04X\r\n", reg_addr, value);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 8, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
     {
         printf("[Weight] Write timeout\r\n");
         return 1;
@@ -208,9 +208,9 @@ uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 9, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 9, 500) != HAL_OK)
     {
         return 1;
     }

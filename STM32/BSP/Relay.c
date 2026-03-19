@@ -1,5 +1,5 @@
 #include "Relay.h"
-#include "RS485_Master.h"
+#include "Modbus_Master.h"
 #include <stdio.h>
 
 /* Modbus CRC16 计算，低字节在前 */
@@ -46,9 +46,9 @@ uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 8, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
     {
         return 1;
     }
@@ -81,9 +81,9 @@ uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 6, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 6, 500) != HAL_OK)
     {
         return 1;
     }
@@ -124,9 +124,9 @@ uint8_t Relay_ReadAllCoils(uint16_t *mask)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 7, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 7, 500) != HAL_OK)
     {
         return 1;
     }
@@ -166,9 +166,9 @@ uint8_t Relay_ReadInputPack(uint16_t *mask)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    HAL_StatusTypeDef ret = RS485_MasterReceive(rx_buf, 7, 500);
+    HAL_StatusTypeDef ret = Modbus_MasterReceive(rx_buf, 7, 500);
 
     if (ret != HAL_OK)
     {
@@ -211,9 +211,9 @@ uint8_t Relay_BatchControl(uint8_t all_on)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 8, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
     {
         return 1;
     }
@@ -237,9 +237,9 @@ uint8_t Relay_SetOutputMask(uint16_t mask)
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
-    RS485_MasterSend(tx_buf, sizeof(tx_buf));
+    Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
-    if (RS485_MasterReceive(rx_buf, 8, 500) != HAL_OK)
+    if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
     {
         return 1;
     }
