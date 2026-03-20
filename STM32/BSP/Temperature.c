@@ -3,6 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 计算 PT100 变送器 Modbus RTU 帧的 CRC16。
+ * @param buf: 参与 CRC 计算的数据缓冲区
+ * @param len: 参与 CRC 计算的字节数
+ * @retval 计算得到的 CRC16
+ */
 /* Modbus CRC16 计算（低字节在前） */
 static uint16_t PT100_CalcCrc(const uint8_t *buf, uint16_t len)
 {
@@ -26,6 +32,11 @@ static uint16_t PT100_CalcCrc(const uint8_t *buf, uint16_t len)
     return crc;
 }
 
+/**
+ * @brief 读取 PT100 变送器 CH4 温度并转换为摄氏度浮点数。
+ * @param temp_val: 输出温度指针，单位为 ℃
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Temperature_Read(float *temp_val)
 {
     uint8_t tx_buf[8];

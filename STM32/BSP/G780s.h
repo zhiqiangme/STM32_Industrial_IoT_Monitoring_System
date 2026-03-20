@@ -45,19 +45,53 @@ typedef struct {
 
 typedef G780sSlaveData ModbusSlaveData_t;
 
-/* 初始化：打开 GPIO/USART3，默认接收 */
+/**
+ * @brief 初始化 G780S 业务层和底层 Modbus 从站引擎。
+ * @param 无
+ * @retval 无
+ */
 void G780s_Init(void);
-/* 周期处理：检测帧间静默并解析完整帧 */
+
+/**
+ * @brief 在主循环中处理 G780S 对应的 Modbus 从站任务。
+ * @param 无
+ * @retval 无
+ */
 void G780s_Process(void);
-/* 兼容旧接口：当前 nanoMODBUS 轮询模式下无需逐字节中断接收 */
+
+/**
+ * @brief 兼容旧接口的接收字节入口，内部转发给通用从站引擎。
+ * @param byte: 串口收到的单个字节
+ * @retval 无
+ */
 void G780s_RxCallback(uint8_t byte);
-/* 更新从站寄存器数据（需在关中断状态下写入） */
+
+/**
+ * @brief 更新 G780S 业务寄存器镜像。
+ * @param data: 最新的业务数据快照
+ * @retval 无
+ */
 void G780s_UpdateData(const G780sSlaveData *data);
-/* 获取底层 UART 句柄，供中断或测试使用 */
+
+/**
+ * @brief 获取 G780S 使用的底层 UART 句柄。
+ * @param 无
+ * @retval UART_HandleTypeDef*: USART3 句柄指针
+ */
 UART_HandleTypeDef *G780s_GetHandle(void);
-/* 云端命令：获取继电器翻转控制值 */
+
+/**
+ * @brief 获取继电器翻转控制寄存器的当前值。
+ * @param 无
+ * @retval 当前寄存器值
+ */
 uint16_t G780s_GetRelayCtrl(void);
-/* 云端命令：获取继电器按位控制值 */
+
+/**
+ * @brief 获取继电器按位命令位图寄存器的当前值。
+ * @param 无
+ * @retval 当前寄存器值
+ */
 uint16_t G780s_GetRelayBits(void);
 
 #define ModbusSlave_Task()           G780s_Process()

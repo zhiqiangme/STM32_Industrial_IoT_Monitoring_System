@@ -2,6 +2,12 @@
 #include "Modbus_Master.h"
 #include <stdio.h>
 
+/**
+ * @brief 计算继电器模块 Modbus RTU 帧的 CRC16。
+ * @param buf: 参与 CRC 计算的数据缓冲区
+ * @param len: 参与 CRC 计算的字节数
+ * @retval 计算得到的 CRC16
+ */
 /* Modbus CRC16 计算，低字节在前 */
 static uint16_t Relay_CalcCrc(const uint8_t *buf, uint16_t len)
 {
@@ -25,6 +31,12 @@ static uint16_t Relay_CalcCrc(const uint8_t *buf, uint16_t len)
     return crc;
 }
 
+/**
+ * @brief 写单个继电器线圈，控制指定通道吸合或断开。
+ * @param channel: 继电器通道号，范围 1-16
+ * @param on: 目标状态，1 为开，0 为关
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on)
 {
     uint8_t tx_buf[8];
@@ -61,6 +73,12 @@ uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on)
     return 0;
 }
 
+/**
+ * @brief 读取单个继电器线圈当前状态。
+ * @param channel: 继电器通道号，范围 1-16
+ * @param state: 输出状态指针，1 为开，0 为关
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
 {
     uint8_t tx_buf[8];
@@ -107,6 +125,11 @@ uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
     return 0;
 }
 
+/**
+ * @brief 一次性读取全部 16 路继电器输出状态位。
+ * @param mask: 输出位图指针，bit0-bit15 对应 CH1-CH16
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ReadAllCoils(uint16_t *mask)
 {
     uint8_t tx_buf[8];
@@ -150,6 +173,11 @@ uint8_t Relay_ReadAllCoils(uint16_t *mask)
     return 0;
 }
 
+/**
+ * @brief 读取继电器模块的输入打包寄存器。
+ * @param mask: 输出输入位图指针
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ReadInputPack(uint16_t *mask)
 {
     uint8_t tx_buf[8];
@@ -194,6 +222,11 @@ uint8_t Relay_ReadInputPack(uint16_t *mask)
     return 0;
 }
 
+/**
+ * @brief 批量控制全部输出通道全开或全关。
+ * @param all_on: 1 表示全开，0 表示全关
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_BatchControl(uint8_t all_on)
 {
     uint8_t tx_buf[8];
@@ -221,6 +254,11 @@ uint8_t Relay_BatchControl(uint8_t all_on)
     return 0;
 }
 
+/**
+ * @brief 直接写入输出位图寄存器，按位控制多路继电器输出。
+ * @param mask: 目标输出位图
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_SetOutputMask(uint16_t mask)
 {
     uint8_t tx_buf[8];
@@ -247,6 +285,11 @@ uint8_t Relay_SetOutputMask(uint16_t mask)
     return 0;
 }
 
+/**
+ * @brief 翻转指定通道的继电器输出状态。
+ * @param channel: 继电器通道号，范围 1-16
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ToggleOutput(uint8_t channel)
 {
     uint8_t current_state = 0;

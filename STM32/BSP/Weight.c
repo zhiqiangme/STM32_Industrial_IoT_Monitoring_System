@@ -3,6 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 计算称重模块 Modbus RTU 帧的 CRC16。
+ * @param buf: 参与 CRC 计算的数据缓冲区
+ * @param len: 参与 CRC 计算的字节数
+ * @retval 计算得到的 CRC16
+ */
 /* Modbus CRC16 计算，低字节在前 */
 static uint16_t Weight_CalcCrc(const uint8_t *buf, uint16_t len)
 {
@@ -26,6 +32,12 @@ static uint16_t Weight_CalcCrc(const uint8_t *buf, uint16_t len)
     return crc;
 }
 
+/**
+ * @brief 读取称重模块的单个保持寄存器。
+ * @param reg_addr: 目标寄存器地址
+ * @param value: 输出寄存器值指针
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
 {
     uint8_t tx_buf[8];
@@ -68,6 +80,12 @@ uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
     return 0;
 }
 
+/**
+ * @brief 向称重模块写入单个保持寄存器。
+ * @param reg_addr: 目标寄存器地址
+ * @param value: 待写入的寄存器值
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Weight_WriteRegister(uint16_t reg_addr, uint16_t value)
 {
     uint8_t tx_buf[8];
@@ -98,6 +116,11 @@ uint8_t Weight_WriteRegister(uint16_t reg_addr, uint16_t value)
     return 0;
 }
 
+/**
+ * @brief 读取并打印 CH3 的关键配置项。
+ * @param 无
+ * @retval 无
+ */
 void Weight_ReadCh3Config(void)
 {
     uint16_t val;
@@ -147,6 +170,11 @@ void Weight_ReadCh3Config(void)
     printf("======================\r\n\r\n");
 }
 
+/**
+ * @brief 把 CH3 的常用默认参数写回称重模块。
+ * @param 无
+ * @retval 无
+ */
 void Weight_WriteCh3Defaults(void)
 {
     printf("\r\n=== Set Weight CH3 defaults ===\r\n");
@@ -166,6 +194,11 @@ void Weight_WriteCh3Defaults(void)
     printf("================================\r\n\r\n");
 }
 
+/**
+ * @brief 设置 CH3 的浮点校准系数，按两个 16 位寄存器写入。
+ * @param coeff: 待写入的浮点校准系数
+ * @retval 无
+ */
 void Weight_WriteCh3Coefficient(float coeff)
 {
     uint32_t raw;
@@ -184,6 +217,12 @@ void Weight_WriteCh3Coefficient(float coeff)
     HAL_Delay(100);
 }
 
+/**
+ * @brief 读取指定称重通道的 32 位重量值。
+ * @param channel: 通道号，范围 1-4
+ * @param weight_g: 输出重量值指针，单位为 g
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
 {
     uint8_t tx_buf[8];
@@ -241,11 +280,21 @@ uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
     return 0;
 }
 
+/**
+ * @brief 读取默认使用的 CH3 重量值。
+ * @param weight_g: 输出重量值指针，单位为 g
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Weight_Read(int32_t *weight_g)
 {
     return Weight_ReadChannel(3, weight_g);
 }
 
+/**
+ * @brief 轮询读取并打印全部 4 个称重通道的重量值。
+ * @param 无
+ * @retval 无
+ */
 void Weight_ScanAllChannels(void)
 {
     printf("\r\n=== Weight Channel Scan ===\r\n");
@@ -265,12 +314,22 @@ void Weight_ScanAllChannels(void)
     printf("=========================\r\n\r\n");
 }
 
+/**
+ * @brief 对 CH3 执行去皮操作。
+ * @param 无
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Weight_TareCh3(void)
 {
     printf("[Weight] Tare CH3...\r\n");
     return Weight_WriteRegister(WEIGHT_REG_TARE, WEIGHT_CH3_ACTION);
 }
 
+/**
+ * @brief 对 CH3 执行零点校准操作。
+ * @param 无
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Weight_ZeroCalibrateCh3(void)
 {
     printf("[Weight] Zero calibration CH3...\r\n");

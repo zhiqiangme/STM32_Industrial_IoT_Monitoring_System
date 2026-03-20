@@ -1,355 +1,157 @@
 #include "G780s.h"
+#include "Modbus_Slave.h"
 #include <stdio.h>
 #include <string.h>
 
-#define G780S_EN_PORT              GPIOA
-#define G780S_EN_PIN               GPIO_PIN_5
-#define G780S_TX_PORT              GPIOB
-#define G780S_TX_PIN               GPIO_PIN_10
-#define G780S_RX_PORT              GPIOB
-#define G780S_RX_PIN               GPIO_PIN_11
-#define G780S_TX_ENABLE()          HAL_GPIO_WritePin(G780S_EN_PORT, G780S_EN_PIN, GPIO_PIN_SET)
-#define G780S_RX_ENABLE()          HAL_GPIO_WritePin(G780S_EN_PORT, G780S_EN_PIN, GPIO_PIN_RESET)
-
-#define MODBUS_BAUDRATE            115200
-#define MODBUS_RX_BUF_SIZE         64
-#define MODBUS_TX_BUF_SIZE         64
-#define MODBUS_FRAME_TIMEOUT_MS    10
-
-#define FC_READ_INPUT_REGS         0x04
-#define FC_READ_HOLD_REGS          0x03
-#define FC_WRITE_SINGLE_REG        0x06
-#define FC_WRITE_SINGLE_COIL       0x05
-
-static UART_HandleTypeDef g_huart3;
-static uint8_t g_rx_buf[MODBUS_RX_BUF_SIZE];
-static volatile uint16_t g_rx_len = 0;
-static volatile uint32_t g_last_rx_tick = 0;
-static volatile uint8_t g_frame_ready = 0;
-
-static uint8_t g_tx_buf[MODBUS_TX_BUF_SIZE];
 static uint16_t g_registers[MODBUS_REG_COUNT];
 
-/* Keep the last valid response around for debugging unexpected line noise. */
-static uint8_t g_last_tx_len = 0;
-
-static uint16_t Modbus_CRC16(const uint8_t *buf, uint16_t len)
+/**
+ * @brief 读取 G780S 业务寄存器镜像中的一段寄存器。
+ * @param start_addr: 起始寄存器地址
+ * @param reg_count: 连续读取的寄存器数量
+ * @param out_regs: 输出缓冲区
+ * @param context: 业务上下文，当前未使用
+ * @retval 0 表示成功，非 0 为 Modbus 异常码
+ */
+/* G780S 业务层只维护寄存器镜像，真正的 RTU 收发由 Modbus_Slave 负责。 */
+static uint8_t G780s_ReadRegisters(uint16_t start_addr,
+                                   uint16_t reg_count,
+                                   uint16_t *out_regs,
+                                   void *context)
 {
-    uint16_t crc = 0xFFFF;
+    (void)context;
 
-    for (uint16_t pos = 0; pos < len; pos++)
+    if (out_regs == NULL)
     {
-        crc ^= (uint16_t)buf[pos];
-        for (uint8_t i = 0; i < 8; i++)
-        {
-            if (crc & 0x0001U)
-            {
-                crc >>= 1;
-                crc ^= 0xA001U;
-            }
-            else
-            {
-                crc >>= 1;
-            }
-        }
+        return 0x03;
     }
 
-    return crc;
-}
-
-static void G780s_ClearPendingRx(void)
-{
-    while (__HAL_UART_GET_FLAG(&g_huart3, UART_FLAG_RXNE) != RESET)
+    /* 业务层统一做地址边界检查，返回标准 Modbus 异常码。 */
+    if ((uint32_t)start_addr + reg_count > MODBUS_REG_COUNT)
     {
-        (void)(g_huart3.Instance->DR & 0xFF);
+        return 0x02;
     }
 
-    if (__HAL_UART_GET_FLAG(&g_huart3, UART_FLAG_ORE) != RESET)
-    {
-        __HAL_UART_CLEAR_OREFLAG(&g_huart3);
-    }
-    if (__HAL_UART_GET_FLAG(&g_huart3, UART_FLAG_FE) != RESET)
-    {
-        __HAL_UART_CLEAR_FEFLAG(&g_huart3);
-    }
-    if (__HAL_UART_GET_FLAG(&g_huart3, UART_FLAG_NE) != RESET)
-    {
-        __HAL_UART_CLEAR_NEFLAG(&g_huart3);
-    }
-}
-
-static void G780s_SendResponse(uint8_t *data, uint16_t len)
-{
-    uint16_t crc;
-
-    if (len + 2 > MODBUS_TX_BUF_SIZE)
-    {
-        return;
-    }
-
-    crc = Modbus_CRC16(data, len);
-    data[len] = (uint8_t)(crc & 0xFF);
-    data[len + 1] = (uint8_t)((crc >> 8) & 0xFF);
-    len += 2;
-
-    memcpy(g_tx_buf, data, len);
-    g_last_tx_len = (uint8_t)len;
-
-    G780S_TX_ENABLE();
-    for (volatile int i = 0; i < 500; i++)
-    {
-    }
-
-    (void)HAL_UART_Transmit(&g_huart3, g_tx_buf, len, 100);
-    while (__HAL_UART_GET_FLAG(&g_huart3, UART_FLAG_TC) == RESET)
-    {
-    }
-
-    for (volatile int i = 0; i < 200; i++)
-    {
-    }
-    G780S_RX_ENABLE();
-    G780s_ClearPendingRx();
-}
-
-static void G780s_SendException(uint8_t fc, uint8_t exception_code)
-{
-    uint8_t frame[5];
-
-    frame[0] = MODBUS_SLAVE_ADDR;
-    frame[1] = (uint8_t)(fc | 0x80U);
-    frame[2] = exception_code;
-    G780s_SendResponse(frame, 3);
-}
-
-static void G780s_HandleReadRegs(const uint8_t *frame, uint16_t len, uint8_t fc)
-{
-    uint16_t start_addr;
-    uint16_t reg_count;
-    uint16_t idx = 3;
-
-    if (len < 8)
-    {
-        return;
-    }
-
-    start_addr = (uint16_t)(((uint16_t)frame[2] << 8) | frame[3]);
-    reg_count = (uint16_t)(((uint16_t)frame[4] << 8) | frame[5]);
-
-    if (reg_count == 0 || reg_count > 125 || (uint32_t)start_addr + reg_count > MODBUS_REG_COUNT)
-    {
-        G780s_SendException(fc, 0x02);
-        return;
-    }
-
-    g_tx_buf[0] = MODBUS_SLAVE_ADDR;
-    g_tx_buf[1] = fc;
-    g_tx_buf[2] = (uint8_t)(reg_count * 2U);
-
+    /* 读寄存器和主循环写寄存器可能并发发生，这里短暂关中断保证一致性。 */
+    __disable_irq();
     for (uint16_t i = 0; i < reg_count; i++)
     {
-        uint16_t reg_val = g_registers[start_addr + i];
-        g_tx_buf[idx++] = (uint8_t)(reg_val >> 8);
-        g_tx_buf[idx++] = (uint8_t)(reg_val & 0xFF);
+        out_regs[i] = g_registers[start_addr + i];
     }
+    __enable_irq();
 
-    G780s_SendResponse(g_tx_buf, idx);
+    return 0;
 }
 
-static void G780s_HandleWriteSingleReg(const uint8_t *frame, uint16_t len)
+/**
+ * @brief 处理云端写单寄存器命令，只允许写继电器相关寄存器。
+ * @param reg_addr: 目标寄存器地址
+ * @param reg_value: 待写入的寄存器值
+ * @param context: 业务上下文，当前未使用
+ * @retval 0 表示成功，非 0 为 Modbus 异常码
+ */
+static uint8_t G780s_WriteSingleRegister(uint16_t reg_addr,
+                                         uint16_t reg_value,
+                                         void *context)
 {
-    uint16_t reg_addr;
-    uint16_t reg_val;
+    (void)context;
 
-    if (len < 8)
-    {
-        return;
-    }
-
-    reg_addr = (uint16_t)(((uint16_t)frame[2] << 8) | frame[3]);
-    reg_val = (uint16_t)(((uint16_t)frame[4] << 8) | frame[5]);
-
+    /* 当前只允许云端改继电器相关寄存器，其它地址一律拒绝。 */
     if (reg_addr != REG_RELAY_CTRL && reg_addr != REG_RELAY_CMD_BITS)
     {
-        G780s_SendException(FC_WRITE_SINGLE_REG, 0x02);
-        return;
+        return 0x02;
     }
 
-    g_registers[reg_addr] = reg_val;
-    memcpy(g_tx_buf, frame, 6);
-    G780s_SendResponse(g_tx_buf, 6);
+    g_registers[reg_addr] = reg_value;
+    return 0;
 }
 
-static void G780s_HandleWriteSingleCoil(const uint8_t *frame, uint16_t len)
+/**
+ * @brief 处理云端写单线圈命令，把线圈状态映射到继电器命令位图。
+ * @param coil_addr: 线圈地址
+ * @param coil_value: 线圈目标状态，true 为置位
+ * @param context: 业务上下文，当前未使用
+ * @retval 0 表示成功，非 0 为 Modbus 异常码
+ */
+static uint8_t G780s_WriteSingleCoil(uint16_t coil_addr,
+                                     bool coil_value,
+                                     void *context)
 {
-    uint16_t coil_addr;
-    uint16_t coil_val;
     uint16_t bit_num;
     uint16_t current;
 
-    if (len < 8)
-    {
-        return;
-    }
+    (void)context;
 
-    coil_addr = (uint16_t)(((uint16_t)frame[2] << 8) | frame[3]);
-    coil_val = (uint16_t)(((uint16_t)frame[4] << 8) | frame[5]);
+    /* 将线圈地址按位映射到继电器命令位图，供主循环再执行实际动作。 */
     bit_num = (uint16_t)(coil_addr % 16U);
-
     if (bit_num > 15U)
     {
-        G780s_SendException(FC_WRITE_SINGLE_COIL, 0x02);
-        return;
+        return 0x02;
     }
 
     current = g_registers[REG_RELAY_CMD_BITS];
-
-    if (coil_val == 0xFF00U)
+    if (coil_value)
     {
         current |= (uint16_t)(1u << bit_num);
     }
-    else if (coil_val == 0x0000U)
+    else
     {
         current &= (uint16_t)~(1u << bit_num);
     }
-    else
-    {
-        G780s_SendException(FC_WRITE_SINGLE_COIL, 0x03);
-        return;
-    }
 
     g_registers[REG_RELAY_CMD_BITS] = current;
-    memcpy(g_tx_buf, frame, 6);
-    G780s_SendResponse(g_tx_buf, 6);
+    return 0;
 }
 
-static void G780s_ProcessFrame(void)
-{
-    uint16_t crc_calc;
-    uint16_t crc_recv;
-    uint8_t fc;
-
-    if (g_rx_len < 4)
-    {
-        return;
-    }
-
-    if (g_rx_buf[0] != MODBUS_SLAVE_ADDR)
-    {
-        return;
-    }
-
-    crc_calc = Modbus_CRC16(g_rx_buf, (uint16_t)(g_rx_len - 2));
-    crc_recv = (uint16_t)(((uint16_t)g_rx_buf[g_rx_len - 1] << 8) | g_rx_buf[g_rx_len - 2]);
-    if (crc_calc != crc_recv)
-    {
-        return;
-    }
-
-    fc = g_rx_buf[1];
-    switch (fc)
-    {
-        case FC_READ_INPUT_REGS:
-        case FC_READ_HOLD_REGS:
-            G780s_HandleReadRegs(g_rx_buf, g_rx_len, fc);
-            break;
-
-        case FC_WRITE_SINGLE_REG:
-            G780s_HandleWriteSingleReg(g_rx_buf, g_rx_len);
-            break;
-
-        case FC_WRITE_SINGLE_COIL:
-            G780s_HandleWriteSingleCoil(g_rx_buf, g_rx_len);
-            break;
-
-        default:
-            G780s_SendException(fc, 0x01);
-            break;
-    }
-}
-
+/**
+ * @brief 初始化 G780S 业务层，并把寄存器回调注册到通用从站引擎。
+ * @param 无
+ * @retval 无
+ */
 void G780s_Init(void)
 {
-    GPIO_InitTypeDef gpio = {0};
+    ModbusSlaveConfig config = {
+        .slave_addr = MODBUS_SLAVE_ADDR,
+        .context = NULL,
+        .read_holding_registers = G780s_ReadRegisters,
+        .read_input_registers = G780s_ReadRegisters,
+        .write_single_register = G780s_WriteSingleRegister,
+        .write_single_coil = G780s_WriteSingleCoil,
+    };
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_USART3_CLK_ENABLE();
-
-    gpio.Pin = G780S_EN_PIN;
-    gpio.Mode = GPIO_MODE_OUTPUT_PP;
-    gpio.Pull = GPIO_PULLDOWN;
-    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(G780S_EN_PORT, &gpio);
-    G780S_RX_ENABLE();
-
-    gpio.Pin = G780S_TX_PIN;
-    gpio.Mode = GPIO_MODE_AF_PP;
-    gpio.Pull = GPIO_NOPULL;
-    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(G780S_TX_PORT, &gpio);
-
-    gpio.Pin = G780S_RX_PIN;
-    gpio.Mode = GPIO_MODE_AF_INPUT;
-    gpio.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(G780S_RX_PORT, &gpio);
-
-    g_huart3.Instance = USART3;
-    g_huart3.Init.BaudRate = MODBUS_BAUDRATE;
-    g_huart3.Init.WordLength = UART_WORDLENGTH_8B;
-    g_huart3.Init.StopBits = UART_STOPBITS_1;
-    g_huart3.Init.Parity = UART_PARITY_NONE;
-    g_huart3.Init.Mode = UART_MODE_TX_RX;
-    g_huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    g_huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-    HAL_UART_Init(&g_huart3);
-
-    __HAL_UART_ENABLE_IT(&g_huart3, UART_IT_RXNE);
-    HAL_NVIC_SetPriority(USART3_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(USART3_IRQn);
-
-    g_rx_len = 0;
-    g_frame_ready = 0;
-    g_last_rx_tick = 0;
-    g_last_tx_len = 0;
+    /* 注册 G780S 的寄存器读写回调，把通用从站引擎和业务寄存器绑定起来。 */
     memset(g_registers, 0, sizeof(g_registers));
-    G780s_ClearPendingRx();
-
-    printf("[G780s] Init OK (Addr=%d, USART3+PA5, manual RTU)\r\n", MODBUS_SLAVE_ADDR);
+    Modbus_Slave_Init(&config);
+    printf("[G780s] Init OK (Addr=%d, USART3+PA5, layered RTU)\r\n", MODBUS_SLAVE_ADDR);
 }
 
-void G780s_RxCallback(uint8_t byte)
-{
-    if (g_rx_len < MODBUS_RX_BUF_SIZE)
-    {
-        g_rx_buf[g_rx_len++] = byte;
-    }
-    else
-    {
-        g_rx_len = 0;
-    }
-
-    g_last_rx_tick = HAL_GetTick();
-}
-
+/**
+ * @brief 在主循环中处理 G780S 对应的 Modbus 从站任务。
+ * @param 无
+ * @retval 无
+ */
 void G780s_Process(void)
 {
-    if (g_rx_len > 0 && !g_frame_ready)
-    {
-        if ((HAL_GetTick() - g_last_rx_tick) >= MODBUS_FRAME_TIMEOUT_MS)
-        {
-            g_frame_ready = 1;
-        }
-    }
-
-    if (g_frame_ready)
-    {
-        G780s_ProcessFrame();
-        g_rx_len = 0;
-        g_frame_ready = 0;
-    }
+    /* 主循环周期调用，真正执行“帧静默判定 -> 解析 -> 回包”。 */
+    Modbus_Slave_Process();
 }
 
+/**
+ * @brief 兼容旧接口的字节接收入口，内部转发给通用从站引擎。
+ * @param byte: 串口中断收到的单个字节
+ * @retval 无
+ */
+void G780s_RxCallback(uint8_t byte)
+{
+    /* 兼容旧接口：字节接收已下沉到 Modbus_Slave，这里仅做转发。 */
+    Modbus_Slave_RxCallback(byte);
+}
+
+/**
+ * @brief 把现场采集值刷新到 G780S 寄存器镜像，供云端轮询读取。
+ * @param data: 最新业务数据快照
+ * @retval 无
+ */
 void G780s_UpdateData(const G780sSlaveData *data)
 {
     if (data == NULL)
@@ -357,6 +159,7 @@ void G780s_UpdateData(const G780sSlaveData *data)
         return;
     }
 
+    /* 主循环把现场采集值刷新到寄存器镜像，供 G780S / 云平台随时读取。 */
     __disable_irq();
 
     g_registers[REG_PUSH_SEQ] = data->push_seq;
@@ -387,16 +190,31 @@ void G780s_UpdateData(const G780sSlaveData *data)
     __enable_irq();
 }
 
+/**
+ * @brief 获取 G780S 从站底层 UART 句柄。
+ * @param 无
+ * @retval UART_HandleTypeDef*: USART3 句柄指针
+ */
 UART_HandleTypeDef *G780s_GetHandle(void)
 {
-    return &g_huart3;
+    return Modbus_Slave_GetHandle();
 }
 
+/**
+ * @brief 获取继电器翻转控制寄存器的当前值。
+ * @param 无
+ * @retval 当前寄存器值
+ */
 uint16_t G780s_GetRelayCtrl(void)
 {
     return g_registers[REG_RELAY_CTRL];
 }
 
+/**
+ * @brief 获取继电器按位命令位图寄存器的当前值。
+ * @param 无
+ * @retval 当前寄存器值
+ */
 uint16_t G780s_GetRelayBits(void)
 {
     return g_registers[REG_RELAY_CMD_BITS];

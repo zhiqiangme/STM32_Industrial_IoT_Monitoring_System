@@ -40,19 +40,55 @@
 #define RELAY_COIL_ON       0xFF00
 #define RELAY_COIL_OFF      0x0000
 
-/* 写单个线圈（1-16），on=1 开，0 关 */
+/**
+ * @brief 写单个继电器线圈，控制指定通道吸合或断开。
+ * @param channel: 继电器通道号，范围 1-16
+ * @param on: 目标状态，1 为开，0 为关
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on);
-/* 读单个线圈状态 */
+
+/**
+ * @brief 读取单个继电器线圈当前状态。
+ * @param channel: 继电器通道号，范围 1-16
+ * @param state: 输出状态指针，1 为开，0 为关
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state);
-/* 读全部输出位（16 位掩码） */
+
+/**
+ * @brief 一次性读取全部 16 路继电器输出状态位。
+ * @param mask: 输出位图指针，bit0-bit15 对应 CH1-CH16
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ReadAllCoils(uint16_t *mask);
-/* 读输入打包寄存器（16 位掩码） */
+
+/**
+ * @brief 读取继电器模块的输入打包寄存器。
+ * @param mask: 输出输入位图指针
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ReadInputPack(uint16_t *mask);
-/* 批量控制：all_on=1 全开，0 全关 */
+
+/**
+ * @brief 批量控制全部输出通道全开或全关。
+ * @param all_on: 1 表示全开，0 表示全关
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_BatchControl(uint8_t all_on);
-/* 按位设置输出掩码 */
+
+/**
+ * @brief 直接写入输出位图寄存器，按位控制多路继电器输出。
+ * @param mask: 目标输出位图
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_SetOutputMask(uint16_t mask);
-/* 翻转指定通道输出 */
+
+/**
+ * @brief 翻转指定通道的继电器输出状态。
+ * @param channel: 继电器通道号，范围 1-16
+ * @retval uint8_t: 0 成功，1 失败
+ */
 uint8_t Relay_ToggleOutput(uint8_t channel);
 
 /* 兼容旧宏名 */
