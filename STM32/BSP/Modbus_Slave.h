@@ -64,4 +64,25 @@ void Modbus_Slave_RxCallback(uint8_t byte);
  */
 UART_HandleTypeDef *Modbus_Slave_GetHandle(void);
 
+/**
+ * @brief 通知从站引擎发生了一次 USART 异常。
+ * @param 无
+ * @retval 无
+ */
+void Modbus_Slave_NotifyUartError(void);
+
+/**
+ * @brief 获取 Modbus CRC 错误累计次数。
+ * @param 无
+ * @retval uint32_t: CRC 错误次数
+ */
+uint32_t Modbus_Slave_GetCrcErrorCount(void);
+
+/**
+ * @brief 获取 UART 异常累计次数。
+ * @param 无
+ * @retval uint32_t: UART 异常次数
+ */
+uint32_t Modbus_Slave_GetUartErrorCount(void);
+
 #endif

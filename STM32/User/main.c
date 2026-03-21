@@ -41,6 +41,11 @@ static float App_ConfigToFloat2(uint32_t value_x100)
     return ((float)value_x100) / 100.0f;
 }
 
+static uint8_t App_IsManualMode(void)
+{
+    return (g_runtime_config.control_mode == G780S_MODE_MANUAL) ? 1u : 0u;
+}
+
 static void App_SystemInit(void)
 {
     HAL_Init();
@@ -76,15 +81,29 @@ static void App_HandleKeys(void)
 
     if (g_key0_last == 1 && key0_now == 0)
     {
-        printf("[KEY] KEY0 -> CH1\r\n");
-        Relay_ToggleOutput(1);
+        if (App_IsManualMode() != 0u)
+        {
+            printf("[KEY] KEY0 -> CH1\r\n");
+            Relay_ToggleOutput(1);
+        }
+        else
+        {
+            printf("[KEY] KEY0 ignored in AUTO mode\r\n");
+        }
     }
     g_key0_last = key0_now;
 
     if (g_key1_last == 1 && key1_now == 0)
     {
-        printf("[KEY] KEY1 -> CH2\r\n");
-        Relay_ToggleOutput(2);
+        if (App_IsManualMode() != 0u)
+        {
+            printf("[KEY] KEY1 -> CH2\r\n");
+            Relay_ToggleOutput(2);
+        }
+        else
+        {
+            printf("[KEY] KEY1 ignored in AUTO mode\r\n");
+        }
     }
     g_key1_last = key1_now;
 
@@ -135,7 +154,7 @@ static void App_HandleRelayInputs(uint16_t di_mask)
         if (raw != stable && (now - g_di_last_change[i]) >= debounce_ms)
         {
             g_di_stable = raw ? (g_di_stable | bit) : (g_di_stable & ~bit);
-            if (raw)
+            if (raw && App_IsManualMode() != 0u)
             {
                 Relay_ToggleOutput((uint8_t)(i + 1));
             }
@@ -213,8 +232,9 @@ int main(void)
                 g_flow_meter.hz_per_lpm = App_ConfigToFloat2(g_runtime_config.hz_per_lpm_x100);
                 last_config_seq = latest_config.sequence;
 
-                printf("[CFG] Applied seq=%lu sensor=%ums flow_sample=%ums debounce=%ums temp_th=%.1fC ppl=%.2f hz_per_lpm=%.2f\r\n",
+                printf("[CFG] Applied seq=%lu mode=%s sensor=%ums flow_sample=%ums debounce=%ums temp_th=%.1fC ppl=%.2f hz_per_lpm=%.2f\r\n",
                        (unsigned long)g_runtime_config.sequence,
+                       (g_runtime_config.control_mode == G780S_MODE_AUTO) ? "AUTO" : "MANUAL",
                        g_runtime_config.sensor_period_ms,
                        g_runtime_config.flow_sample_period_ms,
                        g_runtime_config.di_debounce_ms,
@@ -236,15 +256,29 @@ int main(void)
                 
                 if (relay_ctrl == 0)
                 {
-                    /* 0 = 全部关闭 */
-                    printf("[Cloud] All OFF\r\n");
-                    Relay_SetOutputMask(0);
+                    if (App_IsManualMode() != 0u)
+                    {
+                        /* 0 = 全部关闭 */
+                        printf("[Cloud] All OFF\r\n");
+                        Relay_SetOutputMask(0);
+                    }
+                    else
+                    {
+                        printf("[Cloud] RELAY_CTRL ignored in AUTO mode\r\n");
+                    }
                 }
                 else if (relay_ctrl >= 1 && relay_ctrl <= 16)
                 {
-                    /* 1-16 = 翻转对应通道 */
-                    printf("[Cloud] Toggle CH%u\r\n", relay_ctrl);
-                    Relay_ToggleOutput((uint8_t)relay_ctrl);
+                    if (App_IsManualMode() != 0u)
+                    {
+                        /* 1-16 = 翻转对应通道 */
+                        printf("[Cloud] Toggle CH%u\r\n", relay_ctrl);
+                        Relay_ToggleOutput((uint8_t)relay_ctrl);
+                    }
+                    else
+                    {
+                        printf("[Cloud] RELAY_CTRL ignored in AUTO mode\r\n");
+                    }
                 }
                 else
                 {
@@ -264,8 +298,15 @@ int main(void)
             {
                 printf("[Cloud] RELAY_CMD_BITS: 0x%04X -> 0x%04X\r\n", last_relay_bits, relay_bits);
                 
-                /* 按位控制继电器输出 */
-                Relay_SetOutputMask(relay_bits);
+                if (App_IsManualMode() != 0u)
+                {
+                    /* 按位控制继电器输出 */
+                    Relay_SetOutputMask(relay_bits);
+                }
+                else
+                {
+                    printf("[Cloud] RELAY_CMD_BITS ignored in AUTO mode\r\n");
+                }
                 
                 last_relay_bits = relay_bits;
             }
@@ -401,7 +442,8 @@ int main(void)
                 /* 状态位 */
                 slave_data.status = (pt100_ok ? 0x01 : 0) |   /* 地址18 */
                                     (weight_ok ? 0x02 : 0) | 
-                                    (relay_ok ? 0x04 : 0);
+                                    (relay_ok ? 0x04 : 0) |
+                                    ((g_runtime_config.control_mode == G780S_MODE_AUTO) ? 0x08 : 0);
                 
                 G780s_UpdateData(&slave_data);
             }

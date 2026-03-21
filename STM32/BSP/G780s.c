@@ -10,10 +10,18 @@ static G780sRemoteConfig g_staged_config;
 static uint32_t g_unlock_deadline = 0;
 static uint16_t g_maint_status = 0;
 static uint16_t g_last_error = G780S_ERR_NONE;
+static uint16_t g_last_bad_addr = 0;
+static uint16_t g_last_bad_value = 0;
+static uint16_t g_last_config_source = G780S_CFG_SOURCE_DEFAULT;
+static uint16_t g_reset_reason = G780S_RESET_REASON_UNKNOWN;
+static uint32_t g_power_on_count = 0;
 
+#define G780S_DIAG_FLASH_PAGE_ADDR  0x0807F000UL
 #define G780S_CFG_FLASH_PAGE_ADDR   0x0807F800UL
 #define G780S_UNLOCK_WINDOW_MS      30000UL
 #define G780S_CFG_MAGIC             0x47584346UL  /* GXCF */
+#define G780S_DIAG_MAGIC            0x47584449UL  /* GXDI */
+#define G780S_DIAG_VERSION          0x0001u
 
 typedef struct
 {
@@ -23,6 +31,118 @@ typedef struct
     G780sRemoteConfig config;
     uint16_t crc16;
 } G780sConfigImage;
+
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t payload_size;
+    uint32_t power_on_count;
+    uint16_t crc16;
+} G780sDiagImage;
+
+/**
+ * @brief 解析英文月份缩写为数字月份。
+ * @param month_str: 3 字节英文月份缩写
+ * @retval uint8_t: 解析后的月份，失败返回 0
+ */
+static uint8_t G780s_ParseBuildMonth(const char *month_str)
+{
+    static const char *const k_months[12] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+
+    if (month_str == NULL)
+    {
+        return 0u;
+    }
+
+    for (uint8_t i = 0; i < 12u; i++)
+    {
+        if (strncmp(month_str, k_months[i], 3) == 0)
+        {
+            return (uint8_t)(i + 1u);
+        }
+    }
+
+    return 0u;
+}
+
+/**
+ * @brief 读取编译年份。
+ * @param 无
+ * @retval uint16_t: 编译年份
+ */
+static uint16_t G780s_GetBuildYear(void)
+{
+    return (uint16_t)(((__DATE__[7] - '0') * 1000) +
+                      ((__DATE__[8] - '0') * 100) +
+                      ((__DATE__[9] - '0') * 10) +
+                      (__DATE__[10] - '0'));
+}
+
+/**
+ * @brief 读取编译月/日并按高字节月份、低字节日期打包。
+ * @param 无
+ * @retval uint16_t: 打包后的编译月/日
+ */
+static uint16_t G780s_GetBuildMonthDay(void)
+{
+    uint8_t month = G780s_ParseBuildMonth(__DATE__);
+    uint8_t day_tens = (__DATE__[4] == ' ') ? 0u : (uint8_t)(__DATE__[4] - '0');
+    uint8_t day = (uint8_t)(day_tens * 10u + (uint8_t)(__DATE__[5] - '0'));
+
+    return (uint16_t)(((uint16_t)month << 8) | day);
+}
+
+/**
+ * @brief 读取编译时/分并按高字节小时、低字节分钟打包。
+ * @param 无
+ * @retval uint16_t: 打包后的编译时/分
+ */
+static uint16_t G780s_GetBuildHourMinute(void)
+{
+    uint8_t hour = (uint8_t)((__TIME__[0] - '0') * 10 + (__TIME__[1] - '0'));
+    uint8_t minute = (uint8_t)((__TIME__[3] - '0') * 10 + (__TIME__[4] - '0'));
+
+    return (uint16_t)(((uint16_t)hour << 8) | minute);
+}
+
+/**
+ * @brief 根据 RCC 复位标志判断最近一次重启原因。
+ * @param 无
+ * @retval uint16_t: 重启原因枚举值
+ */
+static uint16_t G780s_DetectResetReason(void)
+{
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET)
+    {
+        return G780S_RESET_REASON_IWDG;
+    }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET)
+    {
+        return G780S_RESET_REASON_WWDG;
+    }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST) != RESET)
+    {
+        return G780S_RESET_REASON_SOFTWARE;
+    }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST) != RESET)
+    {
+        return G780S_RESET_REASON_LOW_POWER;
+    }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET)
+    {
+        return G780S_RESET_REASON_PIN;
+    }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET)
+    {
+        return G780S_RESET_REASON_POWER_ON;
+    }
+
+    return G780S_RESET_REASON_UNKNOWN;
+}
 
 /**
  * @brief 计算远程配置镜像使用的 CRC16 校验值。
@@ -72,11 +192,45 @@ static void G780s_SetDefaults(G780sRemoteConfig *config)
     config->temp_change_threshold_x10 = 10;
     config->pulses_per_liter_x100 = 66000UL;
     config->hz_per_lpm_x100 = 1100UL;
+    config->control_mode = G780S_MODE_MANUAL;
     config->sequence = 1UL;
 }
 
 /**
- * @brief 校验远程配置参数范围是否合法。
+ * @brief 校验单个 16 位配置字段的取值是否合法。
+ * @param reg_addr: 配置寄存器地址
+ * @param reg_value: 待写入的寄存器值
+ * @retval uint8_t: 0 表示合法，非 0 表示对应的维护错误码
+ */
+static uint8_t G780s_ValidateConfigRegisterValue(uint16_t reg_addr, uint16_t reg_value)
+{
+    switch (reg_addr)
+    {
+        case REG_CFG_SENSOR_PERIOD_MS:
+            return (reg_value >= 200u && reg_value <= 60000u) ? G780S_ERR_NONE : G780S_ERR_SENSOR_PERIOD_RANGE;
+
+        case REG_CFG_FLOW_SAMPLE_MS:
+            return (reg_value >= 100u && reg_value <= 10000u) ? G780S_ERR_NONE : G780S_ERR_FLOW_SAMPLE_RANGE;
+
+        case REG_CFG_DI_DEBOUNCE_MS:
+            return (reg_value >= 10u && reg_value <= 5000u) ? G780S_ERR_NONE : G780S_ERR_DI_DEBOUNCE_RANGE;
+
+        case REG_CFG_TEMP_THRESHOLD_X10:
+            return (reg_value >= 1u && reg_value <= 500u) ? G780S_ERR_NONE : G780S_ERR_TEMP_THRESHOLD_RANGE;
+
+        case REG_CFG_CONTROL_MODE:
+            return ((reg_value == G780S_MODE_MANUAL) || (reg_value == G780S_MODE_AUTO)) ?
+                G780S_ERR_NONE : G780S_ERR_CONTROL_MODE_INVALID;
+
+        default:
+            break;
+    }
+
+    return G780S_ERR_NONE;
+}
+
+/**
+ * @brief 校验整份远程配置参数范围和组合关系是否合法。
  * @param config: 待校验的配置结构体指针
  * @retval uint8_t: 0 表示合法，非 0 表示对应的维护错误码
  */
@@ -84,35 +238,63 @@ static uint8_t G780s_ValidateConfig(const G780sRemoteConfig *config)
 {
     if (config == NULL)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_CONFIG_CONFLICT;
     }
 
-    if (config->sensor_period_ms < 200 || config->sensor_period_ms > 60000)
+    if (G780s_ValidateConfigRegisterValue(REG_CFG_SENSOR_PERIOD_MS, config->sensor_period_ms) != G780S_ERR_NONE)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_SENSOR_PERIOD_RANGE;
     }
-    if (config->flow_sample_period_ms < 100 || config->flow_sample_period_ms > 10000)
+    if (G780s_ValidateConfigRegisterValue(REG_CFG_FLOW_SAMPLE_MS, config->flow_sample_period_ms) != G780S_ERR_NONE)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_FLOW_SAMPLE_RANGE;
     }
-    if (config->di_debounce_ms < 10 || config->di_debounce_ms > 5000)
+    if (G780s_ValidateConfigRegisterValue(REG_CFG_DI_DEBOUNCE_MS, config->di_debounce_ms) != G780S_ERR_NONE)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_DI_DEBOUNCE_RANGE;
     }
-    if (config->temp_change_threshold_x10 < 1 || config->temp_change_threshold_x10 > 500)
+    if (G780s_ValidateConfigRegisterValue(REG_CFG_TEMP_THRESHOLD_X10, config->temp_change_threshold_x10) != G780S_ERR_NONE)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_TEMP_THRESHOLD_RANGE;
     }
-    if (config->pulses_per_liter_x100 < 100 || config->pulses_per_liter_x100 > 10000000UL)
+    if (config->pulses_per_liter_x100 < 100u || config->pulses_per_liter_x100 > 10000000UL)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_PPL_RANGE;
     }
-    if (config->hz_per_lpm_x100 < 10 || config->hz_per_lpm_x100 > 1000000UL)
+    if (config->hz_per_lpm_x100 < 10u || config->hz_per_lpm_x100 > 1000000UL)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_HZ_PER_LPM_RANGE;
+    }
+    if (G780s_ValidateConfigRegisterValue(REG_CFG_CONTROL_MODE, config->control_mode) != G780S_ERR_NONE)
+    {
+        return G780S_ERR_CONTROL_MODE_INVALID;
+    }
+
+    /* 组合校验，避免明显不合理的采样关系进入系统。 */
+    if (config->flow_sample_period_ms > config->sensor_period_ms)
+    {
+        return G780S_ERR_CONFIG_CONFLICT;
+    }
+    if (config->di_debounce_ms >= config->sensor_period_ms)
+    {
+        return G780S_ERR_CONFIG_CONFLICT;
     }
 
     return G780S_ERR_NONE;
+}
+
+/**
+ * @brief 记录最近一次非法写入的地址和值。
+ * @param reg_addr: 非法写入的寄存器地址
+ * @param reg_value: 非法写入的寄存器值
+ * @retval 无
+ */
+static void G780s_RecordBadWrite(uint16_t reg_addr, uint16_t reg_value)
+{
+    g_last_bad_addr = reg_addr;
+    g_last_bad_value = reg_value;
+    g_registers[REG_DIAG_LAST_BAD_ADDR] = reg_addr;
+    g_registers[REG_DIAG_LAST_BAD_VALUE] = reg_value;
 }
 
 /**
@@ -155,6 +337,7 @@ static void G780s_SyncConfigRegisters(const G780sRemoteConfig *config)
     g_registers[REG_CFG_PPL_X100_L] = (uint16_t)(config->pulses_per_liter_x100 & 0xFFFFu);
     g_registers[REG_CFG_HZ_PER_LPM_X100_H] = (uint16_t)((config->hz_per_lpm_x100 >> 16) & 0xFFFFu);
     g_registers[REG_CFG_HZ_PER_LPM_X100_L] = (uint16_t)(config->hz_per_lpm_x100 & 0xFFFFu);
+    g_registers[REG_CFG_CONTROL_MODE] = config->control_mode;
 }
 
 /**
@@ -164,6 +347,9 @@ static void G780s_SyncConfigRegisters(const G780sRemoteConfig *config)
  */
 static void G780s_UpdateMaintenanceRegisters(void)
 {
+    uint32_t uptime_seconds = HAL_GetTick() / 1000UL;
+    uint32_t crc_error_count = Modbus_Slave_GetCrcErrorCount();
+    uint32_t uart_error_count = Modbus_Slave_GetUartErrorCount();
     uint16_t remain_s = 0;
 
     /* 解锁状态下对外提供剩余操作窗口，便于上位机判断是否需要重新解锁。 */
@@ -182,6 +368,23 @@ static void G780s_UpdateMaintenanceRegisters(void)
     g_registers[REG_MAINT_CFG_SEQUENCE_H] = (uint16_t)((g_active_config.sequence >> 16) & 0xFFFFu);
     g_registers[REG_MAINT_CFG_SEQUENCE_L] = (uint16_t)(g_active_config.sequence & 0xFFFFu);
     g_registers[REG_MAINT_UNLOCK_REMAIN_S] = remain_s;
+    g_registers[REG_DIAG_FW_VERSION] = G780S_FW_VERSION;
+    g_registers[REG_DIAG_PROTOCOL_VERSION] = G780S_PROTOCOL_VERSION;
+    g_registers[REG_DIAG_BUILD_YEAR] = G780s_GetBuildYear();
+    g_registers[REG_DIAG_BUILD_MONTH_DAY] = G780s_GetBuildMonthDay();
+    g_registers[REG_DIAG_BUILD_HOUR_MIN] = G780s_GetBuildHourMinute();
+    g_registers[REG_DIAG_UPTIME_H] = (uint16_t)((uptime_seconds >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_UPTIME_L] = (uint16_t)(uptime_seconds & 0xFFFFu);
+    g_registers[REG_DIAG_POWER_ON_COUNT_H] = (uint16_t)((g_power_on_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_POWER_ON_COUNT_L] = (uint16_t)(g_power_on_count & 0xFFFFu);
+    g_registers[REG_DIAG_RESET_REASON] = g_reset_reason;
+    g_registers[REG_DIAG_LAST_BAD_ADDR] = g_last_bad_addr;
+    g_registers[REG_DIAG_LAST_BAD_VALUE] = g_last_bad_value;
+    g_registers[REG_DIAG_LAST_CFG_SOURCE] = g_last_config_source;
+    g_registers[REG_DIAG_MODBUS_CRC_ERR_H] = (uint16_t)((crc_error_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_MODBUS_CRC_ERR_L] = (uint16_t)(crc_error_count & 0xFFFFu);
+    g_registers[REG_DIAG_UART_ERR_H] = (uint16_t)((uart_error_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_UART_ERR_L] = (uint16_t)(uart_error_count & 0xFFFFu);
 }
 
 /**
@@ -193,7 +396,7 @@ static uint8_t G780s_LoadConfigFromRegisters(G780sRemoteConfig *config)
 {
     if (config == NULL)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_CONFIG_CONFLICT;
     }
 
     config->sensor_period_ms = g_registers[REG_CFG_SENSOR_PERIOD_MS];
@@ -204,6 +407,7 @@ static uint8_t G780s_LoadConfigFromRegisters(G780sRemoteConfig *config)
                                     g_registers[REG_CFG_PPL_X100_L];
     config->hz_per_lpm_x100 = ((uint32_t)g_registers[REG_CFG_HZ_PER_LPM_X100_H] << 16) |
                               g_registers[REG_CFG_HZ_PER_LPM_X100_L];
+    config->control_mode = g_registers[REG_CFG_CONTROL_MODE];
     config->sequence = g_active_config.sequence + 1UL;
 
     return G780s_ValidateConfig(config);
@@ -225,7 +429,7 @@ static uint8_t G780s_SaveConfigToFlash(const G780sRemoteConfig *config)
 
     if (config == NULL)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_CONFIG_CONFLICT;
     }
 
     memset(&image, 0xFF, sizeof(image));
@@ -269,6 +473,120 @@ static uint8_t G780s_SaveConfigToFlash(const G780sRemoteConfig *config)
 }
 
 /**
+ * @brief 从诊断持久化页读取上电次数。
+ * @param power_on_count: 输出上电次数指针
+ * @retval uint8_t: 0 表示读取成功，非 0 表示诊断页为空或损坏
+ */
+static uint8_t G780s_LoadDiagFromFlash(uint32_t *power_on_count)
+{
+    const G780sDiagImage *image = (const G780sDiagImage *)G780S_DIAG_FLASH_PAGE_ADDR;
+    uint16_t crc_calc;
+
+    if (power_on_count == NULL)
+    {
+        return G780S_ERR_FLASH_CRC;
+    }
+
+    if (image->magic == 0xFFFFFFFFUL && image->version == 0xFFFFu)
+    {
+        return G780S_ERR_FLASH_EMPTY;
+    }
+    if (image->magic != G780S_DIAG_MAGIC ||
+        image->version != G780S_DIAG_VERSION ||
+        image->payload_size != sizeof(uint32_t))
+    {
+        return G780S_ERR_FLASH_CRC;
+    }
+
+    crc_calc = G780s_CRC16((const uint8_t *)image, (uint16_t)offsetof(G780sDiagImage, crc16));
+    if (crc_calc != image->crc16)
+    {
+        return G780S_ERR_FLASH_CRC;
+    }
+
+    *power_on_count = image->power_on_count;
+    return G780S_ERR_NONE;
+}
+
+/**
+ * @brief 把上电次数保存到独立诊断页。
+ * @param power_on_count: 待保存的上电次数
+ * @retval uint8_t: 0 表示保存成功，非 0 表示维护错误码
+ */
+static uint8_t G780s_SaveDiagToFlash(uint32_t power_on_count)
+{
+    FLASH_EraseInitTypeDef erase = {0};
+    uint32_t page_error = 0;
+    G780sDiagImage image;
+    uint16_t *halfwords = (uint16_t *)&image;
+    uint32_t halfword_count = sizeof(image) / 2U;
+    const G780sDiagImage *flash_image = (const G780sDiagImage *)G780S_DIAG_FLASH_PAGE_ADDR;
+
+    memset(&image, 0xFF, sizeof(image));
+    image.magic = G780S_DIAG_MAGIC;
+    image.version = G780S_DIAG_VERSION;
+    image.payload_size = (uint16_t)sizeof(uint32_t);
+    image.power_on_count = power_on_count;
+    image.crc16 = G780s_CRC16((const uint8_t *)&image, (uint16_t)offsetof(G780sDiagImage, crc16));
+
+    HAL_FLASH_Unlock();
+
+    erase.TypeErase = FLASH_TYPEERASE_PAGES;
+    erase.PageAddress = G780S_DIAG_FLASH_PAGE_ADDR;
+    erase.NbPages = 1;
+
+    if (HAL_FLASHEx_Erase(&erase, &page_error) != HAL_OK)
+    {
+        HAL_FLASH_Lock();
+        return G780S_ERR_FLASH_ERASE;
+    }
+
+    for (uint32_t i = 0; i < halfword_count; i++)
+    {
+        uint32_t address = G780S_DIAG_FLASH_PAGE_ADDR + i * 2UL;
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, address, halfwords[i]) != HAL_OK)
+        {
+            HAL_FLASH_Lock();
+            return G780S_ERR_FLASH_PROGRAM;
+        }
+    }
+
+    HAL_FLASH_Lock();
+
+    if (memcmp(flash_image, &image, sizeof(image)) != 0)
+    {
+        return G780S_ERR_FLASH_VERIFY;
+    }
+
+    return G780S_ERR_NONE;
+}
+
+/**
+ * @brief 刷新上电次数并持久化到独立诊断页。
+ * @param 无
+ * @retval 无
+ */
+static void G780s_InitPowerOnCounter(void)
+{
+    uint32_t stored_count = 0;
+    uint8_t err = G780s_LoadDiagFromFlash(&stored_count);
+
+    if (err == G780S_ERR_NONE)
+    {
+        g_power_on_count = stored_count + 1UL;
+    }
+    else
+    {
+        g_power_on_count = 1UL;
+    }
+
+    if (G780s_SaveDiagToFlash(g_power_on_count) != G780S_ERR_NONE)
+    {
+        printf("[G780s] Warn: power-on counter persist failed\r\n");
+    }
+}
+
+/**
  * @brief 从片内 Flash 读取并校验远程配置镜像。
  * @param config: 输出配置结构体指针
  * @retval uint8_t: 0 表示读取成功，非 0 表示维护错误码
@@ -280,7 +598,7 @@ static uint8_t G780s_LoadConfigFromFlash(G780sRemoteConfig *config)
 
     if (config == NULL)
     {
-        return G780S_ERR_INVALID_VALUE;
+        return G780S_ERR_CONFIG_CONFLICT;
     }
 
     if (image->magic == 0xFFFFFFFFUL && image->version == 0xFFFFu)
@@ -339,7 +657,7 @@ static void G780s_ApplyConfig(const G780sRemoteConfig *config, uint8_t loaded_fr
  */
 static uint8_t G780s_IsConfigRegister(uint16_t reg_addr)
 {
-    return (reg_addr >= REG_CFG_SENSOR_PERIOD_MS && reg_addr <= REG_CFG_HZ_PER_LPM_X100_L) ? 1u : 0u;
+    return (reg_addr >= REG_CFG_SENSOR_PERIOD_MS && reg_addr <= REG_CFG_CONTROL_MODE) ? 1u : 0u;
 }
 
 /**
@@ -412,6 +730,10 @@ static uint8_t G780s_HandleMaintenanceCommand(uint16_t command)
                 return G780S_ERR_LOCKED;
             }
             err = G780s_CommitStagedConfig();
+            if (err == G780S_ERR_NONE)
+            {
+                g_last_config_source = G780S_CFG_SOURCE_REMOTE_SAVE;
+            }
             break;
 
         case G780S_CMD_DISCARD_STAGED:
@@ -436,6 +758,7 @@ static uint8_t G780s_HandleMaintenanceCommand(uint16_t command)
             if (err == G780S_ERR_NONE)
             {
                 G780s_ApplyConfig(&defaults, 1u);
+                g_last_config_source = G780S_CFG_SOURCE_RESTORE_DEFAULTS;
                 g_maint_status |= G780S_STATUS_SAVE_OK;
             }
             break;
@@ -452,6 +775,122 @@ static uint8_t G780s_HandleMaintenanceCommand(uint16_t command)
     g_registers[REG_MAINT_COMMAND] = G780S_CMD_NONE;
     G780s_UpdateMaintenanceRegisters();
     return err;
+}
+
+/**
+ * @brief 基于当前暂存配置和寄存器写入值构造一份候选配置。
+ * @param reg_addr: 正在写入的配置寄存器地址
+ * @param reg_value: 正在写入的寄存器值
+ * @param candidate: 输出候选配置结构体指针
+ * @retval uint8_t: 0 表示构造成功，非 0 表示维护错误码
+ */
+static uint8_t G780s_BuildCandidateConfig(uint16_t reg_addr,
+                                          uint16_t reg_value,
+                                          G780sRemoteConfig *candidate)
+{
+    if (candidate == NULL)
+    {
+        return G780S_ERR_CONFIG_CONFLICT;
+    }
+
+    *candidate = g_staged_config;
+
+    switch (reg_addr)
+    {
+        case REG_CFG_SENSOR_PERIOD_MS:
+            candidate->sensor_period_ms = reg_value;
+            break;
+
+        case REG_CFG_FLOW_SAMPLE_MS:
+            candidate->flow_sample_period_ms = reg_value;
+            break;
+
+        case REG_CFG_DI_DEBOUNCE_MS:
+            candidate->di_debounce_ms = reg_value;
+            break;
+
+        case REG_CFG_TEMP_THRESHOLD_X10:
+            candidate->temp_change_threshold_x10 = reg_value;
+            break;
+
+        case REG_CFG_PPL_X100_H:
+            candidate->pulses_per_liter_x100 &= 0x0000FFFFUL;
+            candidate->pulses_per_liter_x100 |= ((uint32_t)reg_value << 16);
+            break;
+
+        case REG_CFG_PPL_X100_L:
+            candidate->pulses_per_liter_x100 &= 0xFFFF0000UL;
+            candidate->pulses_per_liter_x100 |= reg_value;
+            break;
+
+        case REG_CFG_HZ_PER_LPM_X100_H:
+            candidate->hz_per_lpm_x100 &= 0x0000FFFFUL;
+            candidate->hz_per_lpm_x100 |= ((uint32_t)reg_value << 16);
+            break;
+
+        case REG_CFG_HZ_PER_LPM_X100_L:
+            candidate->hz_per_lpm_x100 &= 0xFFFF0000UL;
+            candidate->hz_per_lpm_x100 |= reg_value;
+            break;
+
+        case REG_CFG_CONTROL_MODE:
+            candidate->control_mode = reg_value;
+            break;
+
+        default:
+            return G780S_ERR_BAD_COMMAND;
+    }
+
+    return G780S_ERR_NONE;
+}
+
+/**
+ * @brief 校验并接收一笔远程配置寄存器写入。
+ * @param reg_addr: 配置寄存器地址
+ * @param reg_value: 待写入的寄存器值
+ * @retval uint8_t: 0 表示写入成功，非 0 表示维护错误码
+ */
+static uint8_t G780s_WriteConfigRegister(uint16_t reg_addr, uint16_t reg_value)
+{
+    G780sRemoteConfig candidate;
+    uint8_t err;
+
+    err = G780s_BuildCandidateConfig(reg_addr, reg_value, &candidate);
+    if (err != G780S_ERR_NONE)
+    {
+        return err;
+    }
+
+    /* 16 位单寄存器参数在写入当下直接做范围拦截。 */
+    err = G780s_ValidateConfigRegisterValue(reg_addr, reg_value);
+    if (err != G780S_ERR_NONE)
+    {
+        return err;
+    }
+
+    /* 组合关系校验只针对不会影响 32 位分拆写入的字段。 */
+    switch (reg_addr)
+    {
+        case REG_CFG_SENSOR_PERIOD_MS:
+        case REG_CFG_FLOW_SAMPLE_MS:
+        case REG_CFG_DI_DEBOUNCE_MS:
+        case REG_CFG_CONTROL_MODE:
+            err = G780s_ValidateConfig(&candidate);
+            if (err != G780S_ERR_NONE)
+            {
+                return err;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    g_staged_config = candidate;
+    G780s_SyncConfigRegisters(&g_staged_config);
+    g_maint_status |= G780S_STATUS_STAGED_DIRTY;
+    g_maint_status &= (uint16_t)~G780S_STATUS_SAVE_OK;
+    return G780S_ERR_NONE;
 }
 
 /**
@@ -513,7 +952,8 @@ static uint8_t G780s_WriteSingleRegister(uint16_t reg_addr,
             return 0;
         }
 
-        G780s_SetError(G780S_ERR_INVALID_VALUE);
+        G780s_RecordBadWrite(reg_addr, reg_value);
+        G780s_SetError(G780S_ERR_INVALID_UNLOCK_KEY);
         return 0x03;
     }
 
@@ -524,6 +964,7 @@ static uint8_t G780s_WriteSingleRegister(uint16_t reg_addr,
         err = G780s_HandleMaintenanceCommand(reg_value);
         if (err != G780S_ERR_NONE)
         {
+            G780s_RecordBadWrite(reg_addr, reg_value);
             G780s_SetError(err);
             G780s_UpdateMaintenanceRegisters();
             return (err == G780S_ERR_LOCKED) ? 0x03 : 0x04;
@@ -539,14 +980,21 @@ static uint8_t G780s_WriteSingleRegister(uint16_t reg_addr,
         /* 参数区写入只更新暂存值，不直接写 Flash。 */
         if ((g_maint_status & G780S_STATUS_UNLOCKED) == 0u)
         {
+            G780s_RecordBadWrite(reg_addr, reg_value);
             G780s_SetError(G780S_ERR_LOCKED);
             G780s_UpdateMaintenanceRegisters();
             return 0x03;
         }
 
-        g_registers[reg_addr] = reg_value;
-        g_maint_status |= G780S_STATUS_STAGED_DIRTY;
-        g_maint_status &= (uint16_t)~G780S_STATUS_SAVE_OK;
+        err = G780s_WriteConfigRegister(reg_addr, reg_value);
+        if (err != G780S_ERR_NONE)
+        {
+            G780s_RecordBadWrite(reg_addr, reg_value);
+            G780s_SetError(err);
+            G780s_UpdateMaintenanceRegisters();
+            return 0x03;
+        }
+
         G780s_SetError(G780S_ERR_NONE);
         G780s_UpdateMaintenanceRegisters();
         return 0;
@@ -558,6 +1006,7 @@ static uint8_t G780s_WriteSingleRegister(uint16_t reg_addr,
         return 0;
     }
 
+    G780s_RecordBadWrite(reg_addr, reg_value);
     return 0x02;
 }
 
@@ -617,16 +1066,21 @@ void G780s_Init(void)
 
     memset(g_registers, 0, sizeof(g_registers));
     Modbus_Slave_Init(&config);
+    g_reset_reason = G780s_DetectResetReason();
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+    G780s_InitPowerOnCounter();
 
     /* 先装入默认参数，再尝试用 Flash 中的持久化配置覆盖。 */
     G780s_SetDefaults(&g_active_config);
     g_staged_config = g_active_config;
+    g_last_config_source = G780S_CFG_SOURCE_DEFAULT;
     G780s_SetError(G780S_ERR_NONE);
 
     load_err = G780s_LoadConfigFromFlash(&flash_config);
     if (load_err == G780S_ERR_NONE)
     {
         G780s_ApplyConfig(&flash_config, 1u);
+        g_last_config_source = G780S_CFG_SOURCE_FLASH;
     }
     else
     {
@@ -757,4 +1211,14 @@ void G780s_GetActiveConfig(G780sRemoteConfig *out_config)
     __disable_irq();
     *out_config = g_active_config;
     __enable_irq();
+}
+
+/**
+ * @brief 获取当前是否处于自动模式。
+ * @param 无
+ * @retval uint8_t: 1 表示自动模式，0 表示手动模式
+ */
+uint8_t G780s_IsAutoMode(void)
+{
+    return (g_active_config.control_mode == G780S_MODE_AUTO) ? 1u : 0u;
 }

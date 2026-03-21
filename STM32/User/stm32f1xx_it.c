@@ -164,6 +164,7 @@ void SysTick_Handler(void)
 void USART3_IRQHandler(void)
 {
     UART_HandleTypeDef *huart = Modbus_Slave_GetHandle();
+    uint8_t uart_error = 0;
     
     /* 检查接收中断 */
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_RXNE) != RESET)
@@ -176,14 +177,22 @@ void USART3_IRQHandler(void)
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_ORE) != RESET)
     {
         __HAL_UART_CLEAR_OREFLAG(huart);
+        uart_error = 1;
     }
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_FE) != RESET)
     {
         __HAL_UART_CLEAR_FEFLAG(huart);
+        uart_error = 1;
     }
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_NE) != RESET)
     {
         __HAL_UART_CLEAR_NEFLAG(huart);
+        uart_error = 1;
+    }
+
+    if (uart_error != 0u)
+    {
+        Modbus_Slave_NotifyUartError();
     }
 }
 

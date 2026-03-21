@@ -22,6 +22,8 @@ static volatile uint8_t g_frame_ready = 0;
 
 /* 发送缓冲由协议层临时组织响应帧，末尾再统一补 CRC。 */
 static uint8_t g_tx_buf[MODBUS_SLAVE_TX_BUFFER_SIZE];
+static volatile uint32_t g_crc_error_count = 0;
+static volatile uint32_t g_uart_error_count = 0;
 
 /**
  * @brief 计算 Modbus RTU CRC16。
@@ -296,6 +298,7 @@ static void Modbus_Slave_ProcessFrame(void)
     crc_recv = (uint16_t)(((uint16_t)g_rx_buf[g_rx_len - 1U] << 8) | g_rx_buf[g_rx_len - 2U]);
     if (crc_calc != crc_recv)
     {
+        g_crc_error_count++;
         return;
     }
 
@@ -380,6 +383,8 @@ void Modbus_Slave_Init(const ModbusSlaveConfig *config)
     g_frame_ready = 0;
     memset(g_rx_buf, 0, sizeof(g_rx_buf));
     memset(g_tx_buf, 0, sizeof(g_tx_buf));
+    g_crc_error_count = 0;
+    g_uart_error_count = 0;
     Modbus_Slave_ClearPendingRx();
 }
 
@@ -435,4 +440,34 @@ void Modbus_Slave_RxCallback(uint8_t byte)
 UART_HandleTypeDef *Modbus_Slave_GetHandle(void)
 {
     return &g_uart3_handle;
+}
+
+/**
+ * @brief 通知从站引擎记录一次 UART 异常。
+ * @param 无
+ * @retval 无
+ */
+void Modbus_Slave_NotifyUartError(void)
+{
+    g_uart_error_count++;
+}
+
+/**
+ * @brief 获取 Modbus CRC 错误累计次数。
+ * @param 无
+ * @retval uint32_t: CRC 错误次数
+ */
+uint32_t Modbus_Slave_GetCrcErrorCount(void)
+{
+    return g_crc_error_count;
+}
+
+/**
+ * @brief 获取 UART 异常累计次数。
+ * @param 无
+ * @retval uint32_t: UART 异常次数
+ */
+uint32_t Modbus_Slave_GetUartErrorCount(void)
+{
+    return g_uart_error_count;
 }
