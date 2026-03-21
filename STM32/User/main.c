@@ -7,10 +7,6 @@
 
 extern TIM_HandleTypeDef g_tim2_handle;
 
-#define PULSES_PER_LITER   660.0f
-#define HZ_PER_LPM         11.0f
-#define SAMPLE_PERIOD_MS   1000UL
-
 static FlowmeterHandle g_flow_meter;
 
 /* 按键状态 (在主循环首次运行时根据实际引脚状态初始化) */
@@ -33,6 +29,17 @@ static volatile uint16_t g_relay_di_state = 0;
 
 /* Modbus PUSH_SEQ (上报序号) */
 static volatile uint16_t g_push_seq = 0;
+static G780sRemoteConfig g_runtime_config;
+
+/**
+ * @brief 把放大 100 倍保存的整型配置值转换为浮点数。
+ * @param value_x100: 放大 100 倍后的整型值
+ * @retval float: 还原后的浮点数
+ */
+static float App_ConfigToFloat2(uint32_t value_x100)
+{
+    return ((float)value_x100) / 100.0f;
+}
 
 static void App_SystemInit(void)
 {
@@ -90,9 +97,14 @@ static void App_HandleKeys(void)
     g_keyA_last = keyA_now;
 }
 
+/**
+ * @brief 对继电器输入位图做去抖处理，并在输入上升沿时翻转对应输出。
+ * @param di_mask: 当前读取到的 DI 位图
+ * @retval 无
+ */
 static void App_HandleRelayInputs(uint16_t di_mask)
 {
-    const uint32_t debounce_ms = 50;
+    uint32_t debounce_ms = g_runtime_config.di_debounce_ms;
     uint32_t now = HAL_GetTick();
 
     if (!g_di_initialized)
@@ -160,14 +172,18 @@ int main(void)
         printf("Relay DO: 0x%04X\r\n", coil_mask);
 
     /* 流量计初始化 */
+    G780s_GetActiveConfig(&g_runtime_config);
     Flowmeter_Init(&g_flow_meter, &g_tim2_handle,
-                   SAMPLE_PERIOD_MS, PULSES_PER_LITER, HZ_PER_LPM);
+                   g_runtime_config.flow_sample_period_ms,
+                   App_ConfigToFloat2(g_runtime_config.pulses_per_liter_x100),
+                   App_ConfigToFloat2(g_runtime_config.hz_per_lpm_x100));
 
     printf("\r\n>>> Main loop started...\r\n\r\n");
 
     HAL_Delay(3000);  /* 等待3秒让传感器数据稳定 */
 
     uint32_t last_sensor_tick = 0;
+    uint32_t last_config_seq = g_runtime_config.sequence;
 
     while (1)
     {
@@ -181,6 +197,31 @@ int main(void)
         {
             led_tick = HAL_GetTick();
             LED_R_TOGGLE();
+        }
+
+        /* ===== 应用最新远程配置 ===== */
+        {
+            G780sRemoteConfig latest_config;
+            G780s_GetActiveConfig(&latest_config);
+
+            if (latest_config.sequence != last_config_seq)
+            {
+                g_runtime_config = latest_config;
+                /* 运行时热更新流量计换算参数，不需要重启设备。 */
+                g_flow_meter.sample_ms = g_runtime_config.flow_sample_period_ms;
+                g_flow_meter.pulses_per_liter = App_ConfigToFloat2(g_runtime_config.pulses_per_liter_x100);
+                g_flow_meter.hz_per_lpm = App_ConfigToFloat2(g_runtime_config.hz_per_lpm_x100);
+                last_config_seq = latest_config.sequence;
+
+                printf("[CFG] Applied seq=%lu sensor=%ums flow_sample=%ums debounce=%ums temp_th=%.1fC ppl=%.2f hz_per_lpm=%.2f\r\n",
+                       (unsigned long)g_runtime_config.sequence,
+                       g_runtime_config.sensor_period_ms,
+                       g_runtime_config.flow_sample_period_ms,
+                       g_runtime_config.di_debounce_ms,
+                       g_runtime_config.temp_change_threshold_x10 / 10.0f,
+                       App_ConfigToFloat2(g_runtime_config.pulses_per_liter_x100),
+                       App_ConfigToFloat2(g_runtime_config.hz_per_lpm_x100));
+            }
         }
         
         /* ===== 处理云端继电器控制命令 ===== */
@@ -231,7 +272,7 @@ int main(void)
         }
 
         /* ===== 传感器采集 (每2秒) ===== */
-        if (HAL_GetTick() - last_sensor_tick >= 2000)
+        if (HAL_GetTick() - last_sensor_tick >= g_runtime_config.sensor_period_ms)
         {
             last_sensor_tick = HAL_GetTick();
             
@@ -310,13 +351,13 @@ int main(void)
                 cur_temp[2] = 0;  /* CH3未连接 */
                 cur_temp[3] = (int16_t)(g_sensor_temp * 10.0f);  /* CH4 */
                 
-                /* 检测温度变化超过1℃ (10×0.1℃) */
+                /* 检测温度变化是否达到远程配置阈值。 */
                 uint8_t temp_changed = 0;
                 for (int i = 0; i < 4; i++)
                 {
                     int16_t diff = cur_temp[i] - s_last_temp[i];
                     if (diff < 0) diff = -diff;  /* 取绝对值 */
-                    if (diff >= 10)  /* 10 = 1.0℃ */
+                    if (diff >= g_runtime_config.temp_change_threshold_x10)
                     {
                         temp_changed = 1;
                         break;

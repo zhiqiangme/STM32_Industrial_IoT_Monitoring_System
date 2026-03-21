@@ -23,6 +23,13 @@ ehthumbs.db
 .git/
 .vscode/
 
+# --- 仓库根目录本地生成文件 ---
+/.vs/
+/CRC/.dotnet/
+/CRC/.vs/
+/CRC/Release/
+/STM32/MDK-ARM/DebugConfig/
+
 ####################################
 # STM32 目录 (Keil MDK / STM32CubeIDE / IAR)
 ####################################
@@ -111,6 +118,47 @@ Windows/**/[Rr]elease/
 Windows/**/[Bb]in/
 Windows/**/[Oo]bj/
 Windows/**/[Ii]nstallers/
+
+
+####################################
+# CRC 目录 (Visual Studio / VS Code)
+####################################
+
+# --- Visual Studio ---
+CRC/**/.vs/
+CRC/**/*.suo
+CRC/**/*.user
+CRC/**/*.userosscache
+CRC/**/*.sln.docstates
+CRC/**/*.ncb
+CRC/**/*.aps
+CRC/**/*.pdb
+CRC/**/*.ilk
+CRC/**/*.obj
+CRC/**/*.pch
+CRC/**/*.sbr
+CRC/**/*.tlb
+CRC/**/*.tlh
+CRC/**/*.bak
+CRC/**/*.log
+CRC/**/*.cache
+CRC/**/*.VC.db
+CRC/**/*.VC.VC.opendb
+CRC/**/ipch/
+CRC/**/x64/
+CRC/**/x86/
+
+# --- Visual Studio Code ---
+CRC/**/.vscode/
+CRC/**/*.code-workspace
+
+# --- CRC 构建输出 ---
+CRC/**/[Dd]ebug/
+CRC/**/[Rr]elease/
+CRC/**/[Bb]in/
+CRC/**/[Oo]bj/
+CRC/**/[Ii]nstallers/
+
 
 ####################################
 # Android 目录 (Gradle / Android Studio)

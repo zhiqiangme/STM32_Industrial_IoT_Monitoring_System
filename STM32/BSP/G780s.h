@@ -30,7 +30,170 @@
 #define REG_RELAY_BITS              0x0014  /* 继电器状态位图 (只读) */
 #define REG_RELAY_CMD_BITS          0x0015  /* 继电器命令位图 (上位机写) */
 
-#define MODBUS_REG_COUNT            22
+/*
+ * =========================== 远程参数维护寄存器表 ===========================
+ *
+ * 一、现场数据寄存器区（保持原有功能，供 G780S / 服务器轮询读取）
+ * ┌────────┬──────────────────────────────┬──────────────┬────────────────────┐
+ * │ 地址   │ 名称                         │ 读写属性     │ 说明               │
+ * ├────────┼──────────────────────────────┼──────────────┼────────────────────┤
+ * │ 0x0000 │ REG_PUSH_SEQ                 │ R            │ 上报序号           │
+ * │ 0x0001 │ REG_PT100_CH1                │ R            │ PT100 CH1，×10 C   │
+ * │ 0x0002 │ REG_PT100_CH2                │ R            │ PT100 CH2，×10 C   │
+ * │ 0x0003 │ REG_PT100_CH3                │ R            │ PT100 CH3，×10 C   │
+ * │ 0x0004 │ REG_PT100_CH4                │ R            │ PT100 CH4，×10 C   │
+ * │ 0x0005 │ REG_WEIGHT_CH1_H             │ R            │ 称重 CH1 高 16 位  │
+ * │ 0x0006 │ REG_WEIGHT_CH1_L             │ R            │ 称重 CH1 低 16 位  │
+ * │ 0x0007 │ REG_WEIGHT_CH2_H             │ R            │ 称重 CH2 高 16 位  │
+ * │ 0x0008 │ REG_WEIGHT_CH2_L             │ R            │ 称重 CH2 低 16 位  │
+ * │ 0x0009 │ REG_WEIGHT_CH3_H             │ R            │ 称重 CH3 高 16 位  │
+ * │ 0x000A │ REG_WEIGHT_CH3_L             │ R            │ 称重 CH3 低 16 位  │
+ * │ 0x000B │ REG_WEIGHT_CH4_H             │ R            │ 称重 CH4 高 16 位  │
+ * │ 0x000C │ REG_WEIGHT_CH4_L             │ R            │ 称重 CH4 低 16 位  │
+ * │ 0x000D │ REG_FLOW_RATE                │ R            │ 瞬时流量，×100     │
+ * │ 0x000E │ REG_FLOW_TOTAL_HIGH          │ R            │ 累计流量高 16 位   │
+ * │ 0x000F │ REG_FLOW_TOTAL_LOW           │ R            │ 累计流量低 16 位   │
+ * │ 0x0010 │ REG_RELAY_CTRL               │ R/W          │ 继电器控制命令     │
+ * │ 0x0011 │ REG_RELAY_DO                 │ R            │ 继电器输出位图     │
+ * │ 0x0012 │ REG_RELAY_DI                 │ R            │ 继电器输入位图     │
+ * │ 0x0013 │ REG_SYSTEM_STATUS            │ R            │ 系统状态位         │
+ * │ 0x0014 │ REG_RELAY_BITS               │ R            │ 继电器状态位图     │
+ * │ 0x0015 │ REG_RELAY_CMD_BITS           │ R/W          │ 继电器按位控制命令 │
+ * └────────┴──────────────────────────────┴──────────────┴────────────────────┘
+ *
+ * 二、远程配置寄存器区（必须先解锁，写入后只是暂存，不直接写 Flash）
+ * ┌────────┬──────────────────────────────┬──────────────┬────────────────────┐
+ * │ 地址   │ 名称                         │ 读写属性     │ 说明               │
+ * ├────────┼──────────────────────────────┼──────────────┼────────────────────┤
+ * │ 0x0020 │ REG_CFG_SENSOR_PERIOD_MS     │ R/W          │ 传感器采集周期 ms  │
+ * │ 0x0021 │ REG_CFG_FLOW_SAMPLE_MS       │ R/W          │ 流量采样周期 ms    │
+ * │ 0x0022 │ REG_CFG_DI_DEBOUNCE_MS       │ R/W          │ DI 去抖时间 ms     │
+ * │ 0x0023 │ REG_CFG_TEMP_THRESHOLD_X10   │ R/W          │ 温差阈值，×10 ℃    │
+ * │ 0x0024 │ REG_CFG_PPL_X100_H           │ R/W          │ 每升脉冲数高 16 位 │
+ * │ 0x0025 │ REG_CFG_PPL_X100_L           │ R/W          │ 每升脉冲数低 16 位 │
+ * │ 0x0026 │ REG_CFG_HZ_PER_LPM_X100_H    │ R/W          │ Hz/LPM 高 16 位    │
+ * │ 0x0027 │ REG_CFG_HZ_PER_LPM_X100_L    │ R/W          │ Hz/LPM 低 16 位    │
+ * └────────┴──────────────────────────────┴──────────────┴────────────────────┘
+ *
+ * 三、维护控制/状态寄存器区
+ * ┌────────┬──────────────────────────────┬──────────────┬────────────────────┐
+ * │ 地址   │ 名称                         │ 读写属性     │ 说明               │
+ * ├────────┼──────────────────────────────┼──────────────┼────────────────────┤
+ * │ 0x0030 │ REG_MAINT_UNLOCK             │ W            │ 写入解锁口令       │
+ * │ 0x0031 │ REG_MAINT_COMMAND            │ W/R          │ 维护命令触发寄存器 │
+ * │ 0x0032 │ REG_MAINT_STATUS             │ R            │ 维护状态位         │
+ * │ 0x0033 │ REG_MAINT_LAST_ERROR         │ R            │ 最近错误码         │
+ * │ 0x0034 │ REG_MAINT_CFG_VERSION        │ R            │ 配置结构版本号     │
+ * │ 0x0035 │ REG_MAINT_CFG_SEQUENCE_H     │ R            │ 生效配置序号高 16  │
+ * │ 0x0036 │ REG_MAINT_CFG_SEQUENCE_L     │ R            │ 生效配置序号低 16  │
+ * │ 0x0037 │ REG_MAINT_UNLOCK_REMAIN_S    │ R            │ 解锁剩余时间（秒） │
+ * └────────┴──────────────────────────────┴──────────────┴────────────────────┘
+ *
+ * 四、维护命令定义（写入 REG_MAINT_COMMAND）
+ *   0x0000: G780S_CMD_NONE
+ *           空命令 / 默认值
+ *   0x0001: G780S_CMD_APPLY_SAVE
+ *           校验配置区暂存值 -> 保存到 Flash -> 切换为生效配置
+ *   0x0002: G780S_CMD_DISCARD_STAGED
+ *           放弃暂存值，恢复为当前生效配置
+ *   0x0003: G780S_CMD_RESTORE_DEFAULTS
+ *           恢复默认配置并保存到 Flash
+ *   0x0004: G780S_CMD_CLEAR_ERROR
+ *           清除最近错误码和错误状态位
+ *
+ * 五、维护状态位定义（REG_MAINT_STATUS）
+ *   bit0: G780S_STATUS_UNLOCKED
+ *         当前处于解锁窗口，可写配置区
+ *   bit1: G780S_STATUS_STAGED_DIRTY
+ *         配置区已修改但尚未提交保存
+ *   bit2: G780S_STATUS_CONFIG_LOADED
+ *         当前配置来自 Flash 成功加载
+ *   bit3: G780S_STATUS_SAVE_OK
+ *         最近一次提交保存成功
+ *   bit4: G780S_STATUS_ERROR
+ *         当前存在维护错误，详见 REG_MAINT_LAST_ERROR
+ *
+ * 六、错误码定义（REG_MAINT_LAST_ERROR）
+ *   0: G780S_ERR_NONE
+ *      无错误
+ *   1: G780S_ERR_LOCKED
+ *      设备未解锁，拒绝配置写入或命令执行
+ *   2: G780S_ERR_INVALID_VALUE
+ *      参数越界、口令错误或配置不合法
+ *   3: G780S_ERR_FLASH_ERASE
+ *      Flash 擦除失败
+ *   4: G780S_ERR_FLASH_PROGRAM
+ *      Flash 编程失败
+ *   5: G780S_ERR_FLASH_VERIFY
+ *      Flash 回读校验失败
+ *   6: G780S_ERR_BAD_COMMAND
+ *      维护命令非法
+ *   7: G780S_ERR_FLASH_EMPTY
+ *      Flash 参数页为空，系统已回退默认值
+ *   8: G780S_ERR_FLASH_CRC
+ *      Flash 参数页 CRC/版本非法，系统已回退默认值
+ *
+ * 七、推荐远程维护流程
+ *   1. 读取 0x0032~0x0037，确认设备在线、查看状态和错误码
+ *   2. 写 0x0030 = 0xA55A，打开 30 秒维护窗口
+ *   3. 写 0x0020~0x0027，更新参数暂存值
+ *   4. 再次读取 0x0020~0x0027，确认暂存值正确
+ *   5. 写 0x0031 = 0x0001，提交保存
+ *   6. 轮询 0x0032/0x0033/0x0035/0x0036，确认保存成功并获取新配置序号
+ *
+ * 八、说明
+ *   1. 配置区写入成功仅表示“暂存成功”，不会立刻写 Flash
+ *   2. 只有执行 G780S_CMD_APPLY_SAVE 后才会真正保存并生效
+ *   3. 解锁超时后设备会自动重新上锁
+ *   4. 远程配置与现场数据轮询共存，不影响原先 G780S 读寄存器功能
+ * ============================================================================
+ */
+
+#define REG_CFG_SENSOR_PERIOD_MS    0x0020
+#define REG_CFG_FLOW_SAMPLE_MS      0x0021
+#define REG_CFG_DI_DEBOUNCE_MS      0x0022
+#define REG_CFG_TEMP_THRESHOLD_X10  0x0023
+#define REG_CFG_PPL_X100_H          0x0024
+#define REG_CFG_PPL_X100_L          0x0025
+#define REG_CFG_HZ_PER_LPM_X100_H   0x0026
+#define REG_CFG_HZ_PER_LPM_X100_L   0x0027
+
+#define REG_MAINT_UNLOCK            0x0030
+#define REG_MAINT_COMMAND           0x0031
+#define REG_MAINT_STATUS            0x0032
+#define REG_MAINT_LAST_ERROR        0x0033
+#define REG_MAINT_CFG_VERSION       0x0034
+#define REG_MAINT_CFG_SEQUENCE_H    0x0035
+#define REG_MAINT_CFG_SEQUENCE_L    0x0036
+#define REG_MAINT_UNLOCK_REMAIN_S   0x0037
+
+#define MODBUS_REG_COUNT            56
+
+#define G780S_UNLOCK_KEY            0xA55A
+
+#define G780S_CMD_NONE              0x0000
+#define G780S_CMD_APPLY_SAVE        0x0001
+#define G780S_CMD_DISCARD_STAGED    0x0002
+#define G780S_CMD_RESTORE_DEFAULTS  0x0003
+#define G780S_CMD_CLEAR_ERROR       0x0004
+
+#define G780S_STATUS_UNLOCKED       (1u << 0)
+#define G780S_STATUS_STAGED_DIRTY   (1u << 1)
+#define G780S_STATUS_CONFIG_LOADED  (1u << 2)
+#define G780S_STATUS_SAVE_OK        (1u << 3)
+#define G780S_STATUS_ERROR          (1u << 4)
+
+#define G780S_ERR_NONE              0u
+#define G780S_ERR_LOCKED            1u
+#define G780S_ERR_INVALID_VALUE     2u
+#define G780S_ERR_FLASH_ERASE       3u
+#define G780S_ERR_FLASH_PROGRAM     4u
+#define G780S_ERR_FLASH_VERIFY      5u
+#define G780S_ERR_BAD_COMMAND       6u
+#define G780S_ERR_FLASH_EMPTY       7u
+#define G780S_ERR_FLASH_CRC         8u
+
+#define G780S_CFG_VERSION           0x0001
 
 typedef struct {
     uint16_t push_seq;       /* 上报序号 */
@@ -44,6 +207,17 @@ typedef struct {
 } G780sSlaveData;
 
 typedef G780sSlaveData ModbusSlaveData_t;
+
+typedef struct
+{
+    uint16_t sensor_period_ms;
+    uint16_t flow_sample_period_ms;
+    uint16_t di_debounce_ms;
+    uint16_t temp_change_threshold_x10;
+    uint32_t pulses_per_liter_x100;
+    uint32_t hz_per_lpm_x100;
+    uint32_t sequence;
+} G780sRemoteConfig;
 
 /**
  * @brief 初始化 G780S 业务层和底层 Modbus 从站引擎。
@@ -93,6 +267,13 @@ uint16_t G780s_GetRelayCtrl(void);
  * @retval 当前寄存器值
  */
 uint16_t G780s_GetRelayBits(void);
+
+/**
+ * @brief 获取当前已生效的远程配置快照。
+ * @param out_config: 输出配置指针
+ * @retval 无
+ */
+void G780s_GetActiveConfig(G780sRemoteConfig *out_config);
 
 #define ModbusSlave_Task()           G780s_Process()
 #define ModbusSlave_Init             G780s_Init
