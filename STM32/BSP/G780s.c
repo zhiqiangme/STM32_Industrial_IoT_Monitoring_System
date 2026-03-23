@@ -1,5 +1,6 @@
 #include "G780s.h"
 #include "Modbus_Slave.h"
+#include "Upgrade.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,9 +13,12 @@ static uint16_t g_maint_status = 0;
 static uint16_t g_last_error = G780S_ERR_NONE;
 static uint16_t g_last_bad_addr = 0;
 static uint16_t g_last_bad_value = 0;
+static uint16_t g_last_bad_read_addr = 0;
+static uint16_t g_last_command_result = G780S_ERR_NONE;
 static uint16_t g_last_config_source = G780S_CFG_SOURCE_DEFAULT;
 static uint16_t g_reset_reason = G780S_RESET_REASON_UNKNOWN;
 static uint32_t g_power_on_count = 0;
+static uint8_t g_boot_upgrade_pending = 0;
 
 #define G780S_DIAG_FLASH_PAGE_ADDR  0x0807F000UL
 #define G780S_CFG_FLASH_PAGE_ADDR   0x0807F800UL
@@ -385,6 +389,8 @@ static void G780s_UpdateMaintenanceRegisters(void)
     g_registers[REG_DIAG_MODBUS_CRC_ERR_L] = (uint16_t)(crc_error_count & 0xFFFFu);
     g_registers[REG_DIAG_UART_ERR_H] = (uint16_t)((uart_error_count >> 16) & 0xFFFFu);
     g_registers[REG_DIAG_UART_ERR_L] = (uint16_t)(uart_error_count & 0xFFFFu);
+    g_registers[REG_DIAG_LAST_CMD_RESULT] = g_last_command_result;
+    g_registers[REG_DIAG_LAST_BAD_READ_ADDR] = g_last_bad_read_addr;
 }
 
 /**
@@ -767,12 +773,29 @@ static uint8_t G780s_HandleMaintenanceCommand(uint16_t command)
             G780s_SetError(G780S_ERR_NONE);
             break;
 
+        case G780S_CMD_ENTER_BOOT_UPGRADE:
+            if ((g_maint_status & G780S_STATUS_UNLOCKED) == 0u)
+            {
+                return G780S_ERR_LOCKED;
+            }
+            err = Upgrade_RequestBootMode(UPGRADE_REQUEST_SOURCE_G780S, 0u);
+            if (err == 0u)
+            {
+                g_boot_upgrade_pending = 1u;
+            }
+            else
+            {
+                err = G780S_ERR_UPGRADE_REQUEST;
+            }
+            break;
+
         default:
             err = G780S_ERR_BAD_COMMAND;
             break;
     }
 
     g_registers[REG_MAINT_COMMAND] = G780S_CMD_NONE;
+    g_last_command_result = err;
     G780s_UpdateMaintenanceRegisters();
     return err;
 }
@@ -915,6 +938,7 @@ static uint8_t G780s_ReadRegisters(uint16_t start_addr,
 
     if ((uint32_t)start_addr + reg_count > MODBUS_REG_COUNT)
     {
+        g_last_bad_read_addr = start_addr;
         return 0x02;
     }
 
@@ -965,11 +989,13 @@ static uint8_t G780s_WriteSingleRegister(uint16_t reg_addr,
         if (err != G780S_ERR_NONE)
         {
             G780s_RecordBadWrite(reg_addr, reg_value);
+            g_last_command_result = err;
             G780s_SetError(err);
             G780s_UpdateMaintenanceRegisters();
             return (err == G780S_ERR_LOCKED) ? 0x03 : 0x04;
         }
 
+        g_last_command_result = G780S_ERR_NONE;
         G780s_SetError(G780S_ERR_NONE);
         G780s_UpdateMaintenanceRegisters();
         return 0;
@@ -1075,6 +1101,7 @@ void G780s_Init(void)
     g_staged_config = g_active_config;
     g_last_config_source = G780S_CFG_SOURCE_DEFAULT;
     G780s_SetError(G780S_ERR_NONE);
+    g_last_command_result = G780S_ERR_NONE;
 
     load_err = G780s_LoadConfigFromFlash(&flash_config);
     if (load_err == G780S_ERR_NONE)
@@ -1221,4 +1248,16 @@ void G780s_GetActiveConfig(G780sRemoteConfig *out_config)
 uint8_t G780s_IsAutoMode(void)
 {
     return (g_active_config.control_mode == G780S_MODE_AUTO) ? 1u : 0u;
+}
+
+uint8_t G780s_ConsumeBootUpgradeRequest(void)
+{
+    uint8_t pending;
+
+    __disable_irq();
+    pending = g_boot_upgrade_pending;
+    g_boot_upgrade_pending = 0u;
+    __enable_irq();
+
+    return pending;
 }

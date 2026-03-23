@@ -1,0 +1,57 @@
+#ifndef __UPGRADE_H
+#define __UPGRADE_H
+
+#include "stm32f1xx_hal.h"
+#include <stdint.h>
+
+#define UPGRADE_BOOT_BASE_ADDR         0x08000000UL
+#define UPGRADE_APP_BASE_ADDR          0x08008000UL
+#define UPGRADE_APP_MAX_SIZE           0x00076800UL
+#define UPGRADE_STATE_PAGE_ADDR        0x0807E800UL
+#define UPGRADE_DIAG_PAGE_ADDR         0x0807F000UL
+#define UPGRADE_CFG_PAGE_ADDR          0x0807F800UL
+
+#define UPGRADE_STATE_MAGIC            0x55504753UL  /* UPGS */
+#define UPGRADE_STATE_VERSION          0x0001u
+
+#define UPGRADE_STATE_IDLE             0x0000u
+#define UPGRADE_STATE_REQUESTED        0x0001u
+#define UPGRADE_STATE_ERASING          0x0002u
+#define UPGRADE_STATE_PROGRAMMING      0x0003u
+#define UPGRADE_STATE_VERIFYING        0x0004u
+#define UPGRADE_STATE_DONE             0x0005u
+#define UPGRADE_STATE_FAILED           0x0006u
+
+#define UPGRADE_REQUEST_SOURCE_NONE    0x0000u
+#define UPGRADE_REQUEST_SOURCE_LOCAL   0x0001u
+#define UPGRADE_REQUEST_SOURCE_G780S   0x0002u
+#define UPGRADE_REQUEST_SOURCE_REMOTE  0x0003u
+
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t payload_size;
+    uint16_t state;
+    uint16_t request_source;
+    uint32_t target_fw_version;
+    uint32_t image_size;
+    uint32_t image_crc32;
+    uint32_t written_bytes;
+    uint32_t last_ok_offset;
+    uint16_t error_code;
+    uint16_t reserved0;
+    uint32_t reserved1;
+    uint16_t crc16;
+} UpgradeStateImage;
+
+uint16_t Upgrade_CRC16(const uint8_t *buf, uint16_t len);
+void Upgrade_InitStateImage(UpgradeStateImage *image);
+uint8_t Upgrade_LoadState(UpgradeStateImage *image);
+uint8_t Upgrade_SaveState(const UpgradeStateImage *image);
+uint8_t Upgrade_RequestBootMode(uint16_t request_source, uint32_t target_fw_version);
+uint8_t Upgrade_ClearState(void);
+uint8_t Upgrade_IsAppVectorValid(uint32_t app_base_addr);
+void Upgrade_JumpToApplication(uint32_t app_base_addr);
+
+#endif

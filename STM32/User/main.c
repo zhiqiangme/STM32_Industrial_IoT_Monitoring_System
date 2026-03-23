@@ -4,6 +4,7 @@
 #include "Weight.h"
 #include "Relay.h"
 #include "G780s.h"
+#include "Upgrade.h"
 
 extern TIM_HandleTypeDef g_tim2_handle;
 
@@ -44,6 +45,18 @@ static float App_ConfigToFloat2(uint32_t value_x100)
 static uint8_t App_IsManualMode(void)
 {
     return (g_runtime_config.control_mode == G780S_MODE_MANUAL) ? 1u : 0u;
+}
+
+static void App_HandlePendingUpgrade(void)
+{
+    if (G780s_ConsumeBootUpgradeRequest() == 0u)
+    {
+        return;
+    }
+
+    printf("[UPGRADE] Bootloader request accepted, system reset...\r\n");
+    HAL_Delay(20);
+    HAL_NVIC_SystemReset();
 }
 
 static void App_SystemInit(void)
@@ -209,6 +222,7 @@ int main(void)
         /* ===== 高优先级任务 ===== */
         App_HandleKeys();
         G780s_Process();  /* 响应G780S读取请求 */
+        App_HandlePendingUpgrade();
 
         /* LED闪烁 */
         static uint32_t led_tick = 0;

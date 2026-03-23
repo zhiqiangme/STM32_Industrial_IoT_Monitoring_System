@@ -111,6 +111,8 @@
  * │ 0x0046 │ REG_DIAG_MODBUS_CRC_ERR_L    │ R            │ CRC 错误计数低 16  │
  * │ 0x0047 │ REG_DIAG_UART_ERR_H          │ R            │ 串口异常计数高 16  │
  * │ 0x0048 │ REG_DIAG_UART_ERR_L          │ R            │ 串口异常计数低 16  │
+ * │ 0x0049 │ REG_DIAG_LAST_CMD_RESULT     │ R            │ 最近维护命令结果   │
+ * │ 0x004A │ REG_DIAG_LAST_BAD_READ_ADDR  │ R            │ 最近非法读取地址   │
  * └────────┴──────────────────────────────┴──────────────┴────────────────────┘
  *
  * 五、维护命令定义（写入 REG_MAINT_COMMAND）
@@ -232,8 +234,10 @@
 #define REG_DIAG_MODBUS_CRC_ERR_L   0x0046
 #define REG_DIAG_UART_ERR_H         0x0047
 #define REG_DIAG_UART_ERR_L         0x0048
+#define REG_DIAG_LAST_CMD_RESULT    0x0049
+#define REG_DIAG_LAST_BAD_READ_ADDR 0x004A
 
-#define MODBUS_REG_COUNT            73
+#define MODBUS_REG_COUNT            75
 
 #define G780S_UNLOCK_KEY            0xA55A
 
@@ -242,6 +246,7 @@
 #define G780S_CMD_DISCARD_STAGED    0x0002
 #define G780S_CMD_RESTORE_DEFAULTS  0x0003
 #define G780S_CMD_CLEAR_ERROR       0x0004
+#define G780S_CMD_ENTER_BOOT_UPGRADE 0x0005
 
 #define G780S_STATUS_UNLOCKED       (1u << 0)
 #define G780S_STATUS_STAGED_DIRTY   (1u << 1)
@@ -266,6 +271,7 @@
 #define G780S_ERR_HZ_PER_LPM_RANGE      14u
 #define G780S_ERR_CONTROL_MODE_INVALID  15u
 #define G780S_ERR_CONFIG_CONFLICT       16u
+#define G780S_ERR_UPGRADE_REQUEST       17u
 
 #define G780S_CFG_VERSION           0x0001
 #define G780S_FW_VERSION            0x0100
@@ -374,6 +380,7 @@ void G780s_GetActiveConfig(G780sRemoteConfig *out_config);
  * @retval uint8_t: 1 表示自动模式，0 表示手动模式
  */
 uint8_t G780s_IsAutoMode(void);
+uint8_t G780s_ConsumeBootUpgradeRequest(void);
 
 #define ModbusSlave_Task()           G780s_Process()
 #define ModbusSlave_Init             G780s_Init
