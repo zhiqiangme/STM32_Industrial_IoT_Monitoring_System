@@ -109,10 +109,25 @@
  * │ 0x0044 │ REG_DIAG_LAST_CFG_SOURCE     │ R            │ 当前配置来源       │
  * │ 0x0045 │ REG_DIAG_MODBUS_CRC_ERR_H    │ R            │ CRC 错误计数高 16  │
  * │ 0x0046 │ REG_DIAG_MODBUS_CRC_ERR_L    │ R            │ CRC 错误计数低 16  │
- * │ 0x0047 │ REG_DIAG_UART_ERR_H          │ R            │ 串口异常计数高 16  │
- * │ 0x0048 │ REG_DIAG_UART_ERR_L          │ R            │ 串口异常计数低 16  │
+ * │ 0x0047 │ REG_DIAG_UART_ERR_H          │ R            │ 串口异常总计高 16  │
+ * │ 0x0048 │ REG_DIAG_UART_ERR_L          │ R            │ 串口异常总计低 16  │
  * │ 0x0049 │ REG_DIAG_LAST_CMD_RESULT     │ R            │ 最近维护命令结果   │
  * │ 0x004A │ REG_DIAG_LAST_BAD_READ_ADDR  │ R            │ 最近非法读取地址   │
+ * │ 0x004B │ REG_DIAG_LAST_SAVE_UPTIME_H  │ R            │ 最近保存时长高 16  │
+ * │ 0x004C │ REG_DIAG_LAST_SAVE_UPTIME_L  │ R            │ 最近保存时长低 16  │
+ * │ 0x004D │ REG_DIAG_LAST_SAVE_SEQ_H     │ R            │ 最近保存序号高 16  │
+ * │ 0x004E │ REG_DIAG_LAST_SAVE_SEQ_L     │ R            │ 最近保存序号低 16  │
+ * │ 0x004F │ REG_DIAG_LAST_UPGRADE_SOURCE │ R            │ 最近升级请求来源   │
+ * │ 0x0050 │ REG_DIAG_LAST_UPGRADE_STATE  │ R            │ 最近升级状态       │
+ * │ 0x0051 │ REG_DIAG_LAST_UPGRADE_ERROR  │ R            │ 最近升级失败原因   │
+ * │ 0x0052 │ REG_DIAG_UART_ORE_H          │ R            │ ORE 计数高 16      │
+ * │ 0x0053 │ REG_DIAG_UART_ORE_L          │ R            │ ORE 计数低 16      │
+ * │ 0x0054 │ REG_DIAG_UART_FE_H           │ R            │ FE 计数高 16       │
+ * │ 0x0055 │ REG_DIAG_UART_FE_L           │ R            │ FE 计数低 16       │
+ * │ 0x0056 │ REG_DIAG_UART_NE_H           │ R            │ NE 计数高 16       │
+ * │ 0x0057 │ REG_DIAG_UART_NE_L           │ R            │ NE 计数低 16       │
+ * │ 0x0058 │ REG_DIAG_RX_OVERFLOW_H       │ R            │ RX 溢出计数高 16   │
+ * │ 0x0059 │ REG_DIAG_RX_OVERFLOW_L       │ R            │ RX 溢出计数低 16   │
  * └────────┴──────────────────────────────┴──────────────┴────────────────────┘
  *
  * 五、维护命令定义（写入 REG_MAINT_COMMAND）
@@ -196,6 +211,10 @@
  *   7. REG_DIAG_RESET_REASON:
  *      1 = 上电复位，2 = NRST 引脚复位，3 = 软件复位，
  *      4 = 独立看门狗，5 = 窗口看门狗，6 = 低功耗复位
+ *   8. REG_DIAG_LAST_SAVE_UPTIME_H/L:
+ *      最近一次成功保存配置时的系统运行秒数快照，不是 RTC 时间
+ *   9. REG_DIAG_LAST_UPGRADE_SOURCE/STATE/ERROR:
+ *      从 Upgrade State 页镜像出的最近一次升级来源、状态和失败原因
  * ============================================================================
  */
 
@@ -236,8 +255,23 @@
 #define REG_DIAG_UART_ERR_L         0x0048
 #define REG_DIAG_LAST_CMD_RESULT    0x0049
 #define REG_DIAG_LAST_BAD_READ_ADDR 0x004A
+#define REG_DIAG_LAST_SAVE_UPTIME_H 0x004B
+#define REG_DIAG_LAST_SAVE_UPTIME_L 0x004C
+#define REG_DIAG_LAST_SAVE_SEQ_H    0x004D
+#define REG_DIAG_LAST_SAVE_SEQ_L    0x004E
+#define REG_DIAG_LAST_UPGRADE_SOURCE 0x004F
+#define REG_DIAG_LAST_UPGRADE_STATE 0x0050
+#define REG_DIAG_LAST_UPGRADE_ERROR 0x0051
+#define REG_DIAG_UART_ORE_H         0x0052
+#define REG_DIAG_UART_ORE_L         0x0053
+#define REG_DIAG_UART_FE_H          0x0054
+#define REG_DIAG_UART_FE_L          0x0055
+#define REG_DIAG_UART_NE_H          0x0056
+#define REG_DIAG_UART_NE_L          0x0057
+#define REG_DIAG_RX_OVERFLOW_H      0x0058
+#define REG_DIAG_RX_OVERFLOW_L      0x0059
 
-#define MODBUS_REG_COUNT            75
+#define MODBUS_REG_COUNT            90
 
 #define G780S_UNLOCK_KEY            0xA55A
 

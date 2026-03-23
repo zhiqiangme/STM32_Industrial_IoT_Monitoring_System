@@ -177,23 +177,23 @@ void USART3_IRQHandler(void)
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_ORE) != RESET)
     {
         __HAL_UART_CLEAR_OREFLAG(huart);
+        Modbus_Slave_NotifyUartOverrun();
         uart_error = 1;
     }
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_FE) != RESET)
     {
         __HAL_UART_CLEAR_FEFLAG(huart);
+        Modbus_Slave_NotifyUartFrameError();
         uart_error = 1;
     }
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_NE) != RESET)
     {
         __HAL_UART_CLEAR_NEFLAG(huart);
+        Modbus_Slave_NotifyUartNoiseError();
         uart_error = 1;
     }
 
-    if (uart_error != 0u)
-    {
-        Modbus_Slave_NotifyUartError();
-    }
+    (void)uart_error;
 }
 
 /**

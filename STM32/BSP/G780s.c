@@ -18,6 +18,11 @@ static uint16_t g_last_command_result = G780S_ERR_NONE;
 static uint16_t g_last_config_source = G780S_CFG_SOURCE_DEFAULT;
 static uint16_t g_reset_reason = G780S_RESET_REASON_UNKNOWN;
 static uint32_t g_power_on_count = 0;
+static uint32_t g_last_save_uptime_s = 0;
+static uint32_t g_last_save_sequence = 0;
+static uint16_t g_last_upgrade_request_source = UPGRADE_REQUEST_SOURCE_NONE;
+static uint16_t g_last_upgrade_state = UPGRADE_STATE_IDLE;
+static uint16_t g_last_upgrade_error = 0u;
 static uint8_t g_boot_upgrade_pending = 0;
 
 #define G780S_DIAG_FLASH_PAGE_ADDR  0x0807F000UL
@@ -25,7 +30,7 @@ static uint8_t g_boot_upgrade_pending = 0;
 #define G780S_UNLOCK_WINDOW_MS      30000UL
 #define G780S_CFG_MAGIC             0x47584346UL  /* GXCF */
 #define G780S_DIAG_MAGIC            0x47584449UL  /* GXDI */
-#define G780S_DIAG_VERSION          0x0001u
+#define G780S_DIAG_VERSION          0x0002u
 
 typedef struct
 {
@@ -42,8 +47,23 @@ typedef struct
     uint16_t version;
     uint16_t payload_size;
     uint32_t power_on_count;
+    uint32_t last_save_uptime_s;
+    uint32_t last_save_sequence;
+    uint16_t last_upgrade_request_source;
+    uint16_t last_upgrade_state;
+    uint16_t last_upgrade_error;
+    uint16_t reserved;
     uint16_t crc16;
 } G780sDiagImage;
+
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t payload_size;
+    uint32_t power_on_count;
+    uint16_t crc16;
+} G780sDiagImageV1;
 
 /**
  * @brief 解析英文月份缩写为数字月份。
@@ -322,6 +342,21 @@ static void G780s_SetError(uint16_t error_code)
 }
 
 /**
+ * @brief 重置运行时诊断快照为默认值。
+ * @param 无
+ * @retval 无
+ */
+static void G780s_ResetDiagRuntime(void)
+{
+    g_power_on_count = 0;
+    g_last_save_uptime_s = 0;
+    g_last_save_sequence = 0;
+    g_last_upgrade_request_source = UPGRADE_REQUEST_SOURCE_NONE;
+    g_last_upgrade_state = UPGRADE_STATE_IDLE;
+    g_last_upgrade_error = 0u;
+}
+
+/**
  * @brief 把配置结构体展开到 Modbus 配置寄存器区。
  * @param config: 待同步到寄存器的配置结构体指针
  * @retval 无
@@ -354,6 +389,10 @@ static void G780s_UpdateMaintenanceRegisters(void)
     uint32_t uptime_seconds = HAL_GetTick() / 1000UL;
     uint32_t crc_error_count = Modbus_Slave_GetCrcErrorCount();
     uint32_t uart_error_count = Modbus_Slave_GetUartErrorCount();
+    uint32_t uart_ore_count = Modbus_Slave_GetUartOverrunCount();
+    uint32_t uart_fe_count = Modbus_Slave_GetUartFrameErrorCount();
+    uint32_t uart_ne_count = Modbus_Slave_GetUartNoiseErrorCount();
+    uint32_t rx_overflow_count = Modbus_Slave_GetRxOverflowCount();
     uint16_t remain_s = 0;
 
     /* 解锁状态下对外提供剩余操作窗口，便于上位机判断是否需要重新解锁。 */
@@ -391,6 +430,21 @@ static void G780s_UpdateMaintenanceRegisters(void)
     g_registers[REG_DIAG_UART_ERR_L] = (uint16_t)(uart_error_count & 0xFFFFu);
     g_registers[REG_DIAG_LAST_CMD_RESULT] = g_last_command_result;
     g_registers[REG_DIAG_LAST_BAD_READ_ADDR] = g_last_bad_read_addr;
+    g_registers[REG_DIAG_LAST_SAVE_UPTIME_H] = (uint16_t)((g_last_save_uptime_s >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_LAST_SAVE_UPTIME_L] = (uint16_t)(g_last_save_uptime_s & 0xFFFFu);
+    g_registers[REG_DIAG_LAST_SAVE_SEQ_H] = (uint16_t)((g_last_save_sequence >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_LAST_SAVE_SEQ_L] = (uint16_t)(g_last_save_sequence & 0xFFFFu);
+    g_registers[REG_DIAG_LAST_UPGRADE_SOURCE] = g_last_upgrade_request_source;
+    g_registers[REG_DIAG_LAST_UPGRADE_STATE] = g_last_upgrade_state;
+    g_registers[REG_DIAG_LAST_UPGRADE_ERROR] = g_last_upgrade_error;
+    g_registers[REG_DIAG_UART_ORE_H] = (uint16_t)((uart_ore_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_UART_ORE_L] = (uint16_t)(uart_ore_count & 0xFFFFu);
+    g_registers[REG_DIAG_UART_FE_H] = (uint16_t)((uart_fe_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_UART_FE_L] = (uint16_t)(uart_fe_count & 0xFFFFu);
+    g_registers[REG_DIAG_UART_NE_H] = (uint16_t)((uart_ne_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_UART_NE_L] = (uint16_t)(uart_ne_count & 0xFFFFu);
+    g_registers[REG_DIAG_RX_OVERFLOW_H] = (uint16_t)((rx_overflow_count >> 16) & 0xFFFFu);
+    g_registers[REG_DIAG_RX_OVERFLOW_L] = (uint16_t)(rx_overflow_count & 0xFFFFu);
 }
 
 /**
@@ -479,47 +533,68 @@ static uint8_t G780s_SaveConfigToFlash(const G780sRemoteConfig *config)
 }
 
 /**
- * @brief 从诊断持久化页读取上电次数。
- * @param power_on_count: 输出上电次数指针
+ * @brief 从诊断持久化页读取诊断快照，兼容旧版仅上电次数结构。
+ * @param 无
  * @retval uint8_t: 0 表示读取成功，非 0 表示诊断页为空或损坏
  */
-static uint8_t G780s_LoadDiagFromFlash(uint32_t *power_on_count)
+static uint8_t G780s_LoadDiagFromFlash(void)
 {
     const G780sDiagImage *image = (const G780sDiagImage *)G780S_DIAG_FLASH_PAGE_ADDR;
+    const G780sDiagImageV1 *image_v1 = (const G780sDiagImageV1 *)G780S_DIAG_FLASH_PAGE_ADDR;
     uint16_t crc_calc;
 
-    if (power_on_count == NULL)
-    {
-        return G780S_ERR_FLASH_CRC;
-    }
+    G780s_ResetDiagRuntime();
 
     if (image->magic == 0xFFFFFFFFUL && image->version == 0xFFFFu)
     {
         return G780S_ERR_FLASH_EMPTY;
     }
-    if (image->magic != G780S_DIAG_MAGIC ||
-        image->version != G780S_DIAG_VERSION ||
-        image->payload_size != sizeof(uint32_t))
+    if (image->magic != G780S_DIAG_MAGIC)
     {
         return G780S_ERR_FLASH_CRC;
     }
 
-    crc_calc = G780s_CRC16((const uint8_t *)image, (uint16_t)offsetof(G780sDiagImage, crc16));
-    if (crc_calc != image->crc16)
+    if (image->version == G780S_DIAG_VERSION &&
+        image->payload_size == (uint16_t)(offsetof(G780sDiagImage, crc16) -
+                                          offsetof(G780sDiagImage, power_on_count)))
     {
-        return G780S_ERR_FLASH_CRC;
+        crc_calc = G780s_CRC16((const uint8_t *)image, (uint16_t)offsetof(G780sDiagImage, crc16));
+        if (crc_calc != image->crc16)
+        {
+            return G780S_ERR_FLASH_CRC;
+        }
+
+        g_power_on_count = image->power_on_count;
+        g_last_save_uptime_s = image->last_save_uptime_s;
+        g_last_save_sequence = image->last_save_sequence;
+        g_last_upgrade_request_source = image->last_upgrade_request_source;
+        g_last_upgrade_state = image->last_upgrade_state;
+        g_last_upgrade_error = image->last_upgrade_error;
+        return G780S_ERR_NONE;
     }
 
-    *power_on_count = image->power_on_count;
-    return G780S_ERR_NONE;
+    if (image_v1->version == 0x0001u &&
+        image_v1->payload_size == sizeof(uint32_t))
+    {
+        crc_calc = G780s_CRC16((const uint8_t *)image_v1, (uint16_t)offsetof(G780sDiagImageV1, crc16));
+        if (crc_calc != image_v1->crc16)
+        {
+            return G780S_ERR_FLASH_CRC;
+        }
+
+        g_power_on_count = image_v1->power_on_count;
+        return G780S_ERR_NONE;
+    }
+
+    return G780S_ERR_FLASH_CRC;
 }
 
 /**
- * @brief 把上电次数保存到独立诊断页。
- * @param power_on_count: 待保存的上电次数
+ * @brief 把当前诊断快照保存到独立诊断页。
+ * @param 无
  * @retval uint8_t: 0 表示保存成功，非 0 表示维护错误码
  */
-static uint8_t G780s_SaveDiagToFlash(uint32_t power_on_count)
+static uint8_t G780s_SaveDiagToFlash(void)
 {
     FLASH_EraseInitTypeDef erase = {0};
     uint32_t page_error = 0;
@@ -531,8 +606,15 @@ static uint8_t G780s_SaveDiagToFlash(uint32_t power_on_count)
     memset(&image, 0xFF, sizeof(image));
     image.magic = G780S_DIAG_MAGIC;
     image.version = G780S_DIAG_VERSION;
-    image.payload_size = (uint16_t)sizeof(uint32_t);
-    image.power_on_count = power_on_count;
+    image.payload_size = (uint16_t)(offsetof(G780sDiagImage, crc16) -
+                                    offsetof(G780sDiagImage, power_on_count));
+    image.power_on_count = g_power_on_count;
+    image.last_save_uptime_s = g_last_save_uptime_s;
+    image.last_save_sequence = g_last_save_sequence;
+    image.last_upgrade_request_source = g_last_upgrade_request_source;
+    image.last_upgrade_state = g_last_upgrade_state;
+    image.last_upgrade_error = g_last_upgrade_error;
+    image.reserved = 0u;
     image.crc16 = G780s_CRC16((const uint8_t *)&image, (uint16_t)offsetof(G780sDiagImage, crc16));
 
     HAL_FLASH_Unlock();
@@ -568,25 +650,84 @@ static uint8_t G780s_SaveDiagToFlash(uint32_t power_on_count)
 }
 
 /**
+ * @brief 记录最近一次成功保存配置的时间快照和序号，并同步持久化。
+ * @param sequence: 最近一次成功保存的配置序号
+ * @retval 无
+ */
+static void G780s_RecordSaveSnapshot(uint32_t sequence)
+{
+    g_last_save_uptime_s = HAL_GetTick() / 1000UL;
+    g_last_save_sequence = sequence;
+
+    if (G780s_SaveDiagToFlash() != G780S_ERR_NONE)
+    {
+        printf("[G780s] Warn: save snapshot persist failed\r\n");
+    }
+}
+
+/**
+ * @brief 记录最近一次升级来源、状态和错误码，并同步持久化。
+ * @param request_source: 升级请求来源
+ * @param state: 最近升级状态
+ * @param error: 最近升级错误码
+ * @retval 无
+ */
+static void G780s_RecordUpgradeSnapshot(uint16_t request_source, uint16_t state, uint16_t error)
+{
+    g_last_upgrade_request_source = request_source;
+    g_last_upgrade_state = state;
+    g_last_upgrade_error = error;
+
+    if (G780s_SaveDiagToFlash() != G780S_ERR_NONE)
+    {
+        printf("[G780s] Warn: upgrade snapshot persist failed\r\n");
+    }
+}
+
+/**
+ * @brief 从 Upgrade State 页同步最近一次升级信息到诊断快照。
+ * @param 无
+ * @retval 无
+ */
+static void G780s_SyncUpgradeSnapshotFromState(void)
+{
+    UpgradeStateImage state_image;
+
+    if (Upgrade_LoadState(&state_image) != 0u)
+    {
+        return;
+    }
+
+    if (g_last_upgrade_request_source != state_image.request_source ||
+        g_last_upgrade_state != state_image.state ||
+        g_last_upgrade_error != state_image.error_code)
+    {
+        G780s_RecordUpgradeSnapshot(state_image.request_source,
+                                    state_image.state,
+                                    state_image.error_code);
+    }
+}
+
+/**
  * @brief 刷新上电次数并持久化到独立诊断页。
  * @param 无
  * @retval 无
  */
 static void G780s_InitPowerOnCounter(void)
 {
-    uint32_t stored_count = 0;
-    uint8_t err = G780s_LoadDiagFromFlash(&stored_count);
+    uint8_t err = G780s_LoadDiagFromFlash();
 
     if (err == G780S_ERR_NONE)
     {
-        g_power_on_count = stored_count + 1UL;
+        g_power_on_count++;
     }
     else
     {
+        G780s_ResetDiagRuntime();
         g_power_on_count = 1UL;
     }
 
-    if (G780s_SaveDiagToFlash(g_power_on_count) != G780S_ERR_NONE)
+    if (G780s_SaveDiagToFlash() != G780S_ERR_NONE)
     {
         printf("[G780s] Warn: power-on counter persist failed\r\n");
     }
@@ -712,6 +853,7 @@ static uint8_t G780s_CommitStagedConfig(void)
 
     G780s_ApplyConfig(&g_staged_config, 1u);
     g_maint_status |= G780S_STATUS_SAVE_OK;
+    G780s_RecordSaveSnapshot(g_staged_config.sequence);
     return G780S_ERR_NONE;
 }
 
@@ -766,6 +908,7 @@ static uint8_t G780s_HandleMaintenanceCommand(uint16_t command)
                 G780s_ApplyConfig(&defaults, 1u);
                 g_last_config_source = G780S_CFG_SOURCE_RESTORE_DEFAULTS;
                 g_maint_status |= G780S_STATUS_SAVE_OK;
+                G780s_RecordSaveSnapshot(defaults.sequence);
             }
             break;
 
@@ -781,6 +924,9 @@ static uint8_t G780s_HandleMaintenanceCommand(uint16_t command)
             err = Upgrade_RequestBootMode(UPGRADE_REQUEST_SOURCE_G780S, 0u);
             if (err == 0u)
             {
+                G780s_RecordUpgradeSnapshot(UPGRADE_REQUEST_SOURCE_G780S,
+                                            UPGRADE_STATE_REQUESTED,
+                                            0u);
                 g_boot_upgrade_pending = 1u;
             }
             else
@@ -1095,6 +1241,7 @@ void G780s_Init(void)
     g_reset_reason = G780s_DetectResetReason();
     __HAL_RCC_CLEAR_RESET_FLAGS();
     G780s_InitPowerOnCounter();
+    G780s_SyncUpgradeSnapshotFromState();
 
     /* 先装入默认参数，再尝试用 Flash 中的持久化配置覆盖。 */
     G780s_SetDefaults(&g_active_config);

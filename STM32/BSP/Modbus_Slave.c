@@ -24,6 +24,10 @@ static volatile uint8_t g_frame_ready = 0;
 static uint8_t g_tx_buf[MODBUS_SLAVE_TX_BUFFER_SIZE];
 static volatile uint32_t g_crc_error_count = 0;
 static volatile uint32_t g_uart_error_count = 0;
+static volatile uint32_t g_uart_ore_count = 0;
+static volatile uint32_t g_uart_fe_count = 0;
+static volatile uint32_t g_uart_ne_count = 0;
+static volatile uint32_t g_rx_overflow_count = 0;
 
 /**
  * @brief 计算 Modbus RTU CRC16。
@@ -385,6 +389,10 @@ void Modbus_Slave_Init(const ModbusSlaveConfig *config)
     memset(g_tx_buf, 0, sizeof(g_tx_buf));
     g_crc_error_count = 0;
     g_uart_error_count = 0;
+    g_uart_ore_count = 0;
+    g_uart_fe_count = 0;
+    g_uart_ne_count = 0;
+    g_rx_overflow_count = 0;
     Modbus_Slave_ClearPendingRx();
 }
 
@@ -426,6 +434,7 @@ void Modbus_Slave_RxCallback(uint8_t byte)
     }
     else
     {
+        g_rx_overflow_count++;
         g_rx_len = 0;
     }
 
@@ -447,8 +456,21 @@ UART_HandleTypeDef *Modbus_Slave_GetHandle(void)
  * @param 无
  * @retval 无
  */
-void Modbus_Slave_NotifyUartError(void)
+void Modbus_Slave_NotifyUartOverrun(void)
 {
+    g_uart_ore_count++;
+    g_uart_error_count++;
+}
+
+void Modbus_Slave_NotifyUartFrameError(void)
+{
+    g_uart_fe_count++;
+    g_uart_error_count++;
+}
+
+void Modbus_Slave_NotifyUartNoiseError(void)
+{
+    g_uart_ne_count++;
     g_uart_error_count++;
 }
 
@@ -470,4 +492,24 @@ uint32_t Modbus_Slave_GetCrcErrorCount(void)
 uint32_t Modbus_Slave_GetUartErrorCount(void)
 {
     return g_uart_error_count;
+}
+
+uint32_t Modbus_Slave_GetUartOverrunCount(void)
+{
+    return g_uart_ore_count;
+}
+
+uint32_t Modbus_Slave_GetUartFrameErrorCount(void)
+{
+    return g_uart_fe_count;
+}
+
+uint32_t Modbus_Slave_GetUartNoiseErrorCount(void)
+{
+    return g_uart_ne_count;
+}
+
+uint32_t Modbus_Slave_GetRxOverflowCount(void)
+{
+    return g_rx_overflow_count;
 }

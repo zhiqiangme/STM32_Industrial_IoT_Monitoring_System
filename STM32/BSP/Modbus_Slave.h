@@ -65,11 +65,25 @@ void Modbus_Slave_RxCallback(uint8_t byte);
 UART_HandleTypeDef *Modbus_Slave_GetHandle(void);
 
 /**
- * @brief 通知从站引擎发生了一次 USART 异常。
+ * @brief 通知从站引擎发生了一次 USART overrun 异常。
  * @param 无
  * @retval 无
  */
-void Modbus_Slave_NotifyUartError(void);
+void Modbus_Slave_NotifyUartOverrun(void);
+
+/**
+ * @brief 通知从站引擎发生了一次 USART 帧错误。
+ * @param 无
+ * @retval 无
+ */
+void Modbus_Slave_NotifyUartFrameError(void);
+
+/**
+ * @brief 通知从站引擎发生了一次 USART 噪声错误。
+ * @param 无
+ * @retval 无
+ */
+void Modbus_Slave_NotifyUartNoiseError(void);
 
 /**
  * @brief 获取 Modbus CRC 错误累计次数。
@@ -84,5 +98,33 @@ uint32_t Modbus_Slave_GetCrcErrorCount(void);
  * @retval uint32_t: UART 异常次数
  */
 uint32_t Modbus_Slave_GetUartErrorCount(void);
+
+/**
+ * @brief 获取 UART overrun 错误累计次数。
+ * @param 无
+ * @retval uint32_t: overrun 错误次数
+ */
+uint32_t Modbus_Slave_GetUartOverrunCount(void);
+
+/**
+ * @brief 获取 UART 帧错误累计次数。
+ * @param 无
+ * @retval uint32_t: 帧错误次数
+ */
+uint32_t Modbus_Slave_GetUartFrameErrorCount(void);
+
+/**
+ * @brief 获取 UART 噪声错误累计次数。
+ * @param 无
+ * @retval uint32_t: 噪声错误次数
+ */
+uint32_t Modbus_Slave_GetUartNoiseErrorCount(void);
+
+/**
+ * @brief 获取接收缓冲溢出累计次数。
+ * @param 无
+ * @retval uint32_t: 接收缓冲溢出次数
+ */
+uint32_t Modbus_Slave_GetRxOverflowCount(void);
 
 #endif
