@@ -52,6 +52,10 @@ uint8_t Upgrade_SaveState(const UpgradeStateImage *image);
 uint8_t Upgrade_RequestBootMode(uint16_t request_source, uint32_t target_fw_version);
 uint8_t Upgrade_ClearState(void);
 uint8_t Upgrade_IsAppVectorValid(uint32_t app_base_addr);
+uint32_t Upgrade_CRC32_Calculate(const uint8_t *buf, uint32_t len, uint32_t seed);
+uint32_t Upgrade_CRC32_CalculateFlash(uint32_t address, uint32_t len);
+uint8_t Upgrade_EraseAppRegion(uint32_t image_size);
+uint8_t Upgrade_ProgramBytes(uint32_t address, const uint8_t *data, uint32_t len);
 void Upgrade_JumpToApplication(uint32_t app_base_addr);
 
 #endif

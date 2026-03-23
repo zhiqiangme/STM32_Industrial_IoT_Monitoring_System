@@ -8,6 +8,7 @@ static void Bootloader_SystemInit(void)
     delay_init(72);
     usart_init(115200);
     LED_Init();
+    SCB->VTOR = FLASH_BASE;
 }
 
 int main(void)

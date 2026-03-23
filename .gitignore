@@ -25,7 +25,7 @@ ehthumbs.db
 
 # --- 仓库根目录本地生成文件 ---
 /.vs/
-/CRC/
+/Modbus_CRC/
 /STM32/MDK-ARM/DebugConfig/
 
 ####################################

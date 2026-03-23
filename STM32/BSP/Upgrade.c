@@ -93,6 +93,42 @@ static uint8_t Upgrade_WriteStateImage(const UpgradeStateImage *image)
     return (memcmp(flash_image, image, sizeof(*image)) == 0) ? 0u : 3u;
 }
 
+uint32_t Upgrade_CRC32_Calculate(const uint8_t *buf, uint32_t len, uint32_t seed)
+{
+    uint32_t crc = ~seed;
+
+    if (buf == NULL)
+    {
+        return ~crc;
+    }
+
+    for (uint32_t i = 0; i < len; i++)
+    {
+        crc ^= buf[i];
+        for (uint32_t j = 0; j < 8u; j++)
+        {
+            if ((crc & 1u) != 0u)
+            {
+                crc = (crc >> 1) ^ 0xEDB88320UL;
+            }
+            else
+            {
+                crc >>= 1;
+            }
+        }
+    }
+
+    return ~crc;
+}
+
+uint32_t Upgrade_CRC32_CalculateFlash(uint32_t address, uint32_t len)
+{
+    uint32_t crc = 0u;
+    const uint8_t *ptr = (const uint8_t *)address;
+
+    return Upgrade_CRC32_Calculate(ptr, len, crc);
+}
+
 uint8_t Upgrade_LoadState(UpgradeStateImage *image)
 {
     const UpgradeStateImage *flash_image = (const UpgradeStateImage *)UPGRADE_STATE_PAGE_ADDR;
@@ -183,6 +219,85 @@ uint8_t Upgrade_IsAppVectorValid(uint32_t app_base_addr)
     }
 
     return 1u;
+}
+
+uint8_t Upgrade_EraseAppRegion(uint32_t image_size)
+{
+    FLASH_EraseInitTypeDef erase = {0};
+    uint32_t page_error = 0u;
+    uint32_t erase_size = image_size;
+    uint32_t page_count;
+
+    if (erase_size == 0u || erase_size > UPGRADE_APP_MAX_SIZE)
+    {
+        return 1u;
+    }
+
+    page_count = (erase_size + 2047u) / 2048u;
+
+    HAL_FLASH_Unlock();
+
+    erase.TypeErase = FLASH_TYPEERASE_PAGES;
+    erase.PageAddress = UPGRADE_APP_BASE_ADDR;
+    erase.NbPages = page_count;
+
+    if (HAL_FLASHEx_Erase(&erase, &page_error) != HAL_OK)
+    {
+        HAL_FLASH_Lock();
+        return 2u;
+    }
+
+    HAL_FLASH_Lock();
+    return 0u;
+}
+
+uint8_t Upgrade_ProgramBytes(uint32_t address, const uint8_t *data, uint32_t len)
+{
+    uint32_t i;
+    uint16_t halfword;
+
+    if (data == NULL || len == 0u)
+    {
+        return 1u;
+    }
+    if (address < UPGRADE_APP_BASE_ADDR ||
+        (address + len) > (UPGRADE_APP_BASE_ADDR + UPGRADE_APP_MAX_SIZE))
+    {
+        return 2u;
+    }
+
+    HAL_FLASH_Unlock();
+
+    for (i = 0u; i < len; i += 2u)
+    {
+        halfword = data[i];
+        if ((i + 1u) < len)
+        {
+            halfword |= (uint16_t)((uint16_t)data[i + 1u] << 8);
+        }
+        else
+        {
+            halfword |= 0xFF00u;
+        }
+
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, address + i, halfword) != HAL_OK)
+        {
+            HAL_FLASH_Lock();
+            return 3u;
+        }
+    }
+
+    HAL_FLASH_Lock();
+
+    for (i = 0u; i < len; i++)
+    {
+        if (*(__IO uint8_t *)(address + i) != data[i])
+        {
+            return 4u;
+        }
+    }
+
+    return 0u;
 }
 
 void Upgrade_JumpToApplication(uint32_t app_base_addr)

@@ -5,5 +5,6 @@
 
 void Bootloader_Run(void);
 uint8_t Bootloader_ShouldStayInLoader(void);
+void Bootloader_Usart3IrqHandler(void);
 
 #endif
