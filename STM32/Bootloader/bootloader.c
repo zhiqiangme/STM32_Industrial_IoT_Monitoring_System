@@ -48,6 +48,7 @@
 #define BOOT_ERR_VERIFY               0x0009u
 #define BOOT_ERR_NOT_COMPLETE         0x000Au
 #define BOOT_ERR_BAD_CRC              0x000Bu
+#define BOOT_ERR_TIMEOUT_RECOVERY     0x000Cu
 
 typedef struct
 {
@@ -61,16 +62,28 @@ static UART_HandleTypeDef g_boot_uart;
 static UpgradeStateImage g_boot_state;
 static uint16_t g_boot_last_error = BOOT_ERR_NONE;
 
+/* 这些状态说明上次升级尚未结束，Bootloader 默认应继续驻留等待恢复。 */
+static uint8_t Bootloader_IsUpgradeActiveState(uint16_t state)
+{
+    return (state == UPGRADE_STATE_REQUESTED ||
+            state == UPGRADE_STATE_ERASING ||
+            state == UPGRADE_STATE_PROGRAMMING ||
+            state == UPGRADE_STATE_VERIFYING) ? 1u : 0u;
+}
+
+/* 485 收发切换：拉低 PA5 进入接收态。 */
 static void Bootloader_RxEnable(void)
 {
     HAL_GPIO_WritePin(BOOT_485_EN_PORT, BOOT_485_EN_PIN, GPIO_PIN_RESET);
 }
 
+/* 485 收发切换：拉高 PA5 进入发送态。 */
 static void Bootloader_TxEnable(void)
 {
     HAL_GPIO_WritePin(BOOT_485_EN_PORT, BOOT_485_EN_PIN, GPIO_PIN_SET);
 }
 
+/* 通过串口1输出启动横幅，便于现场判断当前固件与状态页地址。 */
 static void Bootloader_PrintBanner(void)
 {
     printf("\r\n[BOOT] STM32 Mill Bootloader\r\n");
@@ -78,6 +91,7 @@ static void Bootloader_PrintBanner(void)
     printf("[BOOT] State page: 0x%08lX\r\n", (unsigned long)UPGRADE_STATE_PAGE_ADDR);
 }
 
+/* Bootloader 自己占用 USART3 + PA5 这条 485 通道，和 App 运行态复用同一物理口。 */
 static void Bootloader_UartInit(void)
 {
     GPIO_InitTypeDef gpio = {0};
@@ -115,6 +129,7 @@ static void Bootloader_UartInit(void)
     HAL_UART_Init(&g_boot_uart);
 }
 
+/* 最底层发包函数，只负责 485 方向切换与串口发送。 */
 static void Bootloader_SendRaw(const uint8_t *data, uint16_t len)
 {
     if (data == NULL || len == 0u)
@@ -138,6 +153,7 @@ static void Bootloader_SendRaw(const uint8_t *data, uint16_t len)
     Bootloader_RxEnable();
 }
 
+/* 统一封装 Bootloader 协议帧：SOF + CMD/SEQ/LEN + PAYLOAD + CRC16。 */
 static void Bootloader_SendFrame(uint8_t cmd, uint8_t seq, const uint8_t *payload, uint16_t len)
 {
     uint8_t frame[2u + 1u + 1u + 2u + BOOT_MAX_PAYLOAD + 2u];
@@ -168,6 +184,7 @@ static void Bootloader_SendFrame(uint8_t cmd, uint8_t seq, const uint8_t *payloa
     Bootloader_SendRaw(frame, idx);
 }
 
+/* ACK 与 NACK 都带 2 字节错误码，便于上位机直接判断结果。 */
 static void Bootloader_SendAck(uint8_t seq)
 {
     uint8_t payload[2];
@@ -187,6 +204,7 @@ static void Bootloader_SendNack(uint8_t seq, uint16_t error)
     Bootloader_SendFrame(BOOT_RSP_NACK, seq, payload, sizeof(payload));
 }
 
+/* GET_INFO 回包用于上位机确认分区、页大小、状态和最近错误。 */
 static void Bootloader_SendInfo(uint8_t seq)
 {
     uint8_t payload[24];
@@ -233,6 +251,7 @@ static void Bootloader_SendInfo(uint8_t seq)
     Bootloader_SendFrame(BOOT_RSP_INFO, seq, payload, idx);
 }
 
+/* QUERY_STATUS 主要用于续传和现场排障：镜像大小、已写字节、最近成功偏移等。 */
 static void Bootloader_SendStatus(uint8_t seq)
 {
     uint8_t payload[20];
@@ -255,6 +274,7 @@ static void Bootloader_SendStatus(uint8_t seq)
     Bootloader_SendFrame(BOOT_RSP_STATUS, seq, payload, idx);
 }
 
+/* Bootloader 协议采用阻塞接收；SOF 逐字节找头，其余字段整段收取。 */
 static uint8_t Bootloader_ReceiveByte(uint8_t *byte, uint32_t timeout_ms)
 {
     if (HAL_UART_Receive(&g_boot_uart, byte, 1u, timeout_ms) == HAL_OK)
@@ -277,6 +297,7 @@ static uint8_t Bootloader_ReadFrame(BootFrame *frame)
         return 0u;
     }
 
+    /* 先同步帧头 0x55 0xAA，再收剩余头字段和负载。 */
     while (1)
     {
         if (Bootloader_ReceiveByte(&byte, BOOT_RX_TIMEOUT_MS) == 0u)
@@ -338,6 +359,7 @@ static uint8_t Bootloader_ReadFrame(BootFrame *frame)
         calc_crc = Upgrade_CRC16(crc_buf, crc_len);
     }
 
+    /* 只对 CMD/SEQ/LEN/PAYLOAD 做 CRC，不包含 SOF。 */
     if (calc_crc != rx_crc)
     {
         g_boot_last_error = BOOT_ERR_BAD_CRC;
@@ -347,6 +369,7 @@ static uint8_t Bootloader_ReadFrame(BootFrame *frame)
     return 1u;
 }
 
+/* 避免每包都刷状态页，默认每写满 2KB 页边界或最后一包时再持久化一次。 */
 static uint8_t Bootloader_SaveStateThrottled(uint8_t force_save)
 {
     if (force_save != 0u || (g_boot_state.written_bytes % 2048u) == 0u)
@@ -357,6 +380,7 @@ static uint8_t Bootloader_SaveStateThrottled(uint8_t force_save)
     return 0u;
 }
 
+/* START 表示上位机正式发起一次升级：记录镜像元数据并擦除 App 区。 */
 static void Bootloader_HandleStart(const BootFrame *frame)
 {
     uint32_t image_size;
@@ -413,6 +437,7 @@ static void Bootloader_HandleStart(const BootFrame *frame)
     Bootloader_SendAck(frame->seq);
 }
 
+/* DATA 要求严格顺序写入，不允许乱序；写入后按节流策略保存状态页。 */
 static void Bootloader_HandleData(const BootFrame *frame)
 {
     uint32_t offset;
@@ -472,6 +497,7 @@ static void Bootloader_HandleData(const BootFrame *frame)
     Bootloader_SendAck(frame->seq);
 }
 
+/* END 负责最终收口：校验长度、计算 CRC32、检查向量表，再把状态写成 DONE。 */
 static void Bootloader_HandleEnd(const BootFrame *frame)
 {
     uint32_t calc_crc32;
@@ -513,6 +539,7 @@ static void Bootloader_HandleEnd(const BootFrame *frame)
     Bootloader_SendAck(frame->seq);
 }
 
+/* ABORT 不回滚旧镜像，只把本次升级标记为 FAILED，继续留在 Bootloader。 */
 static void Bootloader_HandleAbort(const BootFrame *frame)
 {
     Upgrade_InitStateImage(&g_boot_state);
@@ -523,6 +550,7 @@ static void Bootloader_HandleAbort(const BootFrame *frame)
     Bootloader_SendAck(frame->seq);
 }
 
+/* 协议层分发入口。 */
 static void Bootloader_HandleFrame(const BootFrame *frame)
 {
     switch (frame->cmd)
@@ -557,12 +585,34 @@ static void Bootloader_HandleFrame(const BootFrame *frame)
     }
 }
 
+/* 启动决策：
+ * - DONE 且镜像一致：允许跳 App
+ * - FAILED 且当前 App 仍有效：允许跳 App
+ * - REQUESTED/ERASING/PROGRAMMING/VERIFYING：默认继续驻留
+ * - 但如果连续多次上电仍卡在这些状态，且 App 依旧有效，则自动判为超时失败并回 App */
 uint8_t Bootloader_ShouldStayInLoader(void)
 {
     if (Upgrade_LoadState(&g_boot_state) == 0u)
     {
-        if (g_boot_state.state != UPGRADE_STATE_IDLE && g_boot_state.state != UPGRADE_STATE_DONE)
+        if (Bootloader_IsUpgradeActiveState(g_boot_state.state) != 0u)
         {
+            uint8_t app_valid = Upgrade_IsAppVectorValid(UPGRADE_APP_BASE_ADDR);
+
+            if (g_boot_state.active_boot_count < 0xFFFFu)
+            {
+                g_boot_state.active_boot_count++;
+                Upgrade_SaveState(&g_boot_state);
+            }
+
+            if (app_valid != 0u && g_boot_state.active_boot_count >= UPGRADE_ACTIVE_STATE_BOOT_LIMIT)
+            {
+                g_boot_state.state = UPGRADE_STATE_FAILED;
+                g_boot_state.error_code = BOOT_ERR_TIMEOUT_RECOVERY;
+                g_boot_state.active_boot_count = 0u;
+                Upgrade_SaveState(&g_boot_state);
+                return 0u;
+            }
+
             return 1u;
         }
         if (g_boot_state.state == UPGRADE_STATE_DONE)
@@ -573,6 +623,7 @@ uint8_t Bootloader_ShouldStayInLoader(void)
             {
                 g_boot_state.state = UPGRADE_STATE_FAILED;
                 g_boot_state.error_code = BOOT_ERR_VERIFY;
+                g_boot_state.active_boot_count = 0u;
                 Upgrade_SaveState(&g_boot_state);
                 return 1u;
             }
@@ -586,6 +637,10 @@ uint8_t Bootloader_ShouldStayInLoader(void)
     return (Upgrade_IsAppVectorValid(UPGRADE_APP_BASE_ADDR) == 0u) ? 1u : 0u;
 }
 
+/* Bootloader 主循环：
+ * 1. 打印状态
+ * 2. 决定驻留还是跳 App
+ * 3. 驻留时持续处理升级协议，并用红灯快闪表示当前处于 Bootloader */
 void Bootloader_Run(void)
 {
     BootFrame frame;
@@ -624,7 +679,7 @@ void Bootloader_Run(void)
             Bootloader_HandleFrame(&frame);
         }
 
-        if ((HAL_GetTick() - last_tick) >= 500u)
+        if ((HAL_GetTick() - last_tick) >= 100u)
         {
             last_tick = HAL_GetTick();
             LED_R_TOGGLE();

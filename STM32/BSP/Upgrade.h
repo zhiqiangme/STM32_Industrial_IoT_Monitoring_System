@@ -22,6 +22,10 @@
 #define UPGRADE_STATE_DONE             0x0005u
 #define UPGRADE_STATE_FAILED           0x0006u
 
+/* 当设备连续多次上电仍停留在“升级进行中”状态，且当前 App 仍然有效时，
+ * Bootloader 会把本次升级判定为超时失败并回退到 App。 */
+#define UPGRADE_ACTIVE_STATE_BOOT_LIMIT  3u
+
 #define UPGRADE_REQUEST_SOURCE_NONE    0x0000u
 #define UPGRADE_REQUEST_SOURCE_LOCAL   0x0001u
 #define UPGRADE_REQUEST_SOURCE_G780S   0x0002u
@@ -40,11 +44,15 @@ typedef struct
     uint32_t written_bytes;
     uint32_t last_ok_offset;
     uint16_t error_code;
-    uint16_t reserved0;
-    uint32_t reserved1;
+    /* 记录设备在“升级进行中”状态下已经连续启动了多少次，用于超时恢复。 */
+    uint16_t active_boot_count;
+    uint32_t reserved;
     uint16_t crc16;
 } UpgradeStateImage;
 
+/* 以下接口由 App 与 Bootloader 共用：
+ * - App 用它写升级请求和保存升级状态
+ * - Bootloader 用它校验、擦写 App 和完成跳转 */
 uint16_t Upgrade_CRC16(const uint8_t *buf, uint16_t len);
 void Upgrade_InitStateImage(UpgradeStateImage *image);
 uint8_t Upgrade_LoadState(UpgradeStateImage *image);

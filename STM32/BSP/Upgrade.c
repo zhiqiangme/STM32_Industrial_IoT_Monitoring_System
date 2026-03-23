@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 
+/* Bootloader 协议帧和状态页都复用 Modbus 风格 CRC16，低字节在前。 */
 uint16_t Upgrade_CRC16(const uint8_t *buf, uint16_t len)
 {
     uint16_t crc = 0xFFFFu;
@@ -32,6 +33,7 @@ uint16_t Upgrade_CRC16(const uint8_t *buf, uint16_t len)
     return crc;
 }
 
+/* 初始化一份默认状态页镜像。调用方再按需要覆写 state/image_size 等字段。 */
 void Upgrade_InitStateImage(UpgradeStateImage *image)
 {
     if (image == NULL)
@@ -52,12 +54,13 @@ void Upgrade_InitStateImage(UpgradeStateImage *image)
     image->written_bytes = 0u;
     image->last_ok_offset = 0u;
     image->error_code = 0u;
-    image->reserved0 = 0u;
-    image->reserved1 = 0u;
+    image->active_boot_count = 0u;
+    image->reserved = 0u;
     image->crc16 = Upgrade_CRC16((const uint8_t *)image,
                                  (uint16_t)offsetof(UpgradeStateImage, crc16));
 }
 
+/* 状态页固定占用最后预留的 1 页 Flash，每次保存都整页擦写。 */
 static uint8_t Upgrade_WriteStateImage(const UpgradeStateImage *image)
 {
     FLASH_EraseInitTypeDef erase = {0};
@@ -93,6 +96,7 @@ static uint8_t Upgrade_WriteStateImage(const UpgradeStateImage *image)
     return (memcmp(flash_image, image, sizeof(*image)) == 0) ? 0u : 3u;
 }
 
+/* 这里使用标准 CRC32(Poly 0xEDB88320)，供整包镜像完整性校验。 */
 uint32_t Upgrade_CRC32_Calculate(const uint8_t *buf, uint32_t len, uint32_t seed)
 {
     uint32_t crc = ~seed;
@@ -121,6 +125,7 @@ uint32_t Upgrade_CRC32_Calculate(const uint8_t *buf, uint32_t len, uint32_t seed
     return ~crc;
 }
 
+/* 直接对 App Flash 区做 CRC32，避免把整包搬到 RAM。 */
 uint32_t Upgrade_CRC32_CalculateFlash(uint32_t address, uint32_t len)
 {
     uint32_t crc = 0u;
@@ -129,6 +134,7 @@ uint32_t Upgrade_CRC32_CalculateFlash(uint32_t address, uint32_t len)
     return Upgrade_CRC32_Calculate(ptr, len, crc);
 }
 
+/* 从状态页加载升级状态；如果整页为空，则返回一份默认 IDLE 镜像。 */
 uint8_t Upgrade_LoadState(UpgradeStateImage *image)
 {
     const UpgradeStateImage *flash_image = (const UpgradeStateImage *)UPGRADE_STATE_PAGE_ADDR;
@@ -164,6 +170,7 @@ uint8_t Upgrade_LoadState(UpgradeStateImage *image)
     return 0u;
 }
 
+/* 保存状态页前统一重算头字段和 CRC，避免调用方漏填。 */
 uint8_t Upgrade_SaveState(const UpgradeStateImage *image)
 {
     UpgradeStateImage copy;
@@ -184,6 +191,7 @@ uint8_t Upgrade_SaveState(const UpgradeStateImage *image)
     return Upgrade_WriteStateImage(&copy);
 }
 
+/* App 侧请求进入 Bootloader 时调用：写 REQUESTED 状态并记录来源。 */
 uint8_t Upgrade_RequestBootMode(uint16_t request_source, uint32_t target_fw_version)
 {
     UpgradeStateImage image;
@@ -196,6 +204,7 @@ uint8_t Upgrade_RequestBootMode(uint16_t request_source, uint32_t target_fw_vers
     return Upgrade_SaveState(&image);
 }
 
+/* 清空升级状态页，等价于把状态恢复为 IDLE。 */
 uint8_t Upgrade_ClearState(void)
 {
     UpgradeStateImage image;
@@ -204,6 +213,7 @@ uint8_t Upgrade_ClearState(void)
     return Upgrade_SaveState(&image);
 }
 
+/* 只做最小有效性检查：栈顶必须落在 SRAM，复位向量必须落在 App 区内。 */
 uint8_t Upgrade_IsAppVectorValid(uint32_t app_base_addr)
 {
     uint32_t app_stack = *(__IO uint32_t *)app_base_addr;
@@ -221,6 +231,7 @@ uint8_t Upgrade_IsAppVectorValid(uint32_t app_base_addr)
     return 1u;
 }
 
+/* 擦除 App 区前半部分时，只按镜像大小计算需要擦多少页，不碰参数页与诊断页。 */
 uint8_t Upgrade_EraseAppRegion(uint32_t image_size)
 {
     FLASH_EraseInitTypeDef erase = {0};
@@ -251,6 +262,7 @@ uint8_t Upgrade_EraseAppRegion(uint32_t image_size)
     return 0u;
 }
 
+/* 以半字为单位写入 App 数据，并在写后逐字节回读确认。 */
 uint8_t Upgrade_ProgramBytes(uint32_t address, const uint8_t *data, uint32_t len)
 {
     uint32_t i;
@@ -300,6 +312,11 @@ uint8_t Upgrade_ProgramBytes(uint32_t address, const uint8_t *data, uint32_t len
     return 0u;
 }
 
+/* 从 Bootloader 跳转到 App 的标准流程：
+ * 1. 关闭 SysTick 与中断
+ * 2. 反初始化 HAL / RCC
+ * 3. 切换 VTOR 与 MSP
+ * 4. 重新开中断后进入 App ResetHandler */
 void Upgrade_JumpToApplication(uint32_t app_base_addr)
 {
     uint32_t app_stack = *(__IO uint32_t *)app_base_addr;
@@ -323,6 +340,9 @@ void Upgrade_JumpToApplication(uint32_t app_base_addr)
 
     SCB->VTOR = app_base_addr;
     __set_MSP(app_stack);
+    __DSB();
+    __ISB();
+    __enable_irq();
 
     app_entry();
 

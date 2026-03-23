@@ -226,11 +226,14 @@ int main(void)
 
         /* LED闪烁 */
         static uint32_t led_tick = 0;
+        static uint32_t led_g_tick = 0;
         if (HAL_GetTick() - led_tick >= 500)
         {
             led_tick = HAL_GetTick();
-            LED_R_TOGGLE();
+            //LED_R_TOGGLE();
+			LED_G_TOGGLE();
         }
+
 
         /* ===== 应用最新远程配置 ===== */
         {
