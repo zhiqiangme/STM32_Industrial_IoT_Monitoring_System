@@ -23,7 +23,6 @@ ehthumbs.db
 .git/
 .vscode/
 /.vs/
-/Modbus_CRC/
 /STM32/MDK-ARM/DebugConfig/
 /__pycache__/
 
