@@ -231,7 +231,7 @@ int main(void)
         {
             led_tick = HAL_GetTick();
             LED_R_TOGGLE();
-			LED_G_TOGGLE();
+			//LED_G_TOGGLE();
         }
 
 

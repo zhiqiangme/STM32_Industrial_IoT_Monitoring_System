@@ -494,6 +494,11 @@
               <FileType>1</FileType>
               <FilePath>..\System\nanomodbus.c</FilePath>
             </File>
+            <File>
+              <FileName>ymodem.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\System\ymodem.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1999,6 +2004,11 @@
                   </Cads>
                 </FileArmAds>
               </FileOption>
+            </File>
+            <File>
+              <FileName>ymodem.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\System\ymodem.c</FilePath>
             </File>
           </Files>
         </Group>
