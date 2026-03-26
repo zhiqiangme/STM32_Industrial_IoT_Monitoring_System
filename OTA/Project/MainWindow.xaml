@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="STM32 OTA 升级工具"
+        Icon="Assets/OTA.png"
         Height="760"
         Width="1040"
         MinHeight="700"

@@ -7,6 +7,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <Platforms>AnyCPU;x64</Platforms>
+    <ApplicationIcon>..\Assets\OTA.ico</ApplicationIcon>
+    <AssemblyName>STM32_OTA_Upgrade</AssemblyName>
+    <Product>STM32 OTA 升级工具</Product>
+    <Title>STM32 OTA 升级工具</Title>
+    <Description>STM32 本地与在线 OTA 升级工具。</Description>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="..\Assets\OTA.ico" Link="Assets\OTA.ico" />
+    <Resource Include="..\Assets\OTA.png" Link="Assets\OTA.png" />
+  </ItemGroup>
 
 </Project>

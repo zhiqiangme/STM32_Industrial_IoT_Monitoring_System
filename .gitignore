@@ -21,8 +21,9 @@ ehthumbs.db
 
 # --- 仓库根目录本地生成文件 ---
 .git/
-.vscode/
-/.vs/
+**/.dotnet/
+**/.vs/
+**/.vscode/
 /STM32/MDK-ARM/DebugConfig/
 /__pycache__/
 
@@ -31,7 +32,6 @@ ehthumbs.db
 ####################################
 
 # --- Visual Studio ---
-Modbus_CRC/**/.vs/
 Modbus_CRC/**/*.suo
 Modbus_CRC/**/*.user
 Modbus_CRC/**/*.userosscache
@@ -55,7 +55,6 @@ Modbus_CRC/**/x64/
 Modbus_CRC/**/x86/
 
 # --- Visual Studio Code ---
-Modbus_CRC/**/.vscode/
 Modbus_CRC/**/*.code-workspace
 
 # --- Modbus_CRC 构建输出 ---
@@ -71,7 +70,6 @@ Modbus_CRC/**/[Ii]nstallers/
 ####################################
 
 # --- Visual Studio ---
-OTA/**/.vs/
 OTA/**/*.suo
 OTA/**/*.user
 OTA/**/*.userosscache
@@ -95,7 +93,6 @@ OTA/**/x64/
 OTA/**/x86/
 
 # --- Visual Studio Code ---
-OTA/**/.vscode/
 OTA/**/*.code-workspace
 
 # --- OTA 构建输出 ---
@@ -162,7 +159,6 @@ STM32/**/EWARM/settings/
 ####################################
 
 # --- Visual Studio ---
-Windows/**/.vs/
 Windows/**/*.suo
 Windows/**/*.user
 Windows/**/*.userosscache
@@ -186,7 +182,6 @@ Windows/**/x64/
 Windows/**/x86/
 
 # --- Visual Studio Code ---
-Windows/**/.vscode/
 Windows/**/*.code-workspace
 
 # --- Windows 构建输出 ---
