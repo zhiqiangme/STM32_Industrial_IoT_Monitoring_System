@@ -48,7 +48,9 @@ STM32 App 主要负责：
 2. STM32 软件复位
 3. Bootloader 驻留并等待 YMODEM
 4. `stm32_local_upgrade.py` 发送 `App.bin`
-5. Bootloader 校验 CRC32，成功后回到 App
+5. Bootloader 校验整包 `CRC32 + SHA-256 + App 向量表`
+6. 校验通过后复位，再次启动时继续复核 `CRC32 + SHA-256 + App 向量表`
+7. 复核通过后跳回 App
 
 #### 远程升级
 
@@ -86,6 +88,8 @@ STM32 App 主要负责：
 - App 侧写入升级请求标志并复位
 - Bootloader 状态页持久化
 - 本地 YMODEM 升级
+- 本地升级整包 `CRC32 + SHA-256` 校验
+- Bootloader 启动前再次复核镜像完整性
 - 基于 TCP 透传的远程升级
 - 升级来源、状态、错误码诊断回读
 
@@ -169,6 +173,13 @@ dotnet build Modbus_CRC\Project.slnx
 python stm32_local_upgrade.py run --port COM6 --baudrate 115200 --image STM32\MDK-ARM\Objects\App.bin
 ```
 
+当前脚本行为：
+
+- 自动计算整包 `CRC32`
+- 自动计算整包 `SHA-256`
+- 把 `image_size / image_crc32 / target_fw_version / image_sha256` 作为 YMODEM 头包元数据发送给 Bootloader
+- YMODEM 数据包大小自动在 `128` / `1024` 字节之间切换
+
 常用参数：
 
 - `--port`：串口号，默认 `COM6`
@@ -176,6 +187,16 @@ python stm32_local_upgrade.py run --port COM6 --baudrate 115200 --image STM32\MD
 - `--timeout`：单步超时秒数
 - `--target-fw-version`：目标固件版本号
 - `--verbose`：打印 YMODEM 收发字节
+
+本地升级当前实际校验链路：
+
+- YMODEM 单包 `CRC16-CCITT/XMODEM`
+- 升级状态页 `CRC16`
+- Flash 写入后的回读校验
+- 整包 `CRC32`
+- 整包 `SHA-256`
+- App 向量表有效性校验
+- Bootloader 在 `DONE` 状态下每次上电再次复核 `CRC32 + SHA-256 + 向量表`
 
 ### 6.2 远程升级脚本
 

@@ -18,6 +18,7 @@ Requires:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 import time
 import zlib
@@ -77,6 +78,7 @@ def build_packet(packet_no: int, payload: bytes, packet_type: int, pad_byte: int
 
     if pad_byte is None:
         pad_byte = CPM_EOF
+    # YMODEM 约定包体必须填满固定长度，未用满的尾部统一补 pad_byte。
     padded = payload.ljust(packet_size, bytes([pad_byte]))
 
     header = bytes([packet_type, packet_no & 0xFF, (~packet_no) & 0xFF])
@@ -84,11 +86,15 @@ def build_packet(packet_no: int, payload: bytes, packet_type: int, pad_byte: int
     return header + padded + bytes([(crc >> 8) & 0xFF, crc & 0xFF])
 
 
-def build_initial_packet(file_name: str, file_size: int, crc32: int, target_fw_version: int) -> bytes:
+def build_initial_packet(file_name: str, file_size: int, crc32: int, sha256_hex: str, target_fw_version: int) -> bytes:
     safe_name = Path(file_name).name
-    metadata = f"{file_size} 0x{crc32:08X} {target_fw_version}"
+    # 头包元数据与 Bootloader 侧 ymodem.c 的解析格式严格对应：
+    # "<size> 0x<crc32> <target_fw_version> <sha256_hex>"
+    metadata = f"{file_size} 0x{crc32:08X} {target_fw_version} {sha256_hex}"
     payload = safe_name.encode("ascii", errors="ignore") + b"\x00" + metadata.encode("ascii") + b"\x00"
-    return build_packet(0, payload, SOH, pad_byte=0x00)
+    # 增加 SHA-256 后，头包长度可能超过 128 字节，此时自动切到 1K 包格式。
+    packet_type = SOH if len(payload) <= PACKET_SIZE else STX
+    return build_packet(0, payload, packet_type, pad_byte=0x00)
 
 
 def build_final_packet() -> bytes:
@@ -155,6 +161,8 @@ class YmodemSender:
                 continue
             if value == CRC16:
                 return
+            # 某些现场串口链路会把前面的 Modbus 请求回显回来，这里直接忽略，
+            # 直到真正等到 Bootloader 的 'C' 再开始发 YMODEM。
             if value == CA:
                 other = self._read_byte(0.5)
                 if other == CA:
@@ -192,6 +200,7 @@ class YmodemSender:
 
     def _send_packet_with_retry(self, packet: bytes, *, expect_crc_request: bool = False) -> None:
         last_error: Exception | None = None
+        # 每个包都独立重试；只要遇到 Bootloader 明确双 CA 中止，就立刻抛错退出。
         for _ in range(MAX_RETRIES):
             try:
                 self.send(packet)
@@ -203,16 +212,18 @@ class YmodemSender:
                     raise
         raise RuntimeError(str(last_error) if last_error is not None else "YMODEM packet transfer failed")
 
-    def send_file(self, image_path: Path, image: bytes, crc32: int, target_fw_version: int) -> None:
+    def send_file(self, image_path: Path, image: bytes, crc32: int, sha256_hex: str, target_fw_version: int) -> None:
         self.wait_receiver_ready()
 
-        header_packet = build_initial_packet(image_path.name, len(image), crc32, target_fw_version)
+        # 头包携带整包元数据，Bootloader 会在 on_start 阶段把这些值写入状态页。
+        header_packet = build_initial_packet(image_path.name, len(image), crc32, sha256_hex, target_fw_version)
         self._send_packet_with_retry(header_packet, expect_crc_request=True)
         print("YMODEM header accepted.")
 
         packet_no = 1
         sent = 0
         total = len(image)
+        # 数据包阶段仍保持标准 YMODEM 节奏，自动在 128 / 1024 字节包之间切换。
         while sent < total:
             packet_size = choose_data_block(total - sent)
             chunk = image[sent : sent + packet_size]
@@ -248,16 +259,20 @@ class YmodemSender:
         print("Final empty packet accepted.")
 
 
-def load_image(image_path: Path) -> tuple[bytes, int]:
+def load_image(image_path: Path) -> tuple[bytes, int, str]:
     image = image_path.read_bytes()
+    # CRC32 保留给现有 Bootloader 兼容路径和辅助校验；
+    # SHA-256 则是当前增强后的主校验摘要。
     crc32 = zlib.crc32(image) & 0xFFFFFFFF
-    return image, crc32
+    sha256_hex = hashlib.sha256(image).hexdigest()
+    return image, crc32, sha256_hex
 
 
-def print_image_summary(image_path: Path, image: bytes, crc32: int) -> None:
+def print_image_summary(image_path: Path, image: bytes, crc32: int, sha256_hex: str) -> None:
     print(f"Image: {image_path}")
     print(f"Image size: {len(image)} bytes (0x{len(image):08X})")
     print(f"Image CRC32: 0x{crc32:08X}")
+    print(f"Image SHA256: {sha256_hex}")
 
 
 def upgrade(args: argparse.Namespace) -> int:
@@ -266,14 +281,14 @@ def upgrade(args: argparse.Namespace) -> int:
         print(f"Image not found: {image_path}", file=sys.stderr)
         return 1
 
-    image, crc32 = load_image(image_path)
-    print_image_summary(image_path, image, crc32)
+    image, crc32, sha256_hex = load_image(image_path)
+    print_image_summary(image_path, image, crc32, sha256_hex)
     if args.chunk_size is not None:
         print("Note: --chunk-size is ignored in YMODEM mode; packet size is chosen automatically (128/1024 bytes).")
 
     sender = YmodemSender(args.port, args.baudrate, args.timeout, args.verbose)
     try:
-        sender.send_file(image_path, image, crc32, args.target_fw_version)
+        sender.send_file(image_path, image, crc32, sha256_hex, args.target_fw_version)
     finally:
         sender.close()
 

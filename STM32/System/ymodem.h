@@ -34,7 +34,8 @@ typedef enum
 #define YMODEM_PACKET_BUFFER_SIZE (PACKET_1K_SIZE + PACKET_DATA_INDEX + PACKET_TRAILER_SIZE)
 
 #define FILE_NAME_LENGTH        ((uint32_t)64)
-#define FILE_INFO_LENGTH        ((uint32_t)64)
+#define FILE_INFO_LENGTH        ((uint32_t)160)
+#define YMODEM_IMAGE_SHA256_SIZE ((uint32_t)32)
 
 #define SOH                     ((uint8_t)0x01)
 #define STX                     ((uint8_t)0x02)
@@ -57,6 +58,7 @@ typedef COM_StatusTypeDef (*YmodemStartCallback)(const char *file_name,
                                                  uint32_t file_size,
                                                  uint32_t image_crc32,
                                                  uint32_t target_fw_version,
+                                                 const uint8_t *image_sha256,
                                                  void *context);
 typedef COM_StatusTypeDef (*YmodemDataCallback)(uint32_t offset,
                                                 const uint8_t *data,
@@ -79,6 +81,7 @@ typedef struct
   uint32_t file_size;
   uint32_t image_crc32;
   uint32_t target_fw_version;
+  uint8_t image_sha256[YMODEM_IMAGE_SHA256_SIZE];
   uint32_t bytes_received;
 } YmodemReceiveResult;
 

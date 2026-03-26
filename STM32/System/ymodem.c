@@ -73,6 +73,8 @@ static uint8_t Ymodem_SkipSpaces(const char **text)
   return (**text != '\0') ? 1u : 0u;
 }
 
+/* 头包元数据目前仍坚持“ASCII 文本字段”而不是二进制结构体。
+ * 这样升级脚本和 Bootloader 都更容易排查，也方便后续继续向后追加字段。 */
 static uint8_t Ymodem_ParseU32(const char *text, uint32_t base, uint32_t *value, const char **endptr)
 {
   char *end = NULL;
@@ -93,6 +95,58 @@ static uint8_t Ymodem_ParseU32(const char *text, uint32_t base, uint32_t *value,
   if (endptr != NULL)
   {
     *endptr = end;
+  }
+
+  return 1u;
+}
+
+static int32_t Ymodem_ParseHexNibble(char value)
+{
+  if ((value >= '0') && (value <= '9'))
+  {
+    return (int32_t)(value - '0');
+  }
+  if ((value >= 'a') && (value <= 'f'))
+  {
+    return (int32_t)(value - 'a' + 10);
+  }
+  if ((value >= 'A') && (value <= 'F'))
+  {
+    return (int32_t)(value - 'A' + 10);
+  }
+
+  return -1;
+}
+
+static uint8_t Ymodem_ParseHexBytes(const char *text,
+                                    uint8_t *bytes,
+                                    uint32_t byte_count,
+                                    const char **endptr)
+{
+  uint32_t i;
+
+  if ((text == NULL) || (bytes == NULL))
+  {
+    return 0u;
+  }
+
+  /* 把类似 "e1f601..." 的 64 字符十六进制串还原成 32 字节摘要。 */
+  for (i = 0u; i < byte_count; i++)
+  {
+    int32_t hi = Ymodem_ParseHexNibble(text[i * 2u]);
+    int32_t lo = Ymodem_ParseHexNibble(text[i * 2u + 1u]);
+
+    if ((hi < 0) || (lo < 0))
+    {
+      return 0u;
+    }
+
+    bytes[i] = (uint8_t)((hi << 4) | lo);
+  }
+
+  if (endptr != NULL)
+  {
+    *endptr = text + byte_count * 2u;
   }
 
   return 1u;
@@ -125,6 +179,9 @@ static uint8_t Ymodem_ParseHeader(YmodemReceiveResult *result, const uint8_t *pa
     return 1u;
   }
 
+  /* 文件信息区格式当前约定为：
+   * "<size> 0x<crc32> <target_fw_version> <sha256_hex>"
+   * 仍然保持“字段追加”的兼容风格，不重做整个 YMODEM 头包协议。 */
   while ((file_info_len < FILE_INFO_LENGTH) &&
          (packet[PACKET_DATA_INDEX + file_name_len + 1u + file_info_len] != '\0'))
   {
@@ -134,6 +191,8 @@ static uint8_t Ymodem_ParseHeader(YmodemReceiveResult *result, const uint8_t *pa
   g_packet_data[file_info_len] = '\0';
 
   cursor = (const char *)g_packet_data;
+  /* 现在 SHA-256 已经是本地升级链路里的标准字段，所以这里按必填解析。
+   * 如果后面头包里没有哈希，会直接判成头包非法。 */
   if (Ymodem_SkipSpaces(&cursor) == 0u)
   {
     return 0u;
@@ -162,6 +221,15 @@ static uint8_t Ymodem_ParseHeader(YmodemReceiveResult *result, const uint8_t *pa
     result->target_fw_version = value;
   }
 
+  if (Ymodem_SkipSpaces(&cursor) == 0u)
+  {
+    return 0u;
+  }
+  if (Ymodem_ParseHexBytes(cursor, result->image_sha256, YMODEM_IMAGE_SHA256_SIZE, &cursor) == 0u)
+  {
+    return 0u;
+  }
+
   return 1u;
 }
 
@@ -186,6 +254,8 @@ static YmodemPacketStatus Ymodem_ReceivePacket(const YmodemReceiveConfig *config
     return YMODEM_PACKET_TIMEOUT;
   }
 
+  /* 这里只负责还原“一个 YMODEM 包”的原始边界和 CRC16。
+   * 真正的业务含义，例如头包/数据包/结束包，要留给上层状态机判断。 */
   switch (first_byte)
   {
     case SOH:
@@ -289,6 +359,11 @@ COM_StatusTypeDef Ymodem_Receive(const YmodemReceiveConfig *config, YmodemReceiv
 
   memset(result, 0, sizeof(*result));
 
+  /* 这个状态机保留了标准 YMODEM 的整体节奏：
+   * - packet#0: 头包
+   * - packet#1..N: 数据包
+   * - EOT: 文件结束
+   * - 空头包: 会话结束 */
   while ((session_done == 0u) && (status == COM_OK))
   {
     expected_packet = 0u;
@@ -325,10 +400,13 @@ COM_StatusTypeDef Ymodem_Receive(const YmodemReceiveConfig *config, YmodemReceiv
                     break;
                   }
 
+                  /* 头包一旦解析成功，就把 size/crc32/version/sha256 一次性交给上层。
+                   * 上层可在这里决定是否接受这次镜像、擦除 App 区并初始化状态页。 */
                   status = config->on_start(result->file_name,
                                             result->file_size,
                                             result->image_crc32,
                                             result->target_fw_version,
+                                            result->image_sha256,
                                             config->user_context);
                   if (status != COM_OK)
                   {
@@ -361,6 +439,8 @@ COM_StatusTypeDef Ymodem_Receive(const YmodemReceiveConfig *config, YmodemReceiv
                 remaining = result->file_size - result->bytes_received;
                 write_len = (packet_length < remaining) ? packet_length : remaining;
 
+                /* 数据包只把“实际有效长度”交给上层。
+                 * 末包即使是 1K 包，也只写入 file_size 对应的有效部分。 */
                 status = config->on_data(result->bytes_received,
                                          &g_packet_data[PACKET_DATA_INDEX],
                                          write_len,

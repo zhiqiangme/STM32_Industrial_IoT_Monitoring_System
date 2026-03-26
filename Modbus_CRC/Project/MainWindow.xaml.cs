@@ -49,6 +49,11 @@ namespace ModbusFrameTool
 
             string originalText = FrameImportTextBox.Text;
             string sanitizedText = new string(originalText.Where(static c => !char.IsWhiteSpace(c)).ToArray());
+            if (sanitizedText.Length > 16)
+            {
+                sanitizedText = sanitizedText[..16];
+            }
+
             if (sanitizedText == originalText)
             {
                 return;
@@ -178,8 +183,7 @@ namespace ModbusFrameTool
                 out byte functionCode,
                 out ushort registerAddress,
                 out ushort dataValue,
-                out bool crcWasPresent,
-                out bool crcWasCorrect,
+                out bool copiedWithoutCorrection,
                 out string? errorMessage))
             {
                 SetFrameImportStatus("无效输入", true);
@@ -194,10 +198,10 @@ namespace ModbusFrameTool
             SetFieldText("Data", dataValue);
             _suppressAutoGenerate = false;
 
-            bool corrected = crcWasPresent && !crcWasCorrect;
-            SetFrameImportStatus(corrected ? "已纠错" : null, corrected);
+            bool corrected = !copiedWithoutCorrection;
+            SetFrameImportStatus(corrected ? "纠错成功" : "复制成功");
 
-            string headerStatus = corrected ? "已纠正 CRC 并复制" : successTextWhenNotCorrected;
+            string headerStatus = corrected ? "已纠错并复制" : successTextWhenNotCorrected;
 
             ApplyFrameValues(slaveAddress, functionCode, registerAddress, dataValue, headerStatus);
         }
@@ -352,16 +356,14 @@ namespace ModbusFrameTool
             out byte functionCode,
             out ushort registerAddress,
             out ushort dataValue,
-            out bool crcWasPresent,
-            out bool crcWasCorrect,
+            out bool copiedWithoutCorrection,
             out string? errorMessage)
         {
             slaveAddress = 0;
             functionCode = 0;
             registerAddress = 0;
             dataValue = 0;
-            crcWasPresent = false;
-            crcWasCorrect = false;
+            copiedWithoutCorrection = false;
 
             string cleaned = new string(input
                 .Where(static c => !char.IsWhiteSpace(c) && c != '-' && c != ',')
@@ -378,35 +380,41 @@ namespace ModbusFrameTool
                 return false;
             }
 
-            if (cleaned.Any(static c => !Uri.IsHexDigit(c)))
+            if (cleaned.Length > 16)
             {
-                errorMessage = "原始帧中包含非十六进制字符。";
+                cleaned = cleaned[..16];
+            }
+
+            if (cleaned.Length < 12)
+            {
+                errorMessage = "原始帧至少需要前 12 位有效十六进制字符。";
                 return false;
             }
 
-            if (cleaned.Length != 12 && cleaned.Length != 16)
+            string payloadHex = cleaned[..12];
+            if (payloadHex.Any(static c => !Uri.IsHexDigit(c)))
             {
-                errorMessage = "当前仅支持 6 字节或 8 字节的单寄存器原始帧。";
+                errorMessage = "原始帧前 12 位包含非十六进制字符。";
                 return false;
             }
 
-            byte[] bytes = Enumerable.Range(0, cleaned.Length / 2)
-                .Select(i => Convert.ToByte(cleaned.Substring(i * 2, 2), 16))
+            byte[] bytes = Enumerable.Range(0, payloadHex.Length / 2)
+                .Select(i => Convert.ToByte(payloadHex.Substring(i * 2, 2), 16))
                 .ToArray();
-
-            byte[] frameWithoutCrc = bytes.Take(6).ToArray();
 
             slaveAddress = bytes[0];
             functionCode = bytes[1];
             registerAddress = (ushort)((bytes[2] << 8) | bytes[3]);
             dataValue = (ushort)((bytes[4] << 8) | bytes[5]);
 
-            if (bytes.Length == 8)
+            string trailingCrc = cleaned.Length >= 16 ? cleaned.Substring(12, 4) : string.Empty;
+            if (trailingCrc.Length == 4 && trailingCrc.All(static c => Uri.IsHexDigit(c)))
             {
-                crcWasPresent = true;
-                ushort expectedCrc = ComputeModbusCrc(frameWithoutCrc);
-                ushort inputCrc = (ushort)(bytes[6] | (bytes[7] << 8));
-                crcWasCorrect = expectedCrc == inputCrc;
+                ushort expectedCrc = ComputeModbusCrc(bytes);
+                ushort inputCrc = (ushort)(
+                    Convert.ToByte(trailingCrc.Substring(0, 2), 16)
+                    | (Convert.ToByte(trailingCrc.Substring(2, 2), 16) << 8));
+                copiedWithoutCorrection = expectedCrc == inputCrc;
             }
 
             errorMessage = null;

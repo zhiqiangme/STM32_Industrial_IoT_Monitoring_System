@@ -12,7 +12,9 @@
 #define UPGRADE_CFG_PAGE_ADDR          0x0807F800UL
 
 #define UPGRADE_STATE_MAGIC            0x55504753UL  /* UPGS */
-#define UPGRADE_STATE_VERSION          0x0001u
+#define UPGRADE_STATE_VERSION          0x0002u
+#define UPGRADE_STATE_VERSION_LEGACY   0x0001u
+#define UPGRADE_IMAGE_SHA256_SIZE      32u
 
 #define UPGRADE_STATE_IDLE             0x0000u
 #define UPGRADE_STATE_REQUESTED        0x0001u
@@ -38,9 +40,13 @@ typedef struct
     uint16_t payload_size;
     uint16_t state;
     uint16_t request_source;
+    /* 由 App 或升级工具写入的目标版本号，Bootloader 不解释语义，只负责持久化。 */
     uint32_t target_fw_version;
+    /* 以下三项共同描述“这次打算写入什么镜像”，供最终校验和重启后复核复用。 */
     uint32_t image_size;
     uint32_t image_crc32;
+    uint8_t image_sha256[UPGRADE_IMAGE_SHA256_SIZE];
+    /* written_bytes/last_ok_offset 用于掉线恢复和诊断当前写入进度。 */
     uint32_t written_bytes;
     uint32_t last_ok_offset;
     uint16_t error_code;
@@ -59,6 +65,9 @@ uint8_t Upgrade_LoadState(UpgradeStateImage *image);
 uint8_t Upgrade_SaveState(const UpgradeStateImage *image);
 uint8_t Upgrade_RequestBootMode(uint16_t request_source, uint32_t target_fw_version);
 uint8_t Upgrade_ClearState(void);
+/* 判断状态页里是否已经写入了有效的期望 SHA-256。
+ * 旧版状态页没有该字段时，这个接口会返回 0，Bootloader 自动走兼容校验路径。 */
+uint8_t Upgrade_StateHasImageSha256(const UpgradeStateImage *image);
 uint8_t Upgrade_IsAppVectorValid(uint32_t app_base_addr);
 uint32_t Upgrade_CRC32_Calculate(const uint8_t *buf, uint32_t len, uint32_t seed);
 uint32_t Upgrade_CRC32_CalculateFlash(uint32_t address, uint32_t len);

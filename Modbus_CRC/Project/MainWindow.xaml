@@ -113,9 +113,9 @@
                                        VerticalAlignment="Center"
                                        FontSize="14"
                                        FontWeight="SemiBold"
-                                        Foreground="#0F766E"
+                                       Foreground="#0F766E"
                                        Visibility="Collapsed"
-                                       Text="已纠错" />
+                                       Text="复制成功" />
                         </Grid>
                     </Grid>
 
