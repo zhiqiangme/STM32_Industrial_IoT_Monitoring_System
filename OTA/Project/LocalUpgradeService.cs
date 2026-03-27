@@ -42,15 +42,7 @@ internal static class LocalUpgradeService
         log($"固件 CRC32: 0x{crc32:X8}");
         log($"固件 SHA256: {sha256Hex}");
 
-        using var serialPort = new SerialPort(options.PortName, options.BaudRate, Parity.None, 8, StopBits.One)
-        {
-            Handshake = Handshake.None,
-            ReadTimeout = 100,
-            WriteTimeout = 1000,
-            Encoding = Encoding.ASCII
-        };
-
-        serialPort.Open();
+        using var serialPort = SerialPortHelper.Open(options.PortName, options.BaudRate, Encoding.ASCII);
         Thread.Sleep(200);
         serialPort.DiscardInBuffer();
 

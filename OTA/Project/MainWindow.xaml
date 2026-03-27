@@ -160,30 +160,67 @@
                                Text="默认优先选择 USB-SERIAL CH340 串口。" />
                 </Grid>
 
-                <Grid>
+                <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="220" />
                         <ColumnDefinition Width="120" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock x:Name="PathLabelTextBlock"
-                               Grid.Column="0"
+                    <TextBlock Grid.Column="0"
                                VerticalAlignment="Center"
-                               Text="STM32程序路径" />
-                    <DockPanel Grid.Column="1">
-                        <Button x:Name="BrowseScriptButton"
-                                Width="96"
-                                Margin="8,0,0,0"
-                                Padding="10,6"
-                                Click="BrowseScriptButton_OnClick"
-                                Content="选择程序"
-                                DockPanel.Dock="Right" />
-                        <TextBox x:Name="ScriptPathTextBox"
-                                 Height="38"
-                                 VerticalContentAlignment="Center"
-                                 Text="D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App.bin" />
-                    </DockPanel>
+                               Text="当前槽位" />
+                    <TextBlock x:Name="RunningSlotTextBlock"
+                               Grid.Column="1"
+                               VerticalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Text="未读取" />
+
+                    <TextBlock Grid.Column="2"
+                               VerticalAlignment="Center"
+                               Text="推荐镜像" />
+                    <TextBlock x:Name="RecommendedImageTextBlock"
+                               Grid.Column="3"
+                               VerticalAlignment="Center"
+                               Foreground="#FF4F6478"
+                               Text="请连接设备后等待自动识别槽位。"
+                               TextWrapping="Wrap" />
                 </Grid>
+
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="PathLabelTextBlock"
+                                   Grid.Column="0"
+                                   VerticalAlignment="Center"
+                                   Text="STM32程序路径" />
+                        <DockPanel Grid.Column="1">
+                            <Button x:Name="BrowseScriptButton"
+                                    Width="96"
+                                    Margin="8,0,0,0"
+                                    Padding="10,6"
+                                    Click="BrowseScriptButton_OnClick"
+                                    Content="选择程序"
+                                    DockPanel.Dock="Right" />
+                            <TextBox x:Name="ScriptPathTextBox"
+                                     Height="38"
+                                     VerticalContentAlignment="Center"
+                                     TextChanged="ScriptPathTextBox_OnTextChanged"
+                                     Text="D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App_A.bin" />
+                        </DockPanel>
+                    </Grid>
+
+                    <TextBlock x:Name="ImageHintTextBlock"
+                               Margin="120,8,0,0"
+                               Foreground="#FF4F6478"
+                               Text="镜像槽位：未检查。"
+                               TextWrapping="Wrap" />
+                </StackPanel>
             </StackPanel>
         </Border>
 

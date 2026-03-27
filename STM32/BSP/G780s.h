@@ -128,6 +128,7 @@
  * │ 0x0057 │ REG_DIAG_UART_NE_L           │ R            │ NE 计数低 16       │
  * │ 0x0058 │ REG_DIAG_RX_OVERFLOW_H       │ R            │ RX 溢出计数高 16   │
  * │ 0x0059 │ REG_DIAG_RX_OVERFLOW_L       │ R            │ RX 溢出计数低 16   │
+ * │ 0x005A │ REG_DIAG_RUNNING_SLOT        │ R            │ 当前运行槽位       │
  * └────────┴──────────────────────────────┴──────────────┴────────────────────┘
  *
  * 五、维护命令定义（写入 REG_MAINT_COMMAND）
@@ -215,6 +216,8 @@
  *      最近一次成功保存配置时的系统运行秒数快照，不是 RTC 时间
  *   9. REG_DIAG_LAST_UPGRADE_SOURCE/STATE/ERROR:
  *      从 Upgrade State 页镜像出的最近一次升级来源、状态和失败原因
+ *   10. REG_DIAG_RUNNING_SLOT:
+ *      当前 App 运行槽位，0 = unknown，1 = A，2 = B
  * ============================================================================
  */
 
@@ -270,8 +273,9 @@
 #define REG_DIAG_UART_NE_L          0x0057
 #define REG_DIAG_RX_OVERFLOW_H      0x0058
 #define REG_DIAG_RX_OVERFLOW_L      0x0059
+#define REG_DIAG_RUNNING_SLOT       0x005A
 
-#define MODBUS_REG_COUNT            90
+#define MODBUS_REG_COUNT            91
 
 #define G780S_UNLOCK_KEY            0xA55A
 
@@ -326,6 +330,10 @@
 #define G780S_RESET_REASON_IWDG             4u
 #define G780S_RESET_REASON_WWDG             5u
 #define G780S_RESET_REASON_LOW_POWER        6u
+
+#define G780S_RUNNING_SLOT_UNKNOWN          0u
+#define G780S_RUNNING_SLOT_A                1u
+#define G780S_RUNNING_SLOT_B                2u
 
 typedef struct {
     uint16_t push_seq;       /* 上报序号 */

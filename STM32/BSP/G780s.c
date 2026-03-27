@@ -66,6 +66,26 @@ typedef struct
 } G780sDiagImageV1;
 
 /**
+ * @brief 将 Upgrade 层槽位编号映射为对外寄存器使用的稳定枚举值。
+ * @param slot: Upgrade 层槽位编号
+ * @retval uint16_t: 0 = unknown, 1 = A, 2 = B
+ */
+static uint16_t G780s_MapRunningSlot(uint16_t slot)
+{
+    if (slot == UPGRADE_SLOT_A)
+    {
+        return G780S_RUNNING_SLOT_A;
+    }
+
+    if (slot == UPGRADE_SLOT_B)
+    {
+        return G780S_RUNNING_SLOT_B;
+    }
+
+    return G780S_RUNNING_SLOT_UNKNOWN;
+}
+
+/**
  * @brief 解析英文月份缩写为数字月份。
  * @param month_str: 3 字节英文月份缩写
  * @retval uint8_t: 解析后的月份，失败返回 0
@@ -394,6 +414,7 @@ static void G780s_UpdateMaintenanceRegisters(void)
     uint32_t uart_ne_count = Modbus_Slave_GetUartNoiseErrorCount();
     uint32_t rx_overflow_count = Modbus_Slave_GetRxOverflowCount();
     uint16_t remain_s = 0;
+    uint16_t running_slot = G780s_MapRunningSlot(Upgrade_GetRunningSlot());
 
     /* 解锁状态下对外提供剩余操作窗口，便于上位机判断是否需要重新解锁。 */
     if ((g_maint_status & G780S_STATUS_UNLOCKED) != 0u)
@@ -445,6 +466,7 @@ static void G780s_UpdateMaintenanceRegisters(void)
     g_registers[REG_DIAG_UART_NE_L] = (uint16_t)(uart_ne_count & 0xFFFFu);
     g_registers[REG_DIAG_RX_OVERFLOW_H] = (uint16_t)((rx_overflow_count >> 16) & 0xFFFFu);
     g_registers[REG_DIAG_RX_OVERFLOW_L] = (uint16_t)(rx_overflow_count & 0xFFFFu);
+    g_registers[REG_DIAG_RUNNING_SLOT] = running_slot;
 }
 
 /**
