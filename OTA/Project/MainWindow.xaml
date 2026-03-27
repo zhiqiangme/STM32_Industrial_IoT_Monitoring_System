@@ -35,7 +35,7 @@
                            Margin="0,8,0,20"
                            Foreground="#FF4F6478"
                            TextWrapping="Wrap"
-                           Text="流程：发送解锁 HEX -> 等待 500ms -> 发送进入 Bootloader HEX -> 调用 PowerShell 执行 Python 刷机脚本。" />
+                           Text="流程：发送解锁 HEX -> 等待 500ms -> 发送进入 Bootloader HEX -> 由 C# 内置 YMODEM 发送 STM32 程序。" />
 
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
@@ -166,21 +166,22 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0"
+                    <TextBlock x:Name="PathLabelTextBlock"
+                               Grid.Column="0"
                                VerticalAlignment="Center"
-                               Text="脚本路径" />
+                               Text="STM32程序路径" />
                     <DockPanel Grid.Column="1">
                         <Button x:Name="BrowseScriptButton"
                                 Width="96"
                                 Margin="8,0,0,0"
                                 Padding="10,6"
                                 Click="BrowseScriptButton_OnClick"
-                                Content="选择脚本"
+                                Content="选择程序"
                                 DockPanel.Dock="Right" />
                         <TextBox x:Name="ScriptPathTextBox"
                                  Height="38"
                                  VerticalContentAlignment="Center"
-                                 Text="D:\Project\STM32_Mill\stm32_local_upgrade.py" />
+                                 Text="D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App.bin" />
                     </DockPanel>
                 </Grid>
             </StackPanel>

@@ -239,8 +239,8 @@ int main(void)
         if (HAL_GetTick() - led_tick >= 500)
         {
             led_tick = HAL_GetTick();
-         //   LED_R_TOGGLE();
-			  LED_G_TOGGLE();
+            LED_R_TOGGLE();
+		//	  LED_G_TOGGLE();
         }
 
 

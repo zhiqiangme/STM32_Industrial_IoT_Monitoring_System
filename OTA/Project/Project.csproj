@@ -18,6 +18,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.IO.Ports">
+      <HintPath>C:\Program Files\PowerShell\7\System.IO.Ports.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Resource Include="..\Assets\OTA.ico" Link="Assets\OTA.ico" />
     <Resource Include="..\Assets\OTA.png" Link="Assets\OTA.png" />
   </ItemGroup>

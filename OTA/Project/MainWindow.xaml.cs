@@ -11,11 +11,8 @@ namespace Project;
 
 public partial class MainWindow : Window
 {
-    private const string UnlockHex = "0A060030A55A73D5";
-    private const string EnterBootloaderHex = "0A0600310005197D";
-    private const string LocalScriptPath = @"D:\Project\STM32_Mill\stm32_local_upgrade.py";
+    private const string DefaultLocalImagePath = @"D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App.bin";
     private const string RemoteScriptPath = @"D:\Project\STM32_Mill\stm32_remote_upgrade.py";
-    private const string PythonCommand = "python";
 
     private UpgradeMode _currentMode = UpgradeMode.Local;
     private bool _isBusy;
@@ -42,7 +39,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!TryReadSettings(out var settings, out var errorMessage))
+        if (!TryReadLocalSettings(out var options, out var errorMessage))
         {
             MessageBox.Show(this, errorMessage, "参数错误", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -50,21 +47,11 @@ public partial class MainWindow : Window
 
         SetBusyState(true, "执行中");
         LogTextBox.Clear();
-        AppendLog($"准备升级，模式 {GetModeDisplayName(settings.Mode)}。");
+        AppendLog("准备升级，模式 本地升级。");
 
         try
         {
-            if (settings.Mode == UpgradeMode.Local)
-            {
-                AppendLog($"串口 {settings.PortName}，波特率 {settings.BaudRate}。");
-                await SendBootloaderSequenceAsync(settings.PortName!, settings.BaudRate);
-            }
-            else
-            {
-                AppendLog($"远程监听 {settings.Host}:{settings.TcpPort}。");
-            }
-
-            await RunUpgradeScriptAsync(settings);
+            await LocalUpgradeService.RunAsync(options, AppendLogFromWorker);
             AppendLog("流程结束。");
             StatusTextBlock.Text = "完成";
         }
@@ -90,18 +77,29 @@ public partial class MainWindow : Window
         var currentDirectory = Path.GetDirectoryName(ScriptPathTextBox.Text);
         var dialog = new OpenFileDialog
         {
-            Title = "选择 Python 升级脚本",
-            Filter = "Python 脚本 (*.py)|*.py|所有文件 (*.*)|*.*",
             InitialDirectory = !string.IsNullOrWhiteSpace(currentDirectory) && Directory.Exists(currentDirectory)
                 ? currentDirectory
                 : @"D:\Project\STM32_Mill",
             FileName = Path.GetFileName(ScriptPathTextBox.Text)
         };
 
+        if (_currentMode == UpgradeMode.Local)
+        {
+            dialog.Title = "选择 STM32 程序文件";
+            dialog.Filter = "BIN 文件 (*.bin)|*.bin|所有文件 (*.*)|*.*";
+        }
+        else
+        {
+            dialog.Title = "选择在线升级脚本";
+            dialog.Filter = "Python 脚本 (*.py)|*.py|所有文件 (*.*)|*.*";
+        }
+
         if (dialog.ShowDialog(this) == true)
         {
             ScriptPathTextBox.Text = dialog.FileName;
-            AppendLog($"已选择脚本：{dialog.FileName}");
+            AppendLog(_currentMode == UpgradeMode.Local
+                ? $"已选择 STM32 程序：{dialog.FileName}"
+                : $"已选择在线脚本：{dialog.FileName}");
         }
     }
 
@@ -123,9 +121,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool TryReadSettings(out UpgradeSettings settings, out string errorMessage)
+    private bool TryReadLocalSettings(out LocalUpgradeOptions options, out string errorMessage)
     {
-        settings = default;
+        options = default;
+
+        var portName = GetCurrentPortName();
+        if (string.IsNullOrWhiteSpace(portName))
+        {
+            errorMessage = "请先选择串口号。";
+            return false;
+        }
+
+        if (!int.TryParse(BaudRateTextBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var baudRate) || baudRate <= 0)
+        {
+            errorMessage = "波特率必须是正整数。";
+            return false;
+        }
 
         if (!double.TryParse(TimeoutTextBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var timeoutSeconds) || timeoutSeconds <= 0)
         {
@@ -133,53 +144,20 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var scriptPath = ScriptPathTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(scriptPath))
+        var imagePath = ScriptPathTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(imagePath))
         {
-            errorMessage = "脚本路径不能为空。";
+            errorMessage = "STM32 程序路径不能为空。";
             return false;
         }
 
-        if (!File.Exists(scriptPath))
+        if (!File.Exists(imagePath))
         {
-            errorMessage = $"脚本不存在：{scriptPath}";
+            errorMessage = $"STM32 程序不存在：{imagePath}";
             return false;
         }
 
-        if (_currentMode == UpgradeMode.Local)
-        {
-            var portName = GetCurrentPortName();
-            if (string.IsNullOrWhiteSpace(portName))
-            {
-                errorMessage = "请先选择串口号。";
-                return false;
-            }
-
-            if (!int.TryParse(BaudRateTextBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var baudRate) || baudRate <= 0)
-            {
-                errorMessage = "波特率必须是正整数。";
-                return false;
-            }
-
-            settings = new UpgradeSettings(_currentMode, portName, baudRate, string.Empty, 0, timeoutSeconds, scriptPath);
-            errorMessage = string.Empty;
-            return true;
-        }
-
-        var host = RemoteHostTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(host))
-        {
-            errorMessage = "远程主机不能为空。";
-            return false;
-        }
-
-        if (!int.TryParse(RemotePortTextBox.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var tcpPort) || tcpPort is <= 0 or > 65535)
-        {
-            errorMessage = "TCP 端口必须是 1 到 65535 的整数。";
-            return false;
-        }
-
-        settings = new UpgradeSettings(_currentMode, null, 0, host, tcpPort, timeoutSeconds, scriptPath);
+        options = new LocalUpgradeOptions(portName, baudRate, timeoutSeconds, imagePath);
         errorMessage = string.Empty;
         return true;
     }
@@ -245,87 +223,6 @@ public partial class MainWindow : Window
             PortComboBox.Text = string.IsNullOrWhiteSpace(currentPort) ? "COM12" : currentPort;
             AppendLog($"刷新串口失败：{ex.Message}");
         }
-    }
-
-    private async Task SendBootloaderSequenceAsync(string portName, int baudRate)
-    {
-        AppendLog($"打开串口 {portName}，波特率 {baudRate}。");
-
-        var script = $$"""
-            $portName = '{{EscapePowerShellSingleQuotedString(portName)}}'
-            $baudRate = {{baudRate}}
-            $unlock = [byte[]] (0x0A, 0x06, 0x00, 0x30, 0xA5, 0x5A, 0x73, 0xD5)
-            $enterBootloader = [byte[]] (0x0A, 0x06, 0x00, 0x31, 0x00, 0x05, 0x19, 0x7D)
-
-            $serialPort = [System.IO.Ports.SerialPort]::new(
-                $portName,
-                $baudRate,
-                [System.IO.Ports.Parity]::None,
-                8,
-                [System.IO.Ports.StopBits]::One)
-
-            $serialPort.Handshake = [System.IO.Ports.Handshake]::None
-            $serialPort.ReadTimeout = 1000
-            $serialPort.WriteTimeout = 1000
-
-            try {
-                $serialPort.Open()
-                Write-Output 'TX 解锁: {{UnlockHex}}'
-                $serialPort.Write($unlock, 0, $unlock.Length)
-                $serialPort.BaseStream.Flush()
-
-                Start-Sleep -Milliseconds 500
-
-                Write-Output 'TX 进入 Bootloader: {{EnterBootloaderHex}}'
-                $serialPort.Write($enterBootloader, 0, $enterBootloader.Length)
-                $serialPort.BaseStream.Flush()
-
-                Start-Sleep -Milliseconds 500
-                Write-Output 'Bootloader 指令发送完成，串口已释放。'
-            }
-            finally {
-                if ($serialPort.IsOpen) {
-                    $serialPort.Close()
-                }
-
-                $serialPort.Dispose()
-            }
-            """;
-
-        await RunPowerShellAsync(script, logOutput: true);
-    }
-
-    private async Task RunUpgradeScriptAsync(UpgradeSettings settings)
-    {
-        var workspaceRoot = Path.GetDirectoryName(settings.ScriptPath)
-            ?? throw new InvalidOperationException("无法确定 Python 脚本所在目录。");
-        var imagePath = Path.Combine(workspaceRoot, "STM32", "MDK-ARM", "Objects", "App.bin");
-        if (!File.Exists(imagePath))
-        {
-            throw new InvalidOperationException($"固件不存在：{imagePath}");
-        }
-
-        var timeoutText = settings.TimeoutSeconds.ToString("0.###", CultureInfo.InvariantCulture);
-        string command;
-
-        if (settings.Mode == UpgradeMode.Local)
-        {
-            command =
-                $"& '{PythonCommand}' '{EscapePowerShellSingleQuotedString(settings.ScriptPath)}' run --port '{EscapePowerShellSingleQuotedString(settings.PortName!)}' --timeout {timeoutText} --image '{EscapePowerShellSingleQuotedString(imagePath)}' --verbose";
-        }
-        else
-        {
-            command =
-                $"& '{PythonCommand}' '{EscapePowerShellSingleQuotedString(settings.ScriptPath)}' --mode listen --host '{EscapePowerShellSingleQuotedString(settings.Host)}' --port {settings.TcpPort} --timeout {timeoutText} --enter-bootloader --image '{EscapePowerShellSingleQuotedString(imagePath)}' --verbose";
-        }
-
-        AppendLog("开始执行 PowerShell 刷机命令。");
-        AppendLog($"固件路径: {imagePath}");
-        AppendLog($"脚本路径: {settings.ScriptPath}");
-        AppendLog($"PS> {command}");
-
-        await RunPowerShellAsync(command, logOutput: true, workingDirectory: workspaceRoot);
-        AppendLog("PowerShell 刷机命令执行成功。");
     }
 
     private async Task<IReadOnlyList<string>> RunPowerShellAsync(string script, bool logOutput, string? workingDirectory = null)
@@ -416,7 +313,7 @@ public partial class MainWindow : Window
         Title = isLocal ? "STM32 OTA 本地升级工具" : "STM32 OTA 在线升级工具";
         ModeTitleTextBlock.Text = isLocal ? "STM32 本地 OTA 升级" : "STM32 在线 OTA 升级";
         ModeDescriptionTextBlock.Text = isLocal
-            ? "流程：发送解锁 HEX -> 等待 500ms -> 发送进入 Bootloader HEX -> 调用 PowerShell 执行 Python 刷机脚本。"
+            ? "流程：发送解锁 HEX -> 等待 500ms -> 发送进入 Bootloader HEX -> 由 C# 内置 YMODEM 发送 STM32 程序。"
             : "当前先只保留在线升级界面，脚本执行逻辑暂未接入。";
         ModeHintTextBlock.Text = isLocal
             ? "默认优先选择 USB-SERIAL CH340 串口。"
@@ -427,7 +324,9 @@ public partial class MainWindow : Window
         BootloaderPanel.Visibility = isLocal ? Visibility.Visible : Visibility.Collapsed;
         StartUpgradeButton.Content = isLocal ? "进入 Bootloader 并刷机" : "在线升级待接入";
 
-        ScriptPathTextBox.Text = isLocal ? LocalScriptPath : RemoteScriptPath;
+        PathLabelTextBlock.Text = isLocal ? "STM32程序路径" : "在线脚本路径";
+        BrowseScriptButton.Content = isLocal ? "选择程序" : "选择脚本";
+        ScriptPathTextBox.Text = isLocal ? DefaultLocalImagePath : RemoteScriptPath;
 
         ApplyModeButtonStyle(LocalModeButton, isLocal);
         ApplyModeButtonStyle(RemoteModeButton, !isLocal);
@@ -503,9 +402,9 @@ public partial class MainWindow : Window
         return new PortOption(portName, displayName);
     }
 
-    private static string GetModeDisplayName(UpgradeMode mode)
+    private void AppendLogFromWorker(string message)
     {
-        return mode == UpgradeMode.Local ? "本地升级" : "在线升级";
+        Dispatcher.Invoke(() => AppendLog(message));
     }
 
     private void AppendLog(string message)
@@ -513,20 +412,6 @@ public partial class MainWindow : Window
         LogTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
         LogTextBox.ScrollToEnd();
     }
-
-    private static string EscapePowerShellSingleQuotedString(string value)
-    {
-        return value.Replace("'", "''");
-    }
-
-    private readonly record struct UpgradeSettings(
-        UpgradeMode Mode,
-        string? PortName,
-        int BaudRate,
-        string Host,
-        int TcpPort,
-        double TimeoutSeconds,
-        string ScriptPath);
 
     private sealed record PortOption(string PortName, string DisplayName)
     {
