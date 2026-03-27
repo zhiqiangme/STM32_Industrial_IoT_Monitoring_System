@@ -210,6 +210,15 @@ int main(void)
                    App_ConfigToFloat2(g_runtime_config.pulses_per_liter_x100),
                    App_ConfigToFloat2(g_runtime_config.hz_per_lpm_x100));
 
+    if (Upgrade_ConfirmRunningSlot() == 0u)
+    {
+        printf("[UPGRADE] Running slot confirmed\r\n");
+    }
+    else
+    {
+        printf("[UPGRADE] Running slot confirm skipped/failed\r\n");
+    }
+
     printf("\r\n>>> Main loop started...\r\n\r\n");
 
     HAL_Delay(3000);  /* 等待3秒让传感器数据稳定 */
@@ -230,8 +239,8 @@ int main(void)
         if (HAL_GetTick() - led_tick >= 500)
         {
             led_tick = HAL_GetTick();
-            LED_R_TOGGLE();
-			//LED_G_TOGGLE();
+         //   LED_R_TOGGLE();
+			  LED_G_TOGGLE();
         }
 
 

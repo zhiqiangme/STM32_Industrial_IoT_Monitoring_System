@@ -131,7 +131,13 @@ void BootProtocol_PrintBanner(void)
 {
     printf("\r\n[BOOT] STM32 Mill Bootloader\r\n");
     printf("[BOOT] boot_ver: 0x%04X\r\n", BOOT_INFO_VERSION);
-    printf("[BOOT] APP base: 0x%08lX\r\n", (unsigned long)UPGRADE_APP_BASE_ADDR);
+    printf("[BOOT] slot A: 0x%08lX size=0x%05lX\r\n",
+           (unsigned long)UPGRADE_SLOT_A_BASE_ADDR,
+           (unsigned long)UPGRADE_SLOT_MAX_SIZE);
+    printf("[BOOT] slot B: 0x%08lX size=0x%05lX\r\n",
+           (unsigned long)UPGRADE_SLOT_B_BASE_ADDR,
+           (unsigned long)UPGRADE_SLOT_MAX_SIZE);
+    printf("[BOOT] bootctl : 0x%08lX\r\n", (unsigned long)UPGRADE_BOOTCTRL_PAGE_ADDR);
     printf("[BOOT] State page: 0x%08lX\r\n", (unsigned long)UPGRADE_STATE_PAGE_ADDR);
 }
 
@@ -190,6 +196,12 @@ void BootProtocol_PrintState(const BootloaderRuntime *runtime)
            runtime->state.request_source,
            runtime->state.error_code,
            (unsigned long)runtime->state.written_bytes);
+    printf("[BOOT] slots: active=%u confirmed=%u pending=%u attempts=%u transfer=%u\r\n",
+           runtime->boot_control.active_slot,
+           runtime->boot_control.confirmed_slot,
+           runtime->boot_control.pending_slot,
+           runtime->boot_control.boot_attempts,
+           runtime->transfer_slot);
 }
 
 void BootProtocol_PrintWaitingMessage(void)

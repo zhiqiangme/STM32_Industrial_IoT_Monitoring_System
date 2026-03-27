@@ -8,8 +8,23 @@
 #include "bootloader.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static BootloaderRuntime g_boot_runtime = {0};
+
+static const char *BootMain_SlotName(uint16_t slot)
+{
+    if (slot == UPGRADE_SLOT_A)
+    {
+        return "A";
+    }
+    if (slot == UPGRADE_SLOT_B)
+    {
+        return "B";
+    }
+
+    return "?";
+}
 
 /* YMODEM 传输层只给出一个粗粒度状态，这里把它翻译成更贴近升级业务的错误码，
  * 方便状态页落盘和现场串口日志排障。 */
@@ -56,47 +71,163 @@ static void BootMain_LogStateLoadIssue(uint8_t load_status)
     }
 }
 
+static void BootMain_LogBootControlLoadIssue(uint8_t load_status)
+{
+    switch (load_status)
+    {
+        case 2u:
+            printf("[BOOT] boot control empty, default slot policy assumed\r\n");
+            break;
+
+        case 4u:
+            printf("[BOOT] boot control CRC16 invalid, rebuilding defaults\r\n");
+            break;
+
+        default:
+            printf("[BOOT] boot control invalid (code=%u), rebuilding defaults\r\n",
+                   (unsigned int)load_status);
+            break;
+    }
+}
+
 /* 最终校验失败时，把“失败发生在哪一层”打印清楚。
  * 这一步是联调时最关键的诊断入口，所以日志尽量直接暴露期望值与实算值。 */
-static void BootMain_LogVerificationFailure(uint16_t error_code,
+static void BootMain_LogVerificationFailure(uint16_t slot,
+                                            uint32_t expected_crc32,
+                                            const uint8_t expected_sha256[BOOT_SHA256_DIGEST_SIZE],
+                                            uint32_t expected_size,
+                                            uint16_t error_code,
                                             uint32_t calc_crc32,
                                             const uint8_t calc_sha256[BOOT_SHA256_DIGEST_SIZE])
 {
     if (error_code == BOOT_ERR_VERIFY_CRC32)
     {
-        printf("[BOOT] verify failed: image CRC32 mismatch expect=0x%08lX calc=0x%08lX\r\n",
-               (unsigned long)g_boot_runtime.state.image_crc32,
+        printf("[BOOT] slot %s verify failed: CRC32 mismatch expect=0x%08lX calc=0x%08lX\r\n",
+               BootMain_SlotName(slot),
+               (unsigned long)expected_crc32,
                (unsigned long)calc_crc32);
         return;
     }
 
     if (error_code == BOOT_ERR_VERIFY_SHA256)
     {
-        char expected_sha256[BOOT_SHA256_HEX_LENGTH] = {0};
-        char actual_sha256[BOOT_SHA256_HEX_LENGTH] = {0};
+        char expected_hex[BOOT_SHA256_HEX_LENGTH] = {0};
+        char actual_hex[BOOT_SHA256_HEX_LENGTH] = {0};
 
-        BootSha256_FormatHex(g_boot_runtime.state.image_sha256, expected_sha256);
-        BootSha256_FormatHex(calc_sha256, actual_sha256);
-        printf("[BOOT] verify failed: image SHA256 mismatch\r\n");
-        printf("[BOOT]   expect=%s\r\n", expected_sha256);
-        printf("[BOOT]   calc  =%s\r\n", actual_sha256);
+        BootSha256_FormatHex(expected_sha256, expected_hex);
+        BootSha256_FormatHex(calc_sha256, actual_hex);
+        printf("[BOOT] slot %s verify failed: SHA256 mismatch\r\n",
+               BootMain_SlotName(slot));
+        printf("[BOOT]   expect=%s\r\n", expected_hex);
+        printf("[BOOT]   calc  =%s\r\n", actual_hex);
         return;
     }
 
     if (error_code == BOOT_ERR_VECTOR_INVALID)
     {
-        printf("[BOOT] verify failed: app vector table invalid\r\n");
+        printf("[BOOT] slot %s verify failed: vector table invalid\r\n",
+               BootMain_SlotName(slot));
         return;
     }
 
     if (error_code == BOOT_ERR_BAD_SIZE)
     {
-        printf("[BOOT] verify failed: image size invalid (%lu)\r\n",
-               (unsigned long)g_boot_runtime.state.image_size);
+        printf("[BOOT] slot %s verify failed: image size invalid (%lu)\r\n",
+               BootMain_SlotName(slot),
+               (unsigned long)expected_size);
         return;
     }
 
-    printf("[BOOT] verify failed: err=0x%04X\r\n", error_code);
+    printf("[BOOT] slot %s verify failed: err=0x%04X\r\n",
+           BootMain_SlotName(slot),
+           error_code);
+}
+
+static uint16_t BootMain_FindBestSlot(uint16_t exclude_slot)
+{
+    if (g_boot_runtime.boot_control.confirmed_slot != exclude_slot &&
+        Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.confirmed_slot) != 0u &&
+        Upgrade_IsSlotVectorValid(g_boot_runtime.boot_control.confirmed_slot) != 0u)
+    {
+        return g_boot_runtime.boot_control.confirmed_slot;
+    }
+
+    if (g_boot_runtime.boot_control.active_slot != exclude_slot &&
+        Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.active_slot) != 0u &&
+        Upgrade_IsSlotVectorValid(g_boot_runtime.boot_control.active_slot) != 0u)
+    {
+        return g_boot_runtime.boot_control.active_slot;
+    }
+
+    if (exclude_slot != UPGRADE_SLOT_A && Upgrade_IsSlotVectorValid(UPGRADE_SLOT_A) != 0u)
+    {
+        return UPGRADE_SLOT_A;
+    }
+
+    if (exclude_slot != UPGRADE_SLOT_B && Upgrade_IsSlotVectorValid(UPGRADE_SLOT_B) != 0u)
+    {
+        return UPGRADE_SLOT_B;
+    }
+
+    return UPGRADE_SLOT_NONE;
+}
+
+static void BootMain_NormalizeBootControl(void)
+{
+    uint16_t best_slot;
+
+    if (Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.active_slot) == 0u)
+    {
+        g_boot_runtime.boot_control.active_slot = UPGRADE_SLOT_A;
+    }
+
+    if (Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.confirmed_slot) == 0u)
+    {
+        g_boot_runtime.boot_control.confirmed_slot = g_boot_runtime.boot_control.active_slot;
+    }
+
+    if (Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.pending_slot) == 0u)
+    {
+        g_boot_runtime.boot_control.pending_slot = UPGRADE_SLOT_NONE;
+    }
+
+    best_slot = BootMain_FindBestSlot(UPGRADE_SLOT_NONE);
+    if (best_slot != UPGRADE_SLOT_NONE)
+    {
+        if (Upgrade_IsSlotVectorValid(g_boot_runtime.boot_control.active_slot) == 0u)
+        {
+            g_boot_runtime.boot_control.active_slot = best_slot;
+        }
+        if (Upgrade_IsSlotVectorValid(g_boot_runtime.boot_control.confirmed_slot) == 0u)
+        {
+            g_boot_runtime.boot_control.confirmed_slot = best_slot;
+        }
+    }
+}
+
+static void BootMain_MarkUpgradeFailed(uint16_t error_code)
+{
+    g_boot_runtime.state.state = UPGRADE_STATE_FAILED;
+    g_boot_runtime.state.error_code = error_code;
+    g_boot_runtime.state.active_boot_count = 0u;
+    (void)Upgrade_SaveState(&g_boot_runtime.state);
+}
+
+static void BootMain_RollbackToSlot(uint16_t slot, uint16_t error_code)
+{
+    if (Upgrade_IsSlotIdValid(slot) == 0u)
+    {
+        return;
+    }
+
+    g_boot_runtime.boot_control.active_slot = slot;
+    g_boot_runtime.boot_control.confirmed_slot = slot;
+    g_boot_runtime.boot_control.pending_slot = UPGRADE_SLOT_NONE;
+    g_boot_runtime.boot_control.boot_attempts = 0u;
+    (void)BootFlash_SaveBootControl(&g_boot_runtime);
+
+    BootMain_MarkUpgradeFailed(error_code);
+    g_boot_runtime.boot_slot = slot;
 }
 
 /* 一次完整 YMODEM 会话写完后的收尾逻辑。
@@ -105,7 +236,7 @@ static void BootMain_LogVerificationFailure(uint16_t error_code,
  * 2. 状态切到 VERIFYING 并持久化
  * 3. 计算整包 CRC32 / SHA-256
  * 4. 结合向量表一起做最终放行
- * 5. 通过后写 DONE，等待复位重新走启动路径 */
+ * 5. 通过后把“待试运行槽”写入启动控制页，等待复位重新走启动路径 */
 static uint8_t BootMain_FinalizeSession(const YmodemReceiveResult *result)
 {
     uint32_t calc_crc32;
@@ -128,26 +259,35 @@ static uint8_t BootMain_FinalizeSession(const YmodemReceiveResult *result)
         return 0u;
     }
 
-    /* CRC32 和 SHA-256 都在 App Flash 上直接计算，避免大镜像搬到 RAM。 */
+    /* CRC32 和 SHA-256 都在目标槽 Flash 上直接计算，避免大镜像搬到 RAM。 */
     calc_crc32 = BootVerify_CalculateProgrammedImageCrc32(&g_boot_runtime);
     BootVerify_CalculateProgrammedImageSha256(&g_boot_runtime, calc_sha256);
 
-    printf("[BOOT] verify CRC32: expect=0x%08lX calc=0x%08lX\r\n",
+    printf("[BOOT] slot %s verify CRC32: expect=0x%08lX calc=0x%08lX\r\n",
+           BootMain_SlotName(g_boot_runtime.transfer_slot),
            (unsigned long)g_boot_runtime.state.image_crc32,
            (unsigned long)calc_crc32);
     if (BootVerify_HasExpectedSha256(&g_boot_runtime) != 0u)
     {
-        printf("[BOOT] verify SHA256: calculated, checking against state page\r\n");
+        printf("[BOOT] slot %s verify SHA256: calculated, checking against state page\r\n",
+               BootMain_SlotName(g_boot_runtime.transfer_slot));
     }
     else
     {
-        printf("[BOOT] verify SHA256: missing in state page, fallback to legacy CRC32 path\r\n");
+        printf("[BOOT] slot %s verify SHA256: missing in state page, fallback to legacy CRC32 path\r\n",
+               BootMain_SlotName(g_boot_runtime.transfer_slot));
     }
 
     verify_error = BootVerify_ValidateProgrammedImage(&g_boot_runtime, calc_crc32, calc_sha256);
     if (verify_error != BOOT_ERR_NONE)
     {
-        BootMain_LogVerificationFailure(verify_error, calc_crc32, calc_sha256);
+        BootMain_LogVerificationFailure(g_boot_runtime.transfer_slot,
+                                        g_boot_runtime.state.image_crc32,
+                                        g_boot_runtime.state.image_sha256,
+                                        g_boot_runtime.state.image_size,
+                                        verify_error,
+                                        calc_crc32,
+                                        calc_sha256);
         BootFlash_MarkFailed(&g_boot_runtime, verify_error);
         return 0u;
     }
@@ -160,102 +300,175 @@ static uint8_t BootMain_FinalizeSession(const YmodemReceiveResult *result)
     return 1u;
 }
 
+static uint8_t BootMain_HandlePendingSlot(void)
+{
+    uint16_t pending_slot = g_boot_runtime.boot_control.pending_slot;
+    const UpgradeSlotRecord *record;
+    uint32_t calc_crc32 = 0u;
+    uint16_t verify_error;
+    uint16_t fallback_slot;
+    uint8_t calc_sha256[BOOT_SHA256_DIGEST_SIZE] = {0};
+
+    if (Upgrade_IsSlotIdValid(pending_slot) == 0u)
+    {
+        return 1u;
+    }
+
+    record = &g_boot_runtime.boot_control.slots[pending_slot];
+    verify_error = BootVerify_ValidateStoredSlot(pending_slot, record, &calc_crc32, calc_sha256);
+    if (verify_error != BOOT_ERR_NONE)
+    {
+        BootMain_LogVerificationFailure(pending_slot,
+                                        record->image_crc32,
+                                        record->image_sha256,
+                                        record->image_size,
+                                        verify_error,
+                                        calc_crc32,
+                                        calc_sha256);
+        fallback_slot = BootMain_FindBestSlot(pending_slot);
+        if (fallback_slot != UPGRADE_SLOT_NONE)
+        {
+            printf("[BOOT] pending slot %s invalid, rollback to slot %s\r\n",
+                   BootMain_SlotName(pending_slot),
+                   BootMain_SlotName(fallback_slot));
+            BootMain_RollbackToSlot(fallback_slot, verify_error);
+            return 0u;
+        }
+
+        BootMain_MarkUpgradeFailed(verify_error);
+        return 1u;
+    }
+
+    if (g_boot_runtime.boot_control.boot_attempts >= UPGRADE_PENDING_BOOT_LIMIT)
+    {
+        fallback_slot = BootMain_FindBestSlot(pending_slot);
+        if (fallback_slot != UPGRADE_SLOT_NONE)
+        {
+            printf("[BOOT] pending slot %s not confirmed after %u boots, rollback to slot %s\r\n",
+                   BootMain_SlotName(pending_slot),
+                   (unsigned int)g_boot_runtime.boot_control.boot_attempts,
+                   BootMain_SlotName(fallback_slot));
+            BootMain_RollbackToSlot(fallback_slot, BOOT_ERR_TIMEOUT_RECOVERY);
+            return 0u;
+        }
+
+        BootMain_MarkUpgradeFailed(BOOT_ERR_TIMEOUT_RECOVERY);
+        return 1u;
+    }
+
+    g_boot_runtime.boot_control.active_slot = pending_slot;
+    if (g_boot_runtime.boot_control.boot_attempts < 0xFFFFu)
+    {
+        g_boot_runtime.boot_control.boot_attempts++;
+    }
+    if (BootFlash_SaveBootControl(&g_boot_runtime) != 0u)
+    {
+        return 1u;
+    }
+
+    printf("[BOOT] pending slot %s verified, trial boot #%u\r\n",
+           BootMain_SlotName(pending_slot),
+           (unsigned int)g_boot_runtime.boot_control.boot_attempts);
+    g_boot_runtime.boot_slot = pending_slot;
+    return 0u;
+}
+
 uint8_t BootMain_ShouldStayInLoader(void)
 {
-    uint8_t load_status = BootFlash_LoadState(&g_boot_runtime);
+    uint8_t state_status;
+    uint8_t boot_ctrl_status;
+    uint16_t boot_slot;
+    UpgradeBootControl original_boot_control;
 
-    if (load_status == 0u)
-    {
-        if (BootFlash_IsUpgradeActiveState(g_boot_runtime.state.state) != 0u)
-        {
-            /* 只要状态页还处于“升级进行中”，默认就继续留在 Bootloader。
-             * 这样中途掉电、掉线、工具崩溃后都能重新发完整镜像恢复。 */
-            uint8_t app_valid = Upgrade_IsAppVectorValid(UPGRADE_APP_BASE_ADDR);
-
-            if (g_boot_runtime.state.active_boot_count < 0xFFFFu)
-            {
-                g_boot_runtime.state.active_boot_count++;
-                Upgrade_SaveState(&g_boot_runtime.state);
-            }
-
-            /* 如果连续多次上电都卡在升级态，且旧 App 仍然有效，
-             * 就把这次升级判成超时失败，让设备自动回退到 App。 */
-            if (app_valid != 0u &&
-                g_boot_runtime.state.active_boot_count >= UPGRADE_ACTIVE_STATE_BOOT_LIMIT)
-            {
-                g_boot_runtime.state.state = UPGRADE_STATE_FAILED;
-                g_boot_runtime.state.error_code = BOOT_ERR_TIMEOUT_RECOVERY;
-                g_boot_runtime.state.active_boot_count = 0u;
-                Upgrade_SaveState(&g_boot_runtime.state);
-                return 0u;
-            }
-
-            return 1u;
-        }
-        if (g_boot_runtime.state.state == UPGRADE_STATE_DONE)
-        {
-            /* DONE 不是“永远信任”。
-             * 当前阶段的策略是：只要状态页显示 DONE，每次上电都重新做一遍
-             * CRC32 + SHA256 + 向量表复核，确认 Flash 中的 App 没有被破坏。 */
-            uint32_t calc_crc32 = 0u;
-            uint16_t verify_error;
-            uint8_t calc_sha256[BOOT_SHA256_DIGEST_SIZE] = {0};
-
-            verify_error = BootVerify_ValidateStoredImage(&g_boot_runtime, &calc_crc32, calc_sha256);
-            if (verify_error != BOOT_ERR_NONE)
-            {
-                g_boot_runtime.state.state = UPGRADE_STATE_FAILED;
-                g_boot_runtime.state.error_code = verify_error;
-                g_boot_runtime.state.active_boot_count = 0u;
-                Upgrade_SaveState(&g_boot_runtime.state);
-                BootMain_LogVerificationFailure(verify_error, calc_crc32, calc_sha256);
-                return 1u;
-            }
-
-            if (BootVerify_HasExpectedSha256(&g_boot_runtime) != 0u)
-            {
-                printf("[BOOT] startup recheck: CRC32 + SHA256 + vector OK\r\n");
-            }
-            else
-            {
-                printf("[BOOT] startup recheck: legacy CRC32 + vector OK (no SHA256 in state page)\r\n");
-            }
-        }
-    }
-    else
+    state_status = BootFlash_LoadState(&g_boot_runtime);
+    if (state_status != 0u)
     {
         BootFlash_InitState(&g_boot_runtime);
-        BootMain_LogStateLoadIssue(load_status);
+        BootMain_LogStateLoadIssue(state_status);
     }
 
-    return (Upgrade_IsAppVectorValid(UPGRADE_APP_BASE_ADDR) == 0u) ? 1u : 0u;
+    boot_ctrl_status = BootFlash_LoadBootControl(&g_boot_runtime);
+    if (boot_ctrl_status != 0u)
+    {
+        BootFlash_InitBootControl(&g_boot_runtime);
+        BootMain_LogBootControlLoadIssue(boot_ctrl_status);
+    }
+    original_boot_control = g_boot_runtime.boot_control;
+    BootMain_NormalizeBootControl();
+    if (memcmp(&original_boot_control, &g_boot_runtime.boot_control, sizeof(original_boot_control)) != 0)
+    {
+        (void)BootFlash_SaveBootControl(&g_boot_runtime);
+    }
+
+    if (BootFlash_IsUpgradeActiveState(g_boot_runtime.state.state) != 0u)
+    {
+        /* 只要状态页还处于“升级进行中”，默认就继续留在 Bootloader。
+         * 这样中途掉电、掉线、工具崩溃后都能重新发完整镜像恢复。 */
+        boot_slot = BootMain_FindBestSlot(UPGRADE_SLOT_NONE);
+
+        if (g_boot_runtime.state.active_boot_count < 0xFFFFu)
+        {
+            g_boot_runtime.state.active_boot_count++;
+            (void)Upgrade_SaveState(&g_boot_runtime.state);
+        }
+
+        /* 如果连续多次上电都卡在升级态，且仍有稳定槽可用，
+         * 就把这次升级判成超时失败，让设备自动回退到稳定槽。 */
+        if (boot_slot != UPGRADE_SLOT_NONE &&
+            g_boot_runtime.state.active_boot_count >= UPGRADE_ACTIVE_STATE_BOOT_LIMIT)
+        {
+            printf("[BOOT] upgrade state timeout, fallback to slot %s\r\n",
+                   BootMain_SlotName(boot_slot));
+            BootMain_RollbackToSlot(boot_slot, BOOT_ERR_TIMEOUT_RECOVERY);
+            return 0u;
+        }
+
+        return 1u;
+    }
+
+    if (g_boot_runtime.boot_control.pending_slot != UPGRADE_SLOT_NONE)
+    {
+        return BootMain_HandlePendingSlot();
+    }
+
+    boot_slot = BootMain_FindBestSlot(UPGRADE_SLOT_NONE);
+    if (boot_slot == UPGRADE_SLOT_NONE)
+    {
+        return 1u;
+    }
+
+    if (g_boot_runtime.boot_control.active_slot != boot_slot ||
+        g_boot_runtime.boot_control.confirmed_slot != boot_slot)
+    {
+        g_boot_runtime.boot_control.active_slot = boot_slot;
+        g_boot_runtime.boot_control.confirmed_slot = boot_slot;
+        g_boot_runtime.boot_control.boot_attempts = 0u;
+        (void)BootFlash_SaveBootControl(&g_boot_runtime);
+    }
+
+    g_boot_runtime.boot_slot = boot_slot;
+    return 0u;
 }
 
 void BootMain_Run(void)
 {
     YmodemReceiveResult result;
     COM_StatusTypeDef status;
-    uint8_t load_status;
 
+    g_boot_runtime.boot_slot = UPGRADE_SLOT_NONE;
+    g_boot_runtime.transfer_slot = UPGRADE_SLOT_NONE;
     BootProtocol_PrintBanner();
     BootProtocol_InitUart(&g_boot_runtime);
 
-    load_status = BootFlash_LoadState(&g_boot_runtime);
-    if (load_status == 0u)
-    {
-        BootProtocol_PrintState(&g_boot_runtime);
-    }
-
-    /* Bootloader 启动后总是先执行自己的启动决策：
-     * - 状态页无升级请求且 App 有效：直接跳 App
-     * - 状态页显示升级进行中 / DONE 复核失败 / App 无效：继续留在 Bootloader */
     if (BootMain_ShouldStayInLoader() == 0u)
     {
-        printf("[BOOT] valid app found, jump now\r\n");
+        printf("[BOOT] valid slot %s found, jump now\r\n",
+               BootMain_SlotName(g_boot_runtime.boot_slot));
         HAL_Delay(10);
-        Upgrade_JumpToApplication(UPGRADE_APP_BASE_ADDR);
+        Upgrade_JumpToSlot(g_boot_runtime.boot_slot);
     }
 
+    BootProtocol_PrintState(&g_boot_runtime);
     BootProtocol_PrintWaitingMessage();
 
     while (1)
@@ -271,7 +484,8 @@ void BootMain_Run(void)
             }
             else if (BootMain_FinalizeSession(&result) != 0u)
             {
-                printf("[BOOT] YMODEM done: size=%lu crc32=0x%08lX\r\n",
+                printf("[BOOT] YMODEM done: slot=%s size=%lu crc32=0x%08lX\r\n",
+                       BootMain_SlotName(g_boot_runtime.transfer_slot),
                        (unsigned long)result.file_size,
                        (unsigned long)g_boot_runtime.state.image_crc32);
                 g_boot_runtime.reset_pending = 1u;

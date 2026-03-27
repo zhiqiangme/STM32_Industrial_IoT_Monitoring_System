@@ -8,6 +8,9 @@
 
 uint8_t BootFlash_LoadState(BootloaderRuntime *runtime);
 void BootFlash_InitState(BootloaderRuntime *runtime);
+uint8_t BootFlash_LoadBootControl(BootloaderRuntime *runtime);
+void BootFlash_InitBootControl(BootloaderRuntime *runtime);
+uint8_t BootFlash_SaveBootControl(BootloaderRuntime *runtime);
 uint8_t BootFlash_IsUpgradeActiveState(uint16_t state);
 uint16_t BootFlash_ResolveRequestSource(void);
 uint32_t BootFlash_ResolveTargetVersion(uint32_t requested_target_fw_version);

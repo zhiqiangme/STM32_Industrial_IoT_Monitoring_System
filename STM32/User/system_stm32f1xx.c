@@ -91,8 +91,6 @@
 /*!< Uncomment the following line if you need to relocate your vector Table in
      Internal SRAM. */ 
 /* #define VECT_TAB_SRAM */
-#define VECT_TAB_OFFSET  0x8000 /*!< Vector Table base offset field. 
-                                  This value must be a multiple of 0x200. */
 
 
 /**
@@ -121,6 +119,7 @@
 uint32_t SystemCoreClock = 8000000;
 const uint8_t AHBPrescTable[16] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 6, 7, 8, 9};
 const uint8_t APBPrescTable[8] =  {0, 0, 0, 0, 1, 2, 3, 4};
+extern const uint32_t __Vectors;
 
 /**
   * @}
@@ -201,9 +200,10 @@ void SystemInit (void)
 #endif 
 
 #ifdef VECT_TAB_SRAM
-  SCB->VTOR = SRAM_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal SRAM. */
+  SCB->VTOR = SRAM_BASE; /* Vector Table Relocation in Internal SRAM. */
 #else
-  SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal FLASH. */
+  /* App_A / App_B 共用同一套源码，向量表基址直接跟随最终链接地址。 */
+  SCB->VTOR = (uint32_t)&__Vectors;
 #endif 
 }
 

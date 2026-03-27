@@ -9,6 +9,9 @@ typedef struct
 {
     UART_HandleTypeDef uart;
     UpgradeStateImage state;
+    UpgradeBootControl boot_control;
+    uint16_t boot_slot;
+    uint16_t transfer_slot;
     uint16_t last_error;
     uint8_t reset_pending;
 } BootloaderRuntime;

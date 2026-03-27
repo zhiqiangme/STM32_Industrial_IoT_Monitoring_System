@@ -4,40 +4,61 @@
 
 #include <string.h>
 
+static uint8_t BootVerify_HasDigest(const uint8_t digest[BOOT_SHA256_DIGEST_SIZE])
+{
+    if (digest == NULL)
+    {
+        return 0u;
+    }
+
+    for (uint32_t i = 0u; i < BOOT_SHA256_DIGEST_SIZE; i++)
+    {
+        if (digest[i] != 0u)
+        {
+            return 1u;
+        }
+    }
+
+    return 0u;
+}
+
 /* 统一封装“整包 CRC32 + 可选 SHA256 + 向量表”三层放行判断。
  * 无论是刚升级完的最终校验，还是下次上电时的启动前复核，都走这一个入口，
  * 这样两条路径的放行标准就不会漂移。 */
-static uint16_t BootVerify_ValidateDigestsAndVector(const BootloaderRuntime *runtime,
+static uint16_t BootVerify_ValidateDigestsAndVector(uint16_t slot,
+                                                    uint32_t image_size,
+                                                    uint32_t image_crc32,
+                                                    const uint8_t expected_digest[BOOT_SHA256_DIGEST_SIZE],
                                                     uint32_t calc_crc32,
                                                     const uint8_t digest[BOOT_SHA256_DIGEST_SIZE])
 {
-    if (runtime == NULL)
+    if (Upgrade_IsSlotIdValid(slot) == 0u)
     {
         return BOOT_ERR_VERIFY;
     }
 
-    if (runtime->state.image_size == 0u || runtime->state.image_size > UPGRADE_APP_MAX_SIZE)
+    if (image_size == 0u || image_size > UPGRADE_SLOT_MAX_SIZE)
     {
         return BOOT_ERR_BAD_SIZE;
     }
 
-    if (calc_crc32 != runtime->state.image_crc32)
+    if (calc_crc32 != image_crc32)
     {
         return BOOT_ERR_VERIFY_CRC32;
     }
 
     /* 只有状态页里确实存在期望 SHA-256 时，才把它纳入硬校验。
      * 这给旧版无 SHA-256 状态页保留了兼容空间。 */
-    if (BootVerify_HasExpectedSha256(runtime) != 0u)
+    if (BootVerify_HasDigest(expected_digest) != 0u)
     {
         if ((digest == NULL) ||
-            (memcmp(digest, runtime->state.image_sha256, BOOT_SHA256_DIGEST_SIZE) != 0))
+            (memcmp(digest, expected_digest, BOOT_SHA256_DIGEST_SIZE) != 0))
         {
             return BOOT_ERR_VERIFY_SHA256;
         }
     }
 
-    if (Upgrade_IsAppVectorValid(UPGRADE_APP_BASE_ADDR) == 0u)
+    if (Upgrade_IsSlotVectorValid(slot) == 0u)
     {
         return BOOT_ERR_VECTOR_INVALID;
     }
@@ -70,24 +91,40 @@ uint8_t BootVerify_IsReceivedImageComplete(const BootloaderRuntime *runtime,
 
 uint32_t BootVerify_CalculateProgrammedImageCrc32(const BootloaderRuntime *runtime)
 {
+    uint32_t slot_base_addr;
+
     if (runtime == NULL)
     {
         return 0u;
     }
 
-    return Upgrade_CRC32_CalculateFlash(UPGRADE_APP_BASE_ADDR, runtime->state.image_size);
+    slot_base_addr = Upgrade_GetSlotBaseAddress(runtime->transfer_slot);
+    if (slot_base_addr == 0u)
+    {
+        return 0u;
+    }
+
+    return Upgrade_CRC32_CalculateFlash(slot_base_addr, runtime->state.image_size);
 }
 
 void BootVerify_CalculateProgrammedImageSha256(const BootloaderRuntime *runtime,
                                                uint8_t digest[BOOT_SHA256_DIGEST_SIZE])
 {
+    uint32_t slot_base_addr;
+
     if (runtime == NULL)
     {
         return;
     }
 
+    slot_base_addr = Upgrade_GetSlotBaseAddress(runtime->transfer_slot);
+    if (slot_base_addr == 0u)
+    {
+        return;
+    }
+
     /* 直接在 Flash 上流式计算哈希，避免整包拷贝到 RAM。 */
-    BootSha256_CalculateFlash(UPGRADE_APP_BASE_ADDR, runtime->state.image_size, digest);
+    BootSha256_CalculateFlash(slot_base_addr, runtime->state.image_size, digest);
 }
 
 uint8_t BootVerify_HasExpectedSha256(const BootloaderRuntime *runtime)
@@ -104,22 +141,44 @@ uint16_t BootVerify_ValidateProgrammedImage(const BootloaderRuntime *runtime,
                                             uint32_t calc_crc32,
                                             const uint8_t digest[BOOT_SHA256_DIGEST_SIZE])
 {
-    return BootVerify_ValidateDigestsAndVector(runtime, calc_crc32, digest);
-}
-
-uint16_t BootVerify_ValidateStoredImage(const BootloaderRuntime *runtime,
-                                        uint32_t *calc_crc32,
-                                        uint8_t digest[BOOT_SHA256_DIGEST_SIZE])
-{
-    uint32_t local_crc32;
-
     if (runtime == NULL)
     {
         return BOOT_ERR_VERIFY;
     }
 
+    return BootVerify_ValidateDigestsAndVector(runtime->transfer_slot,
+                                               runtime->state.image_size,
+                                               runtime->state.image_crc32,
+                                               runtime->state.image_sha256,
+                                               calc_crc32,
+                                               digest);
+}
+
+uint16_t BootVerify_ValidateStoredSlot(uint16_t slot,
+                                       const UpgradeSlotRecord *record,
+                                       uint32_t *calc_crc32,
+                                       uint8_t digest[BOOT_SHA256_DIGEST_SIZE])
+{
+    uint32_t local_crc32;
+    uint32_t slot_base_addr;
+
+    if (record == NULL)
+    {
+        return BOOT_ERR_VERIFY;
+    }
+    if (record->image_size == 0u || record->image_size > UPGRADE_SLOT_MAX_SIZE)
+    {
+        return BOOT_ERR_BAD_SIZE;
+    }
+
+    slot_base_addr = Upgrade_GetSlotBaseAddress(slot);
+    if (slot_base_addr == 0u)
+    {
+        return BOOT_ERR_VERIFY;
+    }
+
     /* 启动前复核时，先重算当前 Flash 中的整包摘要，再跟状态页里的期望值比对。 */
-    local_crc32 = BootVerify_CalculateProgrammedImageCrc32(runtime);
+    local_crc32 = Upgrade_CRC32_CalculateFlash(slot_base_addr, record->image_size);
     if (calc_crc32 != NULL)
     {
         *calc_crc32 = local_crc32;
@@ -127,8 +186,13 @@ uint16_t BootVerify_ValidateStoredImage(const BootloaderRuntime *runtime,
 
     if (digest != NULL)
     {
-        BootVerify_CalculateProgrammedImageSha256(runtime, digest);
+        BootSha256_CalculateFlash(slot_base_addr, record->image_size, digest);
     }
 
-    return BootVerify_ValidateDigestsAndVector(runtime, local_crc32, digest);
+    return BootVerify_ValidateDigestsAndVector(slot,
+                                               record->image_size,
+                                               record->image_crc32,
+                                               record->image_sha256,
+                                               local_crc32,
+                                               digest);
 }
