@@ -4,6 +4,10 @@ using System.IO.Ports;
 
 namespace Project;
 
+/// <summary>
+/// 固件槽位枚举。
+/// 当前 STM32 采用 A/B 双镜像升级，因此界面和升级逻辑都围绕这两个槽位展开。
+/// </summary>
 internal enum FirmwareSlot
 {
     Unknown = 0,
@@ -11,6 +15,10 @@ internal enum FirmwareSlot
     B = 2
 }
 
+/// <summary>
+/// 固件镜像识别结果。
+/// 同时保存文件名推断结果、向量表推断结果以及关键地址，便于界面做提示和校验。
+/// </summary>
 internal readonly record struct FirmwareImageInfo(
     string ImagePath,
     FirmwareSlot DetectedSlot,
@@ -19,8 +27,14 @@ internal readonly record struct FirmwareImageInfo(
     uint InitialStackPointer,
     uint ResetHandler);
 
+/// <summary>
+/// 槽位相关的显示与换槽辅助方法。
+/// </summary>
 internal static class FirmwareSlotExtensions
 {
+    /// <summary>
+    /// 把内部枚举转换成界面显示文本。
+    /// </summary>
     public static string ToDisplayText(this FirmwareSlot slot)
     {
         return slot switch
@@ -31,6 +45,10 @@ internal static class FirmwareSlotExtensions
         };
     }
 
+    /// <summary>
+    /// 获取当前槽位的另一槽。
+    /// 例如当前运行 A，则建议升级 B。
+    /// </summary>
     public static FirmwareSlot GetOpposite(this FirmwareSlot slot)
     {
         return slot switch
@@ -42,6 +60,12 @@ internal static class FirmwareSlotExtensions
     }
 }
 
+/// <summary>
+/// A/B 升级辅助类。
+/// 负责两类工作：
+/// 1. 通过串口读取设备当前运行槽位；
+/// 2. 通过 BIN 文件名和向量表判断镜像属于哪个槽位。
+/// </summary>
 internal static class UpgradeAbSupport
 {
     private const byte DeviceAddress = 0x0A;
@@ -54,21 +78,87 @@ internal static class UpgradeAbSupport
     private const uint SlotBBaseAddress = 0x08043000u;
     private const uint SlotMaxSize = 0x0003B000u;
 
-    public static FirmwareSlot ReadRunningSlot(string portName, int baudRate, TimeSpan timeout)
+    /// <summary>
+    /// 尝试读取设备当前运行槽位。
+    /// 该方法用于界面后台轮询，因此失败时不抛给上层，而是返回 false 和中文错误信息。
+    /// </summary>
+    public static bool TryReadRunningSlot(string portName, int baudRate, TimeSpan timeout, out FirmwareSlot slot, out string? errorMessage)
     {
-        using var serialPort = SerialPortHelper.Open(portName, baudRate);
-        Thread.Sleep(200);
-        serialPort.DiscardInBuffer();
-        serialPort.DiscardOutBuffer();
+        var result = SerialOperationGate.Run(() =>
+        {
+            var slot = FirmwareSlot.Unknown;
+            string? errorMessage = null;
 
-        var request = BuildReadHoldingRegistersRequest(RunningSlotRegisterAddress, RunningSlotRegisterCount);
-        serialPort.Write(request, 0, request.Length);
-        serialPort.BaseStream.Flush();
+            if (!SerialPortHelper.TryOpen(portName, baudRate, out var serialPort, out errorMessage))
+            {
+                return (Success: false, Slot: slot, ErrorMessage: errorMessage);
+            }
 
-        var response = ReadExact(serialPort, RunningSlotResponseLength, timeout);
-        return ParseRunningSlotResponse(response);
+            if (serialPort is null)
+            {
+                errorMessage = "无法打开串口。";
+                return (Success: false, Slot: slot, ErrorMessage: errorMessage);
+            }
+
+            try
+            {
+                using (serialPort)
+                {
+                    Thread.Sleep(200);
+                    serialPort.DiscardInBuffer();
+                    serialPort.DiscardOutBuffer();
+
+                    var request = BuildReadHoldingRegistersRequest(RunningSlotRegisterAddress, RunningSlotRegisterCount);
+                    serialPort.Write(request, 0, request.Length);
+                    serialPort.BaseStream.Flush();
+
+                    var response = ReadExact(serialPort, RunningSlotResponseLength, timeout);
+                    slot = ParseRunningSlotResponse(response);
+                    return (Success: true, Slot: slot, ErrorMessage: errorMessage);
+                }
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException or InvalidOperationException or UnauthorizedAccessException)
+            {
+                errorMessage = BuildSerialDisconnectMessage(ex);
+                slot = FirmwareSlot.Unknown;
+                return (Success: false, Slot: slot, ErrorMessage: errorMessage);
+            }
+        });
+
+        slot = result.Slot;
+        errorMessage = result.ErrorMessage;
+        return result.Success;
     }
 
+    /// <summary>
+    /// 读取设备当前运行槽位。
+    /// 与 TryReadRunningSlot 的区别是：这里把异常继续向上抛，适合更严格的调用场景。
+    /// </summary>
+    public static FirmwareSlot ReadRunningSlot(string portName, int baudRate, TimeSpan timeout)
+    {
+        return SerialOperationGate.Run(() =>
+        {
+            using var serialPort = SerialPortHelper.Open(portName, baudRate);
+            Thread.Sleep(200);
+            serialPort.DiscardInBuffer();
+            serialPort.DiscardOutBuffer();
+
+            var request = BuildReadHoldingRegistersRequest(RunningSlotRegisterAddress, RunningSlotRegisterCount);
+            serialPort.Write(request, 0, request.Length);
+            serialPort.BaseStream.Flush();
+
+            var response = ReadExact(serialPort, RunningSlotResponseLength, timeout);
+            return ParseRunningSlotResponse(response);
+        });
+    }
+
+    /// <summary>
+    /// 检查 BIN 镜像，识别该文件应写入 A 槽还是 B 槽。
+    /// 识别优先级为：
+    /// 1. 复位向量落在哪个地址范围；
+    /// 2. 文件名是否包含 App_A / App_B。
+    /// 两者都能识别时，还会做一次交叉校验，防止文件名和内容不一致。
+    /// </summary>
     public static FirmwareImageInfo InspectImage(string imagePath)
     {
         using var stream = File.OpenRead(imagePath);
@@ -107,6 +197,10 @@ internal static class UpgradeAbSupport
         return new FirmwareImageInfo(imagePath, detectedSlot, fileNameSlot, vectorSlot, initialStackPointer, resetHandler);
     }
 
+    /// <summary>
+    /// 根据当前运行槽位给出推荐升级文件名。
+    /// 当前运行 A，就推荐刷 B；当前运行 B，就推荐刷 A。
+    /// </summary>
     public static string GetRecommendedFileName(FirmwareSlot runningSlot)
     {
         return runningSlot switch
@@ -117,6 +211,10 @@ internal static class UpgradeAbSupport
         };
     }
 
+    /// <summary>
+    /// 生成界面下方镜像提示文本。
+    /// 把识别来源和复位向量一起展示，便于现场排查镜像打包错误。
+    /// </summary>
     public static string BuildImageHint(FirmwareImageInfo imageInfo)
     {
         var details = new List<string>
@@ -138,6 +236,10 @@ internal static class UpgradeAbSupport
         return string.Join("，", details);
     }
 
+    /// <summary>
+    /// 构造 Modbus 03 功能码读寄存器请求帧。
+    /// 当前用于读取“当前运行槽位”寄存器。
+    /// </summary>
     private static byte[] BuildReadHoldingRegistersRequest(ushort startAddress, ushort registerCount)
     {
         Span<byte> frame = stackalloc byte[8];
@@ -152,6 +254,9 @@ internal static class UpgradeAbSupport
         return frame.ToArray();
     }
 
+    /// <summary>
+    /// 解析设备返回的槽位响应帧，并执行长度、站号、功能码、CRC 等校验。
+    /// </summary>
     private static FirmwareSlot ParseRunningSlotResponse(ReadOnlySpan<byte> response)
     {
         if (response.Length != RunningSlotResponseLength)
@@ -190,6 +295,9 @@ internal static class UpgradeAbSupport
         };
     }
 
+    /// <summary>
+    /// 从文件名推断槽位，例如 App_A.bin / App_B.bin。
+    /// </summary>
     private static FirmwareSlot InferSlotFromFileName(string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -211,6 +319,10 @@ internal static class UpgradeAbSupport
         return FirmwareSlot.Unknown;
     }
 
+    /// <summary>
+    /// 根据复位向量地址判断镜像属于哪个槽位。
+    /// 这是比文件名更可靠的判定来源。
+    /// </summary>
     private static FirmwareSlot ResolveSlotFromAddress(uint address)
     {
         if (address >= SlotABaseAddress && address < SlotABaseAddress + SlotMaxSize)
@@ -226,6 +338,9 @@ internal static class UpgradeAbSupport
         return FirmwareSlot.Unknown;
     }
 
+    /// <summary>
+    /// 计算 Modbus RTU CRC16。
+    /// </summary>
     private static ushort ComputeModbusCrc(ReadOnlySpan<byte> data)
     {
         ushort crc = 0xFFFF;
@@ -244,6 +359,11 @@ internal static class UpgradeAbSupport
         return crc;
     }
 
+    /// <summary>
+    /// 从串口精确读取指定长度的数据。
+    /// 中间允许多次超时重试，但总耗时受 timeout 限制。
+    /// 如果设备在读取过程中被拔掉，会统一转成可读的断开提示。
+    /// </summary>
     private static byte[] ReadExact(SerialPort serialPort, int length, TimeSpan timeout)
     {
         var buffer = new byte[length];
@@ -269,8 +389,26 @@ internal static class UpgradeAbSupport
             catch (TimeoutException)
             {
             }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or InvalidOperationException)
+            {
+                throw new InvalidOperationException(BuildSerialDisconnectMessage(ex), ex);
+            }
         }
 
         return buffer;
+    }
+
+    /// <summary>
+    /// 把“串口断开/系统回收”等底层异常翻译成统一中文提示。
+    /// </summary>
+    private static string BuildSerialDisconnectMessage(Exception ex)
+    {
+        return ex switch
+        {
+            UnauthorizedAccessException => "串口已断开或被系统回收，无法继续读取当前槽位。",
+            IOException => "串口连接已断开，无法继续读取当前槽位。",
+            InvalidOperationException => ex.Message,
+            _ => ex.Message
+        };
     }
 }

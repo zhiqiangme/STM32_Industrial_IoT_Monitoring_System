@@ -5,8 +5,18 @@ using System.Text;
 
 namespace Project;
 
+/// <summary>
+/// 本地 OTA 升级执行器。
+/// 完整流程为：
+/// 1. 打开串口并打印固件摘要；
+/// 2. 发送解锁帧；
+/// 3. 发送进入 Bootloader 帧；
+/// 4. 等待 Bootloader 进入 YMODEM 握手；
+/// 5. 发送头包、数据包、EOT 和结束空包。
+/// </summary>
 internal static class LocalUpgradeService
 {
+    // YMODEM/CPM 控制字节。
     private const byte Soh = 0x01;
     private const byte Stx = 0x02;
     private const byte Eot = 0x04;
@@ -25,12 +35,19 @@ internal static class LocalUpgradeService
     private static readonly byte[] UnlockCommand = Convert.FromHexString("0A060030A55A73D5");
     private static readonly byte[] EnterBootloaderCommand = Convert.FromHexString("0A0600310005197D");
 
+    /// <summary>
+    /// 在后台线程启动升级流程，避免阻塞界面线程。
+    /// </summary>
     public static Task RunAsync(LocalUpgradeOptions options, Action<string> log)
     {
         ArgumentNullException.ThrowIfNull(log);
         return Task.Run(() => Execute(options, log));
     }
 
+    /// <summary>
+    /// 执行升级主流程。
+    /// 这里先打印固件信息，再串行执行解锁、切换 Bootloader 和 YMODEM 发送。
+    /// </summary>
     private static void Execute(LocalUpgradeOptions options, Action<string> log)
     {
         var image = File.ReadAllBytes(options.ImagePath);
@@ -42,23 +59,30 @@ internal static class LocalUpgradeService
         log($"固件 CRC32: 0x{crc32:X8}");
         log($"固件 SHA256: {sha256Hex}");
 
-        using var serialPort = SerialPortHelper.Open(options.PortName, options.BaudRate, Encoding.ASCII);
-        Thread.Sleep(200);
-        serialPort.DiscardInBuffer();
+        SerialOperationGate.Run(() =>
+        {
+            using var serialPort = SerialPortHelper.Open(options.PortName, options.BaudRate, Encoding.ASCII);
+            Thread.Sleep(200);
+            serialPort.DiscardInBuffer();
 
-        log($"打开串口 {options.PortName}，波特率 {options.BaudRate}。");
-        SendAppStageCommand(serialPort, UnlockCommand, "解锁", TimeSpan.FromSeconds(options.TimeoutSeconds), log);
-        Thread.Sleep(AppCommandGap);
-        SendAppStageCommand(serialPort, EnterBootloaderCommand, "进入 Bootloader", TimeSpan.FromSeconds(options.TimeoutSeconds), log);
-        log($"等待 {BootloaderSwitchDelay.TotalMilliseconds:0}ms 让设备从 App 切到 Bootloader。");
-        Thread.Sleep(BootloaderSwitchDelay);
-        serialPort.DiscardInBuffer();
+            log($"打开串口 {options.PortName}，波特率 {options.BaudRate}。");
+            SendAppStageCommand(serialPort, UnlockCommand, "解锁", TimeSpan.FromSeconds(options.TimeoutSeconds), log);
+            Thread.Sleep(AppCommandGap);
+            SendAppStageCommand(serialPort, EnterBootloaderCommand, "进入 Bootloader", TimeSpan.FromSeconds(options.TimeoutSeconds), log);
+            log($"等待 {BootloaderSwitchDelay.TotalMilliseconds:0}ms 让设备从 App 切到 Bootloader。");
+            Thread.Sleep(BootloaderSwitchDelay);
+            serialPort.DiscardInBuffer();
 
-        WaitReceiverReady(serialPort, TimeSpan.FromSeconds(options.TimeoutSeconds), HandshakeWindow, log);
-        SendFile(serialPort, options, image, crc32, sha256Hex, log);
-        log("升级传输完成，设备应完成校验并自动复位回 App。");
+            WaitReceiverReady(serialPort, TimeSpan.FromSeconds(options.TimeoutSeconds), HandshakeWindow, log);
+            SendFile(serialPort, options, image, crc32, sha256Hex, log);
+            log("升级传输完成，设备应完成校验并自动复位回 App。");
+        });
     }
 
+    /// <summary>
+    /// 发送完整的 YMODEM 文件。
+    /// 包括头包、全部数据包、EOT 和结尾空包。
+    /// </summary>
     private static void SendFile(SerialPort serialPort, LocalUpgradeOptions options, byte[] image, uint crc32, string sha256Hex, Action<string> log)
     {
         var headerPacket = BuildInitialPacket(Path.GetFileName(options.ImagePath), image.Length, crc32, sha256Hex, options.TargetFirmwareVersion);
@@ -122,6 +146,10 @@ internal static class LocalUpgradeService
         log("最终空包已确认。");
     }
 
+    /// <summary>
+    /// 带重试发送单个 YMODEM 包。
+    /// 只要对端返回 NAK 或超时，就允许重发；如果对端明确中止，则立即结束。
+    /// </summary>
     private static void SendPacketWithRetry(SerialPort serialPort, byte[] packet, TimeSpan timeout, Action<string> log, bool expectCrcRequest)
     {
         Exception? lastError = null;
@@ -147,6 +175,10 @@ internal static class LocalUpgradeService
         throw new InvalidOperationException(lastError?.Message ?? "YMODEM 发包失败。");
     }
 
+    /// <summary>
+    /// 等待一个数据包被 Bootloader 确认。
+    /// 头包之后有些 Bootloader 还会额外再发一个 'C'，因此 expectCrcRequest 为 true 时要兼容这种行为。
+    /// </summary>
     private static void WaitAck(SerialPort serialPort, TimeSpan timeout, bool expectCrcRequest)
     {
         for (var retry = 0; retry < MaxRetries; retry++)
@@ -199,6 +231,10 @@ internal static class LocalUpgradeService
         throw new InvalidOperationException("等待 ACK 重试次数过多。");
     }
 
+    /// <summary>
+    /// 等待 Bootloader 进入 YMODEM 接收态。
+    /// 标志是持续收到字符 'C'（0x43）。
+    /// </summary>
     private static void WaitReceiverReady(SerialPort serialPort, TimeSpan readTimeout, TimeSpan totalTimeout, Action<string> log)
     {
         log("等待 Bootloader YMODEM 握手 ('C')...");
@@ -254,6 +290,9 @@ internal static class LocalUpgradeService
         }
     }
 
+    /// <summary>
+    /// 发送一帧原始应用层命令，并记录日志。
+    /// </summary>
     private static void SendFrame(SerialPort serialPort, byte[] frame, string logMessage, Action<string> log)
     {
         log(logMessage);
@@ -261,6 +300,10 @@ internal static class LocalUpgradeService
         serialPort.BaseStream.Flush();
     }
 
+    /// <summary>
+    /// 发送 App 阶段命令（解锁 / 进入 Bootloader），并尝试读取等长回包。
+    /// 没有回包时只记警告，不直接终止流程，兼容部分设备固件实现。
+    /// </summary>
     private static void SendAppStageCommand(SerialPort serialPort, byte[] frame, string label, TimeSpan timeout, Action<string> log)
     {
         SendFrame(serialPort, frame, $"TX {label}: {Convert.ToHexString(frame)}", log);
@@ -281,6 +324,10 @@ internal static class LocalUpgradeService
         }
     }
 
+    /// <summary>
+    /// 循环读取一个控制字节，直到碰到允许的集合中的值。
+    /// 其他字节会被直接忽略。
+    /// </summary>
     private static int ReadAcceptedControl(SerialPort serialPort, TimeSpan timeout, HashSet<int> accepted)
     {
         while (true)
@@ -293,6 +340,9 @@ internal static class LocalUpgradeService
         }
     }
 
+    /// <summary>
+    /// 在指定超时时间内读取一个字节。
+    /// </summary>
     private static int ReadByte(SerialPort serialPort, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
@@ -310,6 +360,10 @@ internal static class LocalUpgradeService
         throw new TimeoutException("等待 Bootloader 控制字节超时。");
     }
 
+    /// <summary>
+    /// 精确读取固定长度回包。
+    /// 这是发送 App 阶段命令时使用的简单阻塞式读取。
+    /// </summary>
     private static byte[] ReadExact(SerialPort serialPort, int length, TimeSpan timeout)
     {
         var buffer = new byte[length];
@@ -340,6 +394,10 @@ internal static class LocalUpgradeService
         return buffer;
     }
 
+    /// <summary>
+    /// 构造 YMODEM 初始头包。
+    /// 头包除了文件名和长度，还额外带上 CRC32、目标版本号和 SHA256，便于下位机做更严格校验。
+    /// </summary>
     private static byte[] BuildInitialPacket(string fileName, int fileSize, uint crc32, string sha256Hex, uint targetFirmwareVersion)
     {
         var safeName = Path.GetFileName(fileName);
@@ -349,11 +407,18 @@ internal static class LocalUpgradeService
         return BuildPacket(0, payload, packetType, 0x00);
     }
 
+    /// <summary>
+    /// 构造 YMODEM 结束空包。
+    /// </summary>
     private static byte[] BuildFinalPacket()
     {
         return BuildPacket(0, Array.Empty<byte>(), Soh, 0x00);
     }
 
+    /// <summary>
+    /// 按 YMODEM 格式构造一个完整包。
+    /// 包格式为：包头 + 包序号 + 反码 + 数据区 + CRC16。
+    /// </summary>
     private static byte[] BuildPacket(int packetNo, byte[] payload, byte packetType, byte? padByte = null)
     {
         var packetSize = packetType switch
@@ -385,11 +450,17 @@ internal static class LocalUpgradeService
         return packet;
     }
 
+    /// <summary>
+    /// 根据剩余字节数选择 1K 包还是 128 字节包。
+    /// </summary>
     private static int ChooseDataBlock(int remaining)
     {
         return remaining >= Packet1KSize ? Packet1KSize : PacketSize;
     }
 
+    /// <summary>
+    /// 计算 YMODEM 使用的 XMODEM CRC16。
+    /// </summary>
     private static ushort ComputeCrc16Xmodem(ReadOnlySpan<byte> data)
     {
         ushort crc = 0;
@@ -407,6 +478,9 @@ internal static class LocalUpgradeService
         return crc;
     }
 
+    /// <summary>
+    /// 计算固件整体 CRC32，主要用于日志和头包附带校验信息。
+    /// </summary>
     private static uint ComputeCrc32(ReadOnlySpan<byte> data)
     {
         var crc = 0xFFFFFFFFu;
@@ -425,6 +499,9 @@ internal static class LocalUpgradeService
     }
 }
 
+/// <summary>
+/// 本地升级所需的全部参数。
+/// </summary>
 internal readonly record struct LocalUpgradeOptions(
     string PortName,
     int BaudRate,

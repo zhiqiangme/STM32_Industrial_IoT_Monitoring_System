@@ -13,6 +13,8 @@ Default parameters:
 
 Requires:
     pip install pyserial
+
+    OTA目前已经集成进C#上位机，本程序已弃用
 """
 
 from __future__ import annotations
