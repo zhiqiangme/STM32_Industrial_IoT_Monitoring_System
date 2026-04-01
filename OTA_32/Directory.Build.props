@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      The .NET 10 SDK intermittently fails during project-reference target-framework
+      discovery for this solution when MSBuild runs referenced projects in parallel.
+      Serialize project builds at the repository level so command-line and IDE builds
+      behave consistently.
+    -->
+    <BuildInParallel>false</BuildInParallel>
+  </PropertyGroup>
+</Project>
