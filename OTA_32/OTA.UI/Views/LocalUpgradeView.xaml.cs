@@ -8,7 +8,7 @@ namespace OTA.UI.Views;
 
 /// <summary>
 /// 本地升级页面视图。
-/// 页面内部只处理文件对话框和下拉框交互，状态与业务命令仍由 MainViewModel 提供。
+/// 页面内部只处理文件对话框和下拉框交互，状态与业务命令由 LocalUpgradeViewModel 提供。
 /// </summary>
 public partial class LocalUpgradeView : UserControl
 {
@@ -19,7 +19,7 @@ public partial class LocalUpgradeView : UserControl
 
     private async void PortComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (DataContext is MainViewModel viewModel)
+        if (DataContext is LocalUpgradeViewModel viewModel)
         {
             await viewModel.OnPortSelectionChangedAsync();
         }
@@ -27,7 +27,7 @@ public partial class LocalUpgradeView : UserControl
 
     private void BrowseScriptButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainViewModel viewModel)
+        if (DataContext is not LocalUpgradeViewModel viewModel)
         {
             return;
         }

@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using OTA.Core;
+using OTA.Models;
 using OTA.ViewModels;
 using OTA.ViewModels.Messages;
 
@@ -20,17 +22,20 @@ public partial class MainWindow : Window
     private const int DbtDevNodesChanged = 0x0007;
 
     private readonly MainViewModel _viewModel;
+    private readonly AppPreferencesService _preferencesService;
     private readonly DispatcherTimer _idlePortListRefreshTimer;
     private readonly DispatcherTimer _idleRunningSlotRefreshTimer;
     private readonly DispatcherTimer _deviceChangeRefreshTimer;
     private HwndSource? _hwndSource;
 
-    public MainWindow(MainViewModel viewModel)
+    public MainWindow(MainViewModel viewModel, AppPreferencesService preferencesService)
     {
         _viewModel = viewModel;
+        _preferencesService = preferencesService;
         DataContext = viewModel;
 
         InitializeComponent();
+        ApplyWindowPreferences();
 
         _idlePortListRefreshTimer = new DispatcherTimer
         {
@@ -54,22 +59,25 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         SourceInitialized += MainWindow_OnSourceInitialized;
         _viewModel.PropertyChanged += MainViewModel_PropertyChanged;
-        _viewModel.ViewMessageRequested += MainViewModel_ViewMessageRequested;
+        _viewModel.LocalVM.PropertyChanged += LocalViewModel_PropertyChanged;
+        _viewModel.LocalVM.ViewMessageRequested += LocalViewModel_ViewMessageRequested;
     }
 
     private async void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.InitializeAsync();
+        await _viewModel.LocalVM.InitializeAsync();
         UpdateIdleRefreshTimers();
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        SaveWindowPreferences();
         _idlePortListRefreshTimer.Stop();
         _idleRunningSlotRefreshTimer.Stop();
         _deviceChangeRefreshTimer.Stop();
         _viewModel.PropertyChanged -= MainViewModel_PropertyChanged;
-        _viewModel.ViewMessageRequested -= MainViewModel_ViewMessageRequested;
+        _viewModel.LocalVM.PropertyChanged -= LocalViewModel_PropertyChanged;
+        _viewModel.LocalVM.ViewMessageRequested -= LocalViewModel_ViewMessageRequested;
 
         if (_hwndSource is not null)
         {
@@ -86,13 +94,21 @@ public partial class MainWindow : Window
 
     private void MainViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainViewModel.ShouldPollPortList) or nameof(MainViewModel.ShouldPollRunningSlot))
+        if (e.PropertyName is nameof(MainViewModel.SelectedTabIndex) or nameof(MainViewModel.IsLocalTabSelected))
         {
             UpdateIdleRefreshTimers();
         }
     }
 
-    private void MainViewModel_ViewMessageRequested(object? sender, ViewMessage viewMessage)
+    private void LocalViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(LocalUpgradeViewModel.ShouldPollPortList) or nameof(LocalUpgradeViewModel.ShouldPollRunningSlot))
+        {
+            UpdateIdleRefreshTimers();
+        }
+    }
+
+    private void LocalViewModel_ViewMessageRequested(object? sender, ViewMessage viewMessage)
     {
         var image = viewMessage.Severity switch
         {
@@ -106,21 +122,27 @@ public partial class MainWindow : Window
 
     private async void IdleRunningSlotRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        await _viewModel.PollRunningSlotAsync();
+        if (_viewModel.IsLocalTabSelected)
+        {
+            await _viewModel.LocalVM.PollRunningSlotAsync();
+        }
     }
 
     private async void IdlePortListRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        await _viewModel.PollPortListAsync();
+        if (_viewModel.IsLocalTabSelected)
+        {
+            await _viewModel.LocalVM.PollPortListAsync();
+        }
     }
 
     private async void DeviceChangeRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _deviceChangeRefreshTimer.Stop();
 
-        if (!_viewModel.ShouldPollPortList)
+        if (!_viewModel.LocalVM.ShouldPollPortList)
         {
-            if (_viewModel.IsLocalModeActive)
+            if (_viewModel.IsLocalTabSelected)
             {
                 _deviceChangeRefreshTimer.Start();
             }
@@ -128,7 +150,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _viewModel.RefreshPortListAsync();
+        await _viewModel.LocalVM.RefreshPortListAsync();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -147,7 +169,7 @@ public partial class MainWindow : Window
 
     private void SchedulePortListRefresh()
     {
-        if (!_viewModel.IsLocalModeActive)
+        if (!_viewModel.IsLocalTabSelected)
         {
             return;
         }
@@ -158,7 +180,7 @@ public partial class MainWindow : Window
 
     private void UpdateIdleRefreshTimers()
     {
-        if (_viewModel.ShouldPollPortList)
+        if (_viewModel.IsLocalTabSelected && _viewModel.LocalVM.ShouldPollPortList)
         {
             _idlePortListRefreshTimer.Start();
         }
@@ -167,7 +189,7 @@ public partial class MainWindow : Window
             _idlePortListRefreshTimer.Stop();
         }
 
-        if (_viewModel.ShouldPollRunningSlot)
+        if (_viewModel.IsLocalTabSelected && _viewModel.LocalVM.ShouldPollRunningSlot)
         {
             _idleRunningSlotRefreshTimer.Start();
         }
@@ -175,5 +197,48 @@ public partial class MainWindow : Window
         {
             _idleRunningSlotRefreshTimer.Stop();
         }
+    }
+
+    private void ApplyWindowPreferences()
+    {
+        var preferences = _preferencesService.GetWindowPreferences();
+
+        if (preferences.Width is > 0)
+        {
+            Width = Math.Max(MinWidth, preferences.Width.Value);
+        }
+
+        if (preferences.Height is > 0)
+        {
+            Height = Math.Max(MinHeight, preferences.Height.Value);
+        }
+
+        if (preferences.Left.HasValue && preferences.Top.HasValue)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = preferences.Left.Value;
+            Top = preferences.Top.Value;
+        }
+
+        if (preferences.IsMaximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
+    }
+
+    private void SaveWindowPreferences()
+    {
+        var bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+
+        var preferences = new WindowPreferences
+        {
+            Left = bounds.Left,
+            Top = bounds.Top,
+            Width = bounds.Width,
+            Height = bounds.Height,
+            IsMaximized = WindowState == WindowState.Maximized
+        };
+
+        _preferencesService.SaveWindowPreferences(preferences);
     }
 }

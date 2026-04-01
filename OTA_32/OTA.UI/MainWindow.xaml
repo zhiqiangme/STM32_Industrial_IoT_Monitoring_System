@@ -24,10 +24,10 @@
                 ItemContainerStyle="{StaticResource ShellTabItemStyle}"
                 SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
         <TabItem Header="本地升级">
-            <views:LocalUpgradeView />
+            <views:LocalUpgradeView DataContext="{Binding LocalVM}" />
         </TabItem>
         <TabItem Header="远程升级">
-            <views:RemoteUpgradeView />
+            <views:RemoteUpgradeView DataContext="{Binding RemoteVM}" />
         </TabItem>
     </TabControl>
 </Window>

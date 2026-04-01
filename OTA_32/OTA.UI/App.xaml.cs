@@ -21,8 +21,11 @@ public partial class App : Application
         // Phase 3 keeps DI explicit and small: App owns object assembly,
         // MainWindow only receives the ViewModel it needs to display.
         var services = new ServiceCollection();
+        services.AddSingleton<AppPreferencesService>();
         services.AddSingleton<PortDiscoveryService>();
         services.AddSingleton<LocalUpgradeCoordinator>();
+        services.AddSingleton<LocalUpgradeViewModel>();
+        services.AddSingleton<RemoteUpgradeViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddTransient<MainWindow>();
         _serviceProvider = services.BuildServiceProvider();
