@@ -1,3 +1,6 @@
+// AssemblyInfo.cs
+// 放 WPF 主题资源定位配置，告诉程序集去哪里查找通用样式和主题资源。
+
 using System.Windows;
 
 [assembly: ThemeInfo(

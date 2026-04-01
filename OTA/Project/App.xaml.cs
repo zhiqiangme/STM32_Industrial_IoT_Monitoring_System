@@ -1,4 +1,7 @@
-﻿using System.Configuration;
+// App.xaml.cs
+// 放 WPF 应用程序入口类型，负责连接 App.xaml 与主窗口启动流程。
+
+using System.Configuration;
 using System.Data;
 using System.Windows;
 
@@ -11,5 +14,4 @@ namespace Project
     public partial class App : Application
     {
     }
-
 }

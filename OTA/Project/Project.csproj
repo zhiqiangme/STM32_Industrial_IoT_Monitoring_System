@@ -1,4 +1,5 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Project.csproj：放 OTA 桌面程序的构建配置、目标框架、资源和程序集信息。 -->
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
