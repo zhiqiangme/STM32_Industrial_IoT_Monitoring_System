@@ -1,0 +1,89 @@
+D:.
+|   ARCHITECTURE_REFACTOR_PLAN.md
+|   Directory.Build.props
+|   OTA.sln
+|   OTA.slnx
+|   Project.slnx
+|   
++---Assets
+|       OTA.ico
+|       OTA.png
+|       
++---OTA.Core
+|   |   OTA.Core.csproj
+|   |   
+|   \---Services
+|           LocalUpgradeCoordinator.cs
+|           LocalUpgradeService.cs
+|           PortDiscoveryService.cs
+|           UpgradeAbSupport.cs
+|           
++---OTA.Models
+|   |   OTA.Models.csproj
+|   |   
+|   +---Entities
+|   |       FirmwareImageInfo.cs
+|   |       LocalSerialSettings.cs
+|   |       LocalUpgradeOptions.cs
+|   |       LocalUpgradePreparation.cs
+|   |       PortOption.cs
+|   |       RunningSlotRefreshResult.cs
+|   |       
+|   \---Enums
+|           FirmwareSlot.cs
+|           
++---OTA.Protocols
+|   |   OTA.Protocols.csproj
+|   |   
+|   +---Channels
+|   |       SerialOperationGate.cs
+|   |       SerialPortHelper.cs
+|   |       
+|   +---State
+|   |       RunningSlotProtocol.cs
+|   |       
+|   +---Upgrade
+|   |       LocalUpgradeTransport.cs
+|   |       
+|   \---YModem
+|           YModemProtocol.cs
+|           
++---OTA.UI
+|   |   App.xaml
+|   |   App.xaml.cs
+|   |   AssemblyInfo.cs
+|   |   MainWindow.xaml
+|   |   MainWindow.xaml.cs
+|   |   OTA.UI.csproj
+|   |   
+|   +---Resources
+|   |       SharedStyles.xaml
+|   |       
+|   \---Views
+|           LocalUpgradeView.xaml
+|           LocalUpgradeView.xaml.cs
+|           RemoteUpgradeView.xaml
+|           RemoteUpgradeView.xaml.cs
+|           
++---OTA.ViewModels
+|   |   MainViewModel.cs
+|   |   OTA.ViewModels.csproj
+|   |   
+|   \---Messages
+|           ViewMessage.cs
+|           
+\---Project
+    |   App.xaml
+    |   App.xaml.cs
+    |   AssemblyInfo.cs
+    |   LocalUpgradeService.cs
+    |   MainWindow.xaml
+    |   MainWindow.xaml.cs
+    |   Project.csproj
+    |   SerialOperationGate.cs
+    |   SerialPortHelper.cs
+    |   UpgradeAbSupport.cs
+    |   
+    \---Properties
+        \---PublishProfiles
+                FolderProfile.pubxml

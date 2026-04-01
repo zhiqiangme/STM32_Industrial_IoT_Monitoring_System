@@ -1,10 +1,7 @@
 using System.ComponentModel;
-using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using OTA.ViewModels;
 using OTA.ViewModels.Messages;
 
@@ -12,8 +9,8 @@ namespace OTA.UI;
 
 /// <summary>
 /// 主窗口视图层。
-/// Phase 3 后这里只保留窗口生命周期、设备消息、文件对话框和标题栏交互，
-/// 业务状态与命令统一收敛到 MainViewModel。
+/// 当前主窗口是应用外壳，只负责窗口生命周期、设备消息和后台轮询，
+/// 页面导航与内容由 TabControl + UserControl 组合承载。
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -107,11 +104,6 @@ public partial class MainWindow : Window
         MessageBox.Show(this, viewMessage.Message, viewMessage.Title, MessageBoxButton.OK, image);
     }
 
-    private async void PortComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        await _viewModel.OnPortSelectionChangedAsync();
-    }
-
     private async void IdleRunningSlotRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         await _viewModel.PollRunningSlotAsync();
@@ -137,68 +129,6 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.RefreshPortListAsync();
-    }
-
-    private void BrowseScriptButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        var currentDirectory = Path.GetDirectoryName(_viewModel.ScriptPath);
-        var dialog = new OpenFileDialog
-        {
-            InitialDirectory = !string.IsNullOrWhiteSpace(currentDirectory) && Directory.Exists(currentDirectory)
-                ? currentDirectory
-                : @"D:\Project\STM32_Mill",
-            FileName = Path.GetFileName(_viewModel.ScriptPath),
-            Title = "选择 STM32 程序文件",
-            Filter = "BIN 文件 (*.bin)|*.bin|所有文件 (*.*)|*.*"
-        };
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            _viewModel.ApplySelectedImagePath(dialog.FileName);
-        }
-    }
-
-    private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.ClickCount != 1)
-        {
-            return;
-        }
-
-        if (e.OriginalSource is DependencyObject source &&
-            (HasAncestor<Button>(source) || HasAncestor<TextBox>(source) || HasAncestor<ComboBox>(source)))
-        {
-            return;
-        }
-
-        try
-        {
-            DragMove();
-        }
-        catch (InvalidOperationException)
-        {
-            // Ignore re-entrant DragMove attempts caused by rapid clicks.
-        }
-    }
-
-    private static bool HasAncestor<T>(DependencyObject? current) where T : DependencyObject
-    {
-        while (current is not null)
-        {
-            if (current is T)
-            {
-                return true;
-            }
-
-            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
-        }
-
-        return false;
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        Close();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)

@@ -116,6 +116,7 @@ Phase 1 已开始落地，文档需要持续反映实际工程状态。
 
 - WPF 启动层
 - 纯 XAML 视图
+- 壳层导航与页面拼装
 - 依赖注入装配
 - 转换器、控件、资源
 
@@ -125,6 +126,8 @@ Phase 1 已开始落地，文档需要持续反映实际工程状态。
 - `App.xaml.cs`
 - `MainWindow.xaml`
 - 精简后的 `MainWindow.xaml.cs`
+- `Views/LocalUpgradeView.xaml`
+- `Views/RemoteUpgradeView.xaml`
 - `Assets`
 
 ## 依赖方向
@@ -368,6 +371,7 @@ Phase 1 已开始落地，文档需要持续反映实际工程状态。
    - 切换本地/远程模式命令
 5. 把 `MainWindow.xaml` 改成绑定方式。
 6. 把 `MainWindow.xaml.cs` 精简为只保留视图层必要代码。
+7. 把本地升级页和远程升级页拆成独立 `UserControl`，由主窗体通过 `TabControl` 组装。
 
 说明：
 
@@ -618,14 +622,19 @@ Phase 2 已完成的内容：
 - `MainWindow.xaml.cs` 中的升级前参数校验、镜像识别、槽位探测结果整合、推荐镜像路径判断已抽到 `OTA.Core/Services/LocalUpgradeCoordinator.cs`。
 - `OTA.Models` 已补充 `LocalSerialSettings`、`PortOption`、`RunningSlotRefreshResult`、`LocalUpgradePreparation` 等跨层数据对象。
 
-Phase 3 当前已落地的内容：
+Phase 3 已完成的内容：
 
 - `OTA.ViewModels` 已正式启用，并引入 `CommunityToolkit.Mvvm`。
 - 已新增 `OTA.ViewModels/MainViewModel.cs`，承接主界面的模式状态、串口列表、镜像路径、槽位提示、状态栏文字、日志文本和升级命令。
-- `OTA.UI/MainWindow.xaml` 已改为以绑定和命令为主驱动。
-- `OTA.UI/MainWindow.xaml.cs` 已收缩为视图桥接层，只保留设备变更消息、空闲轮询定时器、文件选择对话框、标题栏拖动和窗口关闭等纯 UI 行为。
+- `OTA.UI/MainWindow.xaml` 已改为壳层视图，只保留标题栏、导航和页面容器。
+- `OTA.UI/Views/LocalUpgradeView.xaml` 已拆出本地升级页面。
+- `OTA.UI/Views/RemoteUpgradeView.xaml` 已拆出远程升级页面占位视图。
+- `OTA.UI/MainWindow.xaml` 当前已进一步标准化为 `TabControl` 壳层，通过两个 `TabItem` 组装 `LocalUpgradeView` 和 `RemoteUpgradeView`。
+- `OTA.UI/MainWindow.xaml.cs` 已收缩为应用外壳代码，只保留设备变更消息、空闲轮询定时器和窗口生命周期处理。
+- `OTA.UI/Views/LocalUpgradeView.xaml.cs` 只保留串口选择变化和文件选择对话框这类页面级纯 UI 交互。
 - `MainViewModel` 已通过轻量消息对象向视图层上送参数错误和执行失败提示，避免直接依赖 WPF 弹窗。
 - `OTA.slnx` 已可完成 `dotnet build OTA.slnx -m:1` 构建。
+- 用户已完成本地升级功能实机验证，主流程正常。
 
 说明：
 

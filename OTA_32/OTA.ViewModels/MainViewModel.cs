@@ -52,6 +52,7 @@ public sealed class MainViewModel : ObservableObject
     private string _imageHintText = "镜像槽位：未检查。";
     private string _statusText = "待机";
     private string _logText = string.Empty;
+    private int _selectedTabIndex = 1;
 
     public MainViewModel(PortDiscoveryService portDiscoveryService, LocalUpgradeCoordinator upgradeCoordinator)
     {
@@ -94,6 +95,20 @@ public sealed class MainViewModel : ObservableObject
     public bool ShouldPollPortList => IsLocalModeActive && !_isBusy && !_isRefreshingPortList && !_isRefreshingRunningSlot;
 
     public bool CanReactToPortSelectionChange => IsLocalModeActive && !_isBusy && !_suppressPortSelectionRefresh;
+
+    public int SelectedTabIndex
+    {
+        get => _selectedTabIndex;
+        set
+        {
+            if (!SetProperty(ref _selectedTabIndex, value))
+            {
+                return;
+            }
+
+            ApplyUpgradeMode(value == 1 ? UpgradeMode.Remote : UpgradeMode.Local, syncSelectedTab: false);
+        }
+    }
 
     public PortOption? SelectedPort
     {
@@ -309,10 +324,18 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private void ApplyUpgradeMode(UpgradeMode mode)
+    private void ApplyUpgradeMode(UpgradeMode mode, bool syncSelectedTab = true)
     {
+        var targetTabIndex = mode == UpgradeMode.Local ? 0 : 1;
+        if (syncSelectedTab && _selectedTabIndex != targetTabIndex)
+        {
+            _selectedTabIndex = targetTabIndex;
+            OnPropertyChanged(nameof(SelectedTabIndex));
+        }
+
         if (_currentMode == mode)
         {
+            NotifyUiStateChanged();
             return;
         }
 

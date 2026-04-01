@@ -1,0 +1,24 @@
+<UserControl x:Class="OTA.UI.Views.RemoteUpgradeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <Grid Margin="20,0,20,20">
+        <Border Margin="0,24,0,0" Style="{StaticResource PanelBorderStyle}">
+            <StackPanel>
+                <TextBlock Style="{StaticResource H1TextStyle}" Text="STM32 远程 OTA 升级" />
+                <TextBlock Style="{StaticResource HintTextStyle}"
+                           Margin="0,0,0,20"
+                           Text="远程升级页已拆分为独立视图，后续在这里承载地址输入、清单下载和在线升级流程。" />
+
+                <Border Background="#F9FAFB" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="18">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2TextStyle}" Text="页面状态" Margin="0,0,0,10" />
+                        <TextBlock Style="{StaticResource HintTextStyle}" Text="当前阶段仅保留独立占位视图，尚未接入远程升级业务逻辑。" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
