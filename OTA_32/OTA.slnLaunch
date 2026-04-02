@@ -1,0 +1,11 @@
+[
+  {
+    "Name": "OTA.UI",
+    "Projects": [
+      {
+        "Path": "OTA.UI\\OTA.UI.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

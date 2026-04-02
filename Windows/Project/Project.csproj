@@ -8,7 +8,8 @@
     <UseWPF>true</UseWPF>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationIcon>..\Resources\v1.0.0\STM32_Mill_v1.0.0.ico</ApplicationIcon>
-    <Platforms>AnyCPU;x64</Platforms>
+    <Platforms>x64</Platforms>
+    <AssemblyName>MillStudio</AssemblyName> 
   </PropertyGroup>
 
   <ItemGroup>

@@ -59,6 +59,7 @@ public sealed class PortDiscoveryService
                 descriptions.TryGetValue(portName, out var displayName);
                 return new PortOption(portName, displayName ?? string.Empty);
             })
+            .Where(option => !option.IsBluetooth)
             .ToList();
     }
 

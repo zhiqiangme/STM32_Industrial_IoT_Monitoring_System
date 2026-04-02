@@ -6,9 +6,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Platforms>AnyCPU;x64</Platforms>
-    <ApplicationIcon>..\Assets\OTA.ico</ApplicationIcon>
-    <AssemblyName>OTA.UI</AssemblyName>
+    <Platforms>x64</Platforms>
+    <ApplicationIcon>Assets\OTA.ico</ApplicationIcon>
+    
+    <AssemblyName>OTA</AssemblyName>
+    
     <Product>STM32 OTA 升级工具</Product>
     <Title>STM32 OTA 升级工具</Title>
     <Description>STM32 本地与在线 OTA 升级工具。</Description>
@@ -20,13 +22,14 @@
   <ItemGroup>
     <ProjectReference Include="..\OTA.Core\OTA.Core.csproj" />
     <ProjectReference Include="..\OTA.ViewModels\OTA.ViewModels.csproj" />
+
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <Reference Include="System.IO.Ports">
-      <HintPath>C:\Program Files\PowerShell\7\System.IO.Ports.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Resource Include="..\Assets\OTA.ico" Link="Assets\OTA.ico" />
-    <Resource Include="..\Assets\OTA.png" Link="Assets\OTA.png" />
+    
+    <PackageReference Include="System.IO.Ports" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\OTA.ico" />
   </ItemGroup>
 
 </Project>

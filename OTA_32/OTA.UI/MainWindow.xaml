@@ -3,10 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:views="clr-namespace:OTA.UI.Views"
         mc:Ignorable="d"
         Title="STM32 OTA 升级工具"
-        Icon="Assets/OTA.png"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        ResizeMode="CanResize"
+        Icon="Assets/OTA.ico"
         Height="800"
         Width="1166"
         MinHeight="750"
@@ -20,14 +24,261 @@
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextHintingMode="Fixed"
         RenderOptions.ClearTypeHint="Enabled">
-    <TabControl Style="{StaticResource ShellTabControlStyle}"
-                ItemContainerStyle="{StaticResource ShellTabItemStyle}"
-                SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
-        <TabItem Header="本地升级">
-            <views:LocalUpgradeView DataContext="{Binding LocalVM}" />
-        </TabItem>
-        <TabItem Header="远程升级">
-            <views:RemoteUpgradeView DataContext="{Binding RemoteVM}" />
-        </TabItem>
-    </TabControl>
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            CornerRadius="10"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Grid Background="#F7F7FA" ClipToBounds="True">
+        <Border Background="#F7F7FA"
+                BorderBrush="Transparent"
+                BorderThickness="0"
+                CornerRadius="10"
+                ClipToBounds="True"
+                SnapsToDevicePixels="True"
+                RenderOptions.ClearTypeHint="Enabled">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="44" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="{StaticResource TitleBarBrush}"
+                        BorderBrush="{StaticResource TitleBarBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        CornerRadius="10,10,0,0"
+                        ClipToBounds="True"
+                        MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Margin="20,0,0,0">
+                            <Button x:Name="LocalModeButton"
+                                    Content="本地升级"
+                                    Padding="26,6"
+                                    MinWidth="172"
+                                    Height="40"
+                                    Margin="0,0,6,0"
+                                    FontSize="18"
+                                    Click="LocalModeButton_OnClick"
+                                    Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="{StaticResource TitleBarBrush}" />
+                                        <Setter Property="Foreground" Value="#4B5563" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="9"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="border" Property="Background" Value="#FDFDFE" />
+                                                            <Setter TargetName="border" Property="BorderBrush" Value="Transparent" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button x:Name="RemoteModeButton"
+                                    Content="远程升级"
+                                    Padding="26,6"
+                                    MinWidth="172"
+                                    Height="40"
+                                    Margin="0,0,6,0"
+                                    FontSize="18"
+                                    Click="RemoteModeButton_OnClick"
+                                    Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="{StaticResource TitleBarBrush}" />
+                                        <Setter Property="Foreground" Value="#4B5563" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="9"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="border" Property="Background" Value="#FDFDFE" />
+                                                            <Setter TargetName="border" Property="BorderBrush" Value="Transparent" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button x:Name="MaintenanceModeButton"
+                                    Content="远程维护"
+                                    Padding="26,6"
+                                    MinWidth="172"
+                                    Height="40"
+                                    Margin="0,0,6,0"
+                                    FontSize="18"
+                                    Click="MaintenanceModeButton_OnClick"
+                                    Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="{StaticResource TitleBarBrush}" />
+                                        <Setter Property="Foreground" Value="#4B5563" />
+                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="9"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="border" Property="Background" Value="#FDFDFE" />
+                                                            <Setter TargetName="border" Property="BorderBrush" Value="Transparent" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right">
+                            <Button Width="46"
+                                    Height="44"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Click="MinimizeButton_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border"
+                                                            Background="{TemplateBinding Background}"
+                                                            CornerRadius="0"
+                                                            UseLayoutRounding="True"
+                                                            SnapsToDevicePixels="True">
+                                                        <TextBlock x:Name="minimizeIcon"
+                                                                   Text="─"
+                                                                   Foreground="#475569"
+                                                                   FontSize="14"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="0,-4,0,0" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="border" Property="Background" Value="#E5E7EB" />
+                                                            <Setter TargetName="minimizeIcon" Property="Foreground" Value="#0F172A" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button Width="46"
+                                    Height="44"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Click="CloseButton_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border"
+                                                            Background="{TemplateBinding Background}"
+                                                            CornerRadius="0"
+                                                            UseLayoutRounding="True"
+                                                            SnapsToDevicePixels="True">
+                                                        <TextBlock x:Name="closeIcon"
+                                                                   Text="✕"
+                                                                   Foreground="#475569"
+                                                                   FontSize="14"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="border" Property="Background" Value="#DC2626" />
+                                                            <Setter TargetName="closeIcon" Property="Foreground" Value="White" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <TabControl Grid.Row="1"
+                            Style="{StaticResource ContentOnlyTabControlStyle}"
+                            SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+                    <TabItem Header="本地升级">
+                        <views:LocalUpgradeView DataContext="{Binding LocalVM}" />
+                    </TabItem>
+                    <TabItem Header="远程升级">
+                        <views:RemoteUpgradeView DataContext="{Binding RemoteVM}" />
+                    </TabItem>
+                    <TabItem Header="远程维护">
+                        <views:RemoteMaintenanceView DataContext="{Binding MaintenanceVM}" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Border>
+    </Grid>
 </Window>

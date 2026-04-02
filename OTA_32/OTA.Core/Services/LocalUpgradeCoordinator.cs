@@ -1,5 +1,6 @@
 using System.Globalization;
 using OTA.Models;
+using OTA.Protocols;
 
 namespace OTA.Core;
 
@@ -62,6 +63,26 @@ public sealed class LocalUpgradeCoordinator
         }
 
         options = new LocalUpgradeOptions(serialSettings.PortName, serialSettings.BaudRate, serialSettings.TimeoutSeconds, normalizedPath);
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    public bool TryValidatePortAvailability(LocalSerialSettings serialSettings, out string errorMessage)
+    {
+        var availablePorts = System.IO.Ports.SerialPort.GetPortNames();
+        if (!availablePorts.Any(portName => string.Equals(portName, serialSettings.PortName, StringComparison.OrdinalIgnoreCase)))
+        {
+            errorMessage = $"串口 {serialSettings.PortName} 当前未连接。请先连接 USB 转 485 串口设备并确认端口号。";
+            return false;
+        }
+
+        if (!SerialPortHelper.TryOpen(serialSettings.PortName, serialSettings.BaudRate, out var serialPort, out var openErrorMessage))
+        {
+            errorMessage = openErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。";
+            return false;
+        }
+
+        serialPort?.Dispose();
         errorMessage = string.Empty;
         return true;
     }
@@ -170,6 +191,57 @@ public sealed class LocalUpgradeCoordinator
         return Path.Combine(objectsDirectory, UpgradeAbSupport.GetRecommendedFileName(runningSlot));
     }
 
+    public bool TryResolveLocalImagePathForDirectory(
+        string imageDirectory,
+        FirmwareSlot runningSlot,
+        string? currentImagePath,
+        out string imagePath,
+        out string errorMessage)
+    {
+        var normalizedDirectory = imageDirectory.Trim();
+        imagePath = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(normalizedDirectory))
+        {
+            errorMessage = "程序目录不能为空。";
+            return false;
+        }
+
+        if (!Directory.Exists(normalizedDirectory))
+        {
+            errorMessage = $"程序目录不存在：{normalizedDirectory}";
+            return false;
+        }
+
+        var slotAPath = Path.Combine(normalizedDirectory, "App_A.bin");
+        var slotBPath = Path.Combine(normalizedDirectory, "App_B.bin");
+        var hasSlotA = File.Exists(slotAPath);
+        var hasSlotB = File.Exists(slotBPath);
+
+        if (!hasSlotA && !hasSlotB)
+        {
+            errorMessage = $"所选目录中未找到 App_A.bin 或 App_B.bin：{normalizedDirectory}";
+            return false;
+        }
+
+        var targetFileName = runningSlot switch
+        {
+            FirmwareSlot.A => UpgradeAbSupport.GetRecommendedFileName(FirmwareSlot.A),
+            FirmwareSlot.B => UpgradeAbSupport.GetRecommendedFileName(FirmwareSlot.B),
+            _ => ResolvePreferredImageFileName(currentImagePath, hasSlotA, hasSlotB)
+        };
+
+        imagePath = Path.Combine(normalizedDirectory, targetFileName);
+        if (File.Exists(imagePath))
+        {
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        errorMessage = $"所选目录中缺少 {targetFileName}。请确认目录内包含正确的升级文件。";
+        return false;
+    }
+
     public bool ShouldAutoApplyRecommendedPath(
         string currentPath,
         string? lastAutoSuggestedPath,
@@ -216,5 +288,26 @@ public sealed class LocalUpgradeCoordinator
         messages.Add($"所选镜像槽：{imageInfo.DetectedSlot.ToDisplayText()}。");
         messages.Add($"镜像复位向量：0x{imageInfo.ResetHandler:X8}。");
         return messages;
+    }
+
+    private static string ResolvePreferredImageFileName(string? currentImagePath, bool hasSlotA, bool hasSlotB)
+    {
+        var currentFileName = Path.GetFileName(currentImagePath ?? string.Empty);
+        if (string.Equals(currentFileName, "App_A.bin", StringComparison.OrdinalIgnoreCase) && hasSlotA)
+        {
+            return currentFileName;
+        }
+
+        if (string.Equals(currentFileName, "App_B.bin", StringComparison.OrdinalIgnoreCase) && hasSlotB)
+        {
+            return currentFileName;
+        }
+
+        if (hasSlotA)
+        {
+            return "App_A.bin";
+        }
+
+        return "App_B.bin";
     }
 }

@@ -1,4 +1,6 @@
-using System.Windows;
+using Application = System.Windows.Application;
+using ExitEventArgs = System.Windows.ExitEventArgs;
+using StartupEventArgs = System.Windows.StartupEventArgs;
 using Microsoft.Extensions.DependencyInjection;
 using OTA.Core;
 using OTA.ViewModels;
@@ -24,8 +26,10 @@ public partial class App : Application
         services.AddSingleton<AppPreferencesService>();
         services.AddSingleton<PortDiscoveryService>();
         services.AddSingleton<LocalUpgradeCoordinator>();
+        services.AddSingleton<RemoteMaintenanceService>();
         services.AddSingleton<LocalUpgradeViewModel>();
         services.AddSingleton<RemoteUpgradeViewModel>();
+        services.AddSingleton<RemoteMaintenanceViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddTransient<MainWindow>();
         _serviceProvider = services.BuildServiceProvider();

@@ -14,6 +14,10 @@ public sealed record PortOption(string PortName, string DisplayName)
 
     public bool IsCh340 => DisplayName.Contains("CH340", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsBluetooth =>
+        DisplayName.Contains("蓝牙", StringComparison.OrdinalIgnoreCase) ||
+        DisplayName.Contains("Bluetooth", StringComparison.OrdinalIgnoreCase);
+
     public bool IsUsbSerial =>
         DisplayName.Contains("USB", StringComparison.OrdinalIgnoreCase) &&
         (DisplayName.Contains("SERIAL", StringComparison.OrdinalIgnoreCase) ||

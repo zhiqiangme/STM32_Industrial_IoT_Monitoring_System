@@ -1,14 +1,15 @@
 using System.IO;
+using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
-using Microsoft.Win32;
 using OTA.ViewModels;
+using UserControl = System.Windows.Controls.UserControl;
 
 namespace OTA.UI.Views;
 
 /// <summary>
 /// 本地升级页面视图。
-/// 页面内部只处理文件对话框和下拉框交互，状态与业务命令由 LocalUpgradeViewModel 提供。
+/// 页面内部只处理目录对话框和下拉框交互，状态与业务命令由 LocalUpgradeViewModel 提供。
 /// </summary>
 public partial class LocalUpgradeView : UserControl
 {
@@ -32,21 +33,18 @@ public partial class LocalUpgradeView : UserControl
             return;
         }
 
-        var owner = Window.GetWindow(this);
         var currentDirectory = Path.GetDirectoryName(viewModel.ScriptPath);
-        var dialog = new OpenFileDialog
+        var dialog = new OpenFolderDialog
         {
             InitialDirectory = !string.IsNullOrWhiteSpace(currentDirectory) && Directory.Exists(currentDirectory)
                 ? currentDirectory
                 : @"D:\Project\STM32_Mill",
-            FileName = Path.GetFileName(viewModel.ScriptPath),
-            Title = "选择 STM32 程序文件",
-            Filter = "BIN 文件 (*.bin)|*.bin|所有文件 (*.*)|*.*"
+            Title = "选择 STM32 程序目录"
         };
 
-        if (dialog.ShowDialog(owner) == true)
+        if (dialog.ShowDialog(Window.GetWindow(this)) == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
         {
-            viewModel.ApplySelectedImagePath(dialog.FileName);
+            viewModel.ApplySelectedImageDirectory(dialog.FolderName);
         }
     }
 }

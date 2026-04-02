@@ -1,11 +1,21 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using OTA.Core;
 using OTA.Models;
 using OTA.ViewModels;
 using OTA.ViewModels.Messages;
+using Button = System.Windows.Controls.Button;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using ComboBox = System.Windows.Controls.ComboBox;
+using MessageBox = System.Windows.MessageBox;
+using TextBox = System.Windows.Controls.TextBox;
 
 namespace OTA.UI;
 
@@ -65,6 +75,7 @@ public partial class MainWindow : Window
 
     private async void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
+        UpdateModeButtonStyles();
         await _viewModel.LocalVM.InitializeAsync();
         UpdateIdleRefreshTimers();
     }
@@ -96,6 +107,7 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName is nameof(MainViewModel.SelectedTabIndex) or nameof(MainViewModel.IsLocalTabSelected))
         {
+            UpdateModeButtonStyles();
             UpdateIdleRefreshTimers();
         }
     }
@@ -240,5 +252,113 @@ public partial class MainWindow : Window
         };
 
         _preferencesService.SaveWindowPreferences(preferences);
+    }
+
+    private void LocalModeButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedTabIndex == 0)
+        {
+            return;
+        }
+
+        _viewModel.SelectedTabIndex = 0;
+    }
+
+    private void RemoteModeButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedTabIndex == 1)
+        {
+            return;
+        }
+
+        _viewModel.SelectedTabIndex = 1;
+    }
+
+    private void MaintenanceModeButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedTabIndex == 2)
+        {
+            return;
+        }
+
+        _viewModel.SelectedTabIndex = 2;
+    }
+
+    private void UpdateModeButtonStyles()
+    {
+        ApplyModeButtonStyle(LocalModeButton, _viewModel.SelectedTabIndex == 0);
+        ApplyModeButtonStyle(RemoteModeButton, _viewModel.SelectedTabIndex == 1);
+        ApplyModeButtonStyle(MaintenanceModeButton, _viewModel.SelectedTabIndex == 2);
+    }
+
+    private static void ApplyModeButtonStyle(Button button, bool isActive)
+    {
+        if (isActive)
+        {
+            button.Background = Brushes.White;
+            button.BorderBrush = new SolidColorBrush(Color.FromRgb(213, 218, 227));
+            button.Foreground = new SolidColorBrush(Color.FromRgb(15, 23, 42));
+            button.Effect = new DropShadowEffect
+            {
+                BlurRadius = 10,
+                ShadowDepth = 1,
+                Opacity = 0.16,
+                Color = Color.FromRgb(15, 23, 42)
+            };
+        }
+        else
+        {
+            button.Background = (Brush)button.FindResource("TitleBarBrush");
+            button.BorderBrush = Brushes.Transparent;
+            button.Foreground = new SolidColorBrush(Color.FromRgb(75, 85, 99));
+            button.Effect = null;
+        }
+    }
+
+    private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 1)
+        {
+            return;
+        }
+
+        if (e.OriginalSource is DependencyObject source &&
+            (HasAncestor<Button>(source) || HasAncestor<TextBox>(source) || HasAncestor<ComboBox>(source)))
+        {
+            return;
+        }
+
+        try
+        {
+            DragMove();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private static bool HasAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current is not null)
+        {
+            if (current is T)
+            {
+                return true;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
     }
 }

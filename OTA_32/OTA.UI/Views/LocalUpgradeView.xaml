@@ -17,7 +17,11 @@
                         TextOptions.TextRenderingMode="ClearType"
                         TextOptions.TextHintingMode="Fixed">
                 <TextBlock x:Name="ModeTitleTextBlock" Style="{StaticResource H1TextStyle}" Text="{Binding ModeTitle}" />
-                <TextBlock x:Name="ModeDescriptionTextBlock" Style="{StaticResource HintTextStyle}" Text="{Binding ModeDescription}" />
+                <TextBlock x:Name="ModeDescriptionTextBlock"
+                           Style="{StaticResource HintTextStyle}"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontWeight="Normal"
+                           Text="{Binding ModeDescription}" />
             </StackPanel>
         </Border>
 
@@ -59,13 +63,9 @@
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="Visibility" Value="Collapsed" />
                                                         <Style.Triggers>
-                                                            <MultiDataTrigger>
-                                                                <MultiDataTrigger.Conditions>
-                                                                    <Condition Binding="{Binding HasDisplayDetail}" Value="True" />
-                                                                    <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ComboBoxItem}, Path=IsVisible}" Value="True" />
-                                                                </MultiDataTrigger.Conditions>
+                                                            <DataTrigger Binding="{Binding HasDisplayDetail}" Value="True">
                                                                 <Setter Property="Visibility" Value="Visible" />
-                                                            </MultiDataTrigger>
+                                                            </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </TextBlock.Style>
@@ -153,32 +153,50 @@
 
                         <StackPanel Margin="0,0,0,24">
                             <TextBlock x:Name="PathLabelTextBlock" Style="{StaticResource LabelTextStyle}" Text="{Binding PathLabel}" />
-                            <DockPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ScriptPathTextBox"
+                                         Grid.Column="0"
+                                         Margin="0,0,12,0"
+                                         IsEnabled="{Binding CanEditInputs}"
+                                         Text="{Binding ScriptPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 <Button x:Name="BrowseScriptButton"
-                                        Width="90"
-                                        Margin="12,0,0,0"
+                                        Grid.Column="1"
+                                        MinWidth="96"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         Click="BrowseScriptButton_OnClick"
                                         IsEnabled="{Binding CanBrowse}"
-                                        Content="选择文件"
-                                        DockPanel.Dock="Right" />
-                                <TextBox x:Name="ScriptPathTextBox"
-                                         IsEnabled="{Binding CanEditInputs}"
-                                         Text="{Binding ScriptPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </DockPanel>
+                                        Content="选择目录" />
+                            </Grid>
                             <TextBlock x:Name="ImageHintTextBlock" Margin="0,8,0,0" Style="{StaticResource HintTextStyle}" Text="{Binding ImageHintText}" />
                         </StackPanel>
                     </StackPanel>
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Border Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="6" Padding="12,4" Margin="0,0,16,0" VerticalAlignment="Center">
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="1"
+                                Background="#FEF3C7"
+                                BorderBrush="#F59E0B"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="12,4"
+                                Margin="0,0,16,0"
+                                VerticalAlignment="Center">
                             <TextBlock x:Name="StatusTextBlock" FontWeight="Medium" Foreground="#D97706" Text="{Binding StatusText}" VerticalAlignment="Center" />
                         </Border>
                         <Button x:Name="StartUpgradeButton"
-                                Width="180"
+                                Grid.Column="2"
+                                MinWidth="180"
                                 Command="{Binding StartUpgradeCommand}"
                                 Content="{Binding StartButtonText}" />
-                    </StackPanel>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

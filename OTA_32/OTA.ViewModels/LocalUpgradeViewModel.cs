@@ -210,6 +210,25 @@ public sealed class LocalUpgradeViewModel : ObservableObject
         AppendLog($"已选择 STM32 程序：{imagePath}");
     }
 
+    public void ApplySelectedImageDirectory(string imageDirectory)
+    {
+        if (!_upgradeCoordinator.TryResolveLocalImagePathForDirectory(
+                imageDirectory,
+                _runningSlot,
+                ScriptPath,
+                out var selectedImagePath,
+                out var errorMessage))
+        {
+            AppendLog($"程序目录检查失败：{errorMessage}");
+            RequestViewMessage("缺少升级文件", errorMessage, ViewMessageSeverity.Warning);
+            return;
+        }
+
+        ScriptPath = selectedImagePath;
+        AppendLog($"已选择 STM32 程序目录：{imageDirectory}");
+        AppendLog($"已自动定位 STM32 程序：{selectedImagePath}");
+    }
+
     public async Task RefreshPortListAsync()
     {
         await _portListRefreshLock.WaitAsync();
@@ -295,6 +314,13 @@ public sealed class LocalUpgradeViewModel : ObservableObject
         if (!TryReadLocalSerialSettings(out var serialSettings, out var errorMessage))
         {
             RequestViewMessage("参数错误", errorMessage, ViewMessageSeverity.Warning);
+            return;
+        }
+
+        if (!_upgradeCoordinator.TryValidatePortAvailability(serialSettings, out errorMessage))
+        {
+            AppendLog($"串口检查失败：{errorMessage}");
+            RequestViewMessage("串口不可用", errorMessage, ViewMessageSeverity.Warning);
             return;
         }
 
@@ -630,14 +656,19 @@ public sealed class LocalUpgradeViewModel : ObservableObject
         }
 
         var newlyAddedOptions = portOptions
+            .Where(option => !option.IsBluetooth)
             .Where(option => newlyAddedPortNames.Contains(option.PortName))
+            .ToList();
+
+        var supportedOptions = portOptions
+            .Where(option => !option.IsBluetooth)
             .ToList();
 
         return newlyAddedOptions.FirstOrDefault(option => option.IsUsbSerial) ??
                newlyAddedOptions.FirstOrDefault(option => option.IsCh340) ??
                newlyAddedOptions.FirstOrDefault() ??
-               portOptions.FirstOrDefault(option => option.IsUsbSerial) ??
-               portOptions.FirstOrDefault(option => option.IsCh340) ??
-               portOptions.FirstOrDefault();
+               supportedOptions.FirstOrDefault(option => option.IsUsbSerial) ??
+               supportedOptions.FirstOrDefault(option => option.IsCh340) ??
+               supportedOptions.FirstOrDefault();
     }
 }

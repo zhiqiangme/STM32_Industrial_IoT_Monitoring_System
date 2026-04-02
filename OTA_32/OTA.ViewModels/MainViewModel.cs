@@ -10,19 +10,27 @@ public sealed class MainViewModel : ObservableObject
 {
     private int _selectedTabIndex;
 
-    public MainViewModel(LocalUpgradeViewModel localVM, RemoteUpgradeViewModel remoteVM)
+    public MainViewModel(
+        LocalUpgradeViewModel localVM,
+        RemoteUpgradeViewModel remoteVM,
+        RemoteMaintenanceViewModel maintenanceVM)
     {
         LocalVM = localVM;
         RemoteVM = remoteVM;
+        MaintenanceVM = maintenanceVM;
     }
 
     public LocalUpgradeViewModel LocalVM { get; }
 
     public RemoteUpgradeViewModel RemoteVM { get; }
 
+    public RemoteMaintenanceViewModel MaintenanceVM { get; }
+
     public bool IsLocalTabSelected => SelectedTabIndex == 0;
 
     public bool IsRemoteTabSelected => SelectedTabIndex == 1;
+
+    public bool IsMaintenanceTabSelected => SelectedTabIndex == 2;
 
     public int SelectedTabIndex
     {
@@ -33,6 +41,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(IsLocalTabSelected));
                 OnPropertyChanged(nameof(IsRemoteTabSelected));
+                OnPropertyChanged(nameof(IsMaintenanceTabSelected));
             }
         }
     }

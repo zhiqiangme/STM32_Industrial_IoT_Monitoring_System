@@ -85,16 +85,11 @@ public static class RunningSlotProtocol
 
     private static byte[] BuildReadHoldingRegistersRequest(ushort startAddress, ushort registerCount)
     {
-        Span<byte> frame = stackalloc byte[8];
-        frame[0] = DeviceAddress;
-        frame[1] = ReadHoldingRegisters;
-        BinaryPrimitives.WriteUInt16BigEndian(frame[2..4], startAddress);
-        BinaryPrimitives.WriteUInt16BigEndian(frame[4..6], registerCount);
-
-        var crc = ComputeModbusCrc(frame[..6]);
-        frame[6] = (byte)(crc & 0xFF);
-        frame[7] = (byte)((crc >> 8) & 0xFF);
-        return frame.ToArray();
+        return ModbusRawFrameBuilder.BuildFrame(new ModbusRawFrameData(
+            DeviceAddress,
+            ReadHoldingRegisters,
+            startAddress,
+            registerCount));
     }
 
     private static FirmwareSlot ParseRunningSlotResponse(ReadOnlySpan<byte> response)
@@ -120,7 +115,7 @@ public static class RunningSlotProtocol
         }
 
         var expectedCrc = BinaryPrimitives.ReadUInt16LittleEndian(response[^2..]);
-        var actualCrc = ComputeModbusCrc(response[..^2]);
+        var actualCrc = ModbusCrc16.Compute(response[..^2]);
         if (actualCrc != expectedCrc)
         {
             throw new InvalidOperationException("读取槽位回包 CRC 校验失败。");
@@ -133,24 +128,6 @@ public static class RunningSlotProtocol
             2 => FirmwareSlot.B,
             _ => FirmwareSlot.Unknown
         };
-    }
-
-    private static ushort ComputeModbusCrc(ReadOnlySpan<byte> data)
-    {
-        ushort crc = 0xFFFF;
-
-        foreach (var value in data)
-        {
-            crc ^= value;
-            for (var bit = 0; bit < 8; bit++)
-            {
-                crc = (crc & 1) != 0
-                    ? (ushort)((crc >> 1) ^ 0xA001)
-                    : (ushort)(crc >> 1);
-            }
-        }
-
-        return crc;
     }
 
     private static byte[] ReadExact(SerialPort serialPort, int length, TimeSpan timeout)
