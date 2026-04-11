@@ -116,7 +116,7 @@ OTA_32/**/[Oo]bj/
 
 
 # --- 发布程序 ---
-Deploy\Artifacts
+Deploy/Artifacts/
 # --- 驱动程序 ---
 Deploy/Drivers/**.exe
 # --- 安装包输出 ---

@@ -9,6 +9,9 @@ namespace OTA.Core;
 /// </summary>
 public sealed class LocalUpgradeCoordinator
 {
+    /// <summary>
+    /// 解析并校验串口号、波特率和超时，生成统一的串口设置对象。
+    /// </summary>
     public bool TryReadSerialSettings(
         string portName,
         string baudRateText,
@@ -41,6 +44,9 @@ public sealed class LocalUpgradeCoordinator
         return true;
     }
 
+    /// <summary>
+    /// 校验固件路径并组装升级执行参数。
+    /// </summary>
     public bool TryBuildLocalUpgradeOptions(
         LocalSerialSettings serialSettings,
         string imagePath,
@@ -67,12 +73,29 @@ public sealed class LocalUpgradeCoordinator
         return true;
     }
 
+    /// <summary>
+    /// 使用本地升级默认提示文案检查串口是否存在且可打开。
+    /// </summary>
     public bool TryValidatePortAvailability(LocalSerialSettings serialSettings, out string errorMessage)
+    {
+        return TryValidatePortAvailability(serialSettings, "串口 {0} 当前未连接。请先连接 USB 转 485 串口设备并确认端口号。", out errorMessage);
+    }
+
+    /// <summary>
+    /// 按指定模式文案检查串口是否存在且可打开。
+    /// </summary>
+    public bool TryValidatePortAvailability(
+        LocalSerialSettings serialSettings,
+        string disconnectedPortMessageTemplate,
+        out string errorMessage)
     {
         var availablePorts = System.IO.Ports.SerialPort.GetPortNames();
         if (!availablePorts.Any(portName => string.Equals(portName, serialSettings.PortName, StringComparison.OrdinalIgnoreCase)))
         {
-            errorMessage = $"串口 {serialSettings.PortName} 当前未连接。请先连接 USB 转 485 串口设备并确认端口号。";
+            errorMessage = string.Format(
+                CultureInfo.InvariantCulture,
+                disconnectedPortMessageTemplate,
+                serialSettings.PortName);
             return false;
         }
 
@@ -87,6 +110,9 @@ public sealed class LocalUpgradeCoordinator
         return true;
     }
 
+    /// <summary>
+    /// 检查镜像文件并识别其槽位信息。
+    /// </summary>
     public bool TryInspectImage(string imagePath, out FirmwareImageInfo imageInfo, out string errorMessage)
     {
         try
@@ -103,6 +129,9 @@ public sealed class LocalUpgradeCoordinator
         }
     }
 
+    /// <summary>
+    /// 通过串口读取当前设备运行槽位，并转换为界面可用的提示结果。
+    /// </summary>
     public async Task<RunningSlotRefreshResult> ReadRunningSlotAsync(LocalSerialSettings serialSettings)
     {
         try
@@ -146,9 +175,13 @@ public sealed class LocalUpgradeCoordinator
         }
     }
 
+    /// <summary>
+    /// 升级前校验镜像与槽位关系，并生成启动日志内容。
+    /// </summary>
     public bool TryPrepareLocalUpgrade(
         LocalUpgradeOptions options,
         FirmwareSlot runningSlot,
+        string modeName,
         out LocalUpgradePreparation preparation,
         out string errorMessage)
     {
@@ -166,16 +199,22 @@ public sealed class LocalUpgradeCoordinator
             return false;
         }
 
-        preparation = new LocalUpgradePreparation(options, imageInfo, runningSlot, BuildStartupMessages(runningSlot, imageInfo));
+        preparation = new LocalUpgradePreparation(options, imageInfo, runningSlot, BuildStartupMessages(modeName, runningSlot, imageInfo));
         errorMessage = string.Empty;
         return true;
     }
 
+    /// <summary>
+    /// 生成镜像识别提示文本，供界面显示。
+    /// </summary>
     public string BuildImageHint(FirmwareImageInfo imageInfo)
     {
         return UpgradeAbSupport.BuildImageHint(imageInfo);
     }
 
+    /// <summary>
+    /// 根据当前运行槽位生成推荐镜像提示。
+    /// </summary>
     public string BuildSlotRecommendationText(FirmwareSlot runningSlot)
     {
         return runningSlot switch
@@ -186,11 +225,17 @@ public sealed class LocalUpgradeCoordinator
         };
     }
 
+    /// <summary>
+    /// 根据运行槽位计算推荐的本地镜像完整路径。
+    /// </summary>
     public string GetRecommendedLocalImagePath(string objectsDirectory, FirmwareSlot runningSlot)
     {
         return Path.Combine(objectsDirectory, UpgradeAbSupport.GetRecommendedFileName(runningSlot));
     }
 
+    /// <summary>
+    /// 从目录中选择合适的升级镜像文件，并补全其完整路径。
+    /// </summary>
     public bool TryResolveLocalImagePathForDirectory(
         string imageDirectory,
         FirmwareSlot runningSlot,
@@ -242,6 +287,9 @@ public sealed class LocalUpgradeCoordinator
         return false;
     }
 
+    /// <summary>
+    /// 判断当前界面路径是否仍允许被自动推荐镜像覆盖。
+    /// </summary>
     public bool ShouldAutoApplyRecommendedPath(
         string currentPath,
         string? lastAutoSuggestedPath,
@@ -268,11 +316,14 @@ public sealed class LocalUpgradeCoordinator
         return string.Equals(Path.GetFileName(currentPath), "App.bin", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<string> BuildStartupMessages(FirmwareSlot runningSlot, FirmwareImageInfo imageInfo)
+    /// <summary>
+    /// 生成升级启动阶段的日志文本。
+    /// </summary>
+    private static IReadOnlyList<string> BuildStartupMessages(string modeName, FirmwareSlot runningSlot, FirmwareImageInfo imageInfo)
     {
         var messages = new List<string>
         {
-            "准备升级，模式 本地升级。"
+            $"准备升级，模式 {modeName}。"
         };
 
         if (runningSlot == FirmwareSlot.Unknown)
@@ -290,6 +341,9 @@ public sealed class LocalUpgradeCoordinator
         return messages;
     }
 
+    /// <summary>
+    /// 在槽位未知时，根据当前文件名和目录内容决定优先使用哪一个镜像。
+    /// </summary>
     private static string ResolvePreferredImageFileName(string? currentImagePath, bool hasSlotA, bool hasSlotB)
     {
         var currentFileName = Path.GetFileName(currentImagePath ?? string.Empty);

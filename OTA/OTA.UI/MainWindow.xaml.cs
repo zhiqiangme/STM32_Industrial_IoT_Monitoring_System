@@ -69,14 +69,17 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         SourceInitialized += MainWindow_OnSourceInitialized;
         _viewModel.PropertyChanged += MainViewModel_PropertyChanged;
-        _viewModel.LocalVM.PropertyChanged += LocalViewModel_PropertyChanged;
-        _viewModel.LocalVM.ViewMessageRequested += LocalViewModel_ViewMessageRequested;
+        _viewModel.LocalVM.PropertyChanged += SerialUpgradeViewModel_PropertyChanged;
+        _viewModel.RemoteVM.PropertyChanged += SerialUpgradeViewModel_PropertyChanged;
+        _viewModel.LocalVM.ViewMessageRequested += SerialUpgradeViewModel_ViewMessageRequested;
+        _viewModel.RemoteVM.ViewMessageRequested += SerialUpgradeViewModel_ViewMessageRequested;
     }
 
     private async void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
         UpdateModeButtonStyles();
         await _viewModel.LocalVM.InitializeAsync();
+        await _viewModel.RemoteVM.InitializeAsync();
         UpdateIdleRefreshTimers();
     }
 
@@ -87,8 +90,10 @@ public partial class MainWindow : Window
         _idleRunningSlotRefreshTimer.Stop();
         _deviceChangeRefreshTimer.Stop();
         _viewModel.PropertyChanged -= MainViewModel_PropertyChanged;
-        _viewModel.LocalVM.PropertyChanged -= LocalViewModel_PropertyChanged;
-        _viewModel.LocalVM.ViewMessageRequested -= LocalViewModel_ViewMessageRequested;
+        _viewModel.LocalVM.PropertyChanged -= SerialUpgradeViewModel_PropertyChanged;
+        _viewModel.RemoteVM.PropertyChanged -= SerialUpgradeViewModel_PropertyChanged;
+        _viewModel.LocalVM.ViewMessageRequested -= SerialUpgradeViewModel_ViewMessageRequested;
+        _viewModel.RemoteVM.ViewMessageRequested -= SerialUpgradeViewModel_ViewMessageRequested;
 
         if (_hwndSource is not null)
         {
@@ -105,22 +110,22 @@ public partial class MainWindow : Window
 
     private void MainViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainViewModel.SelectedTabIndex) or nameof(MainViewModel.IsLocalTabSelected))
+        if (e.PropertyName is nameof(MainViewModel.SelectedTabIndex) or nameof(MainViewModel.IsLocalTabSelected) or nameof(MainViewModel.IsRemoteTabSelected))
         {
             UpdateModeButtonStyles();
             UpdateIdleRefreshTimers();
         }
     }
 
-    private void LocalViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void SerialUpgradeViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(LocalUpgradeViewModel.ShouldPollPortList) or nameof(LocalUpgradeViewModel.ShouldPollRunningSlot))
+        if (e.PropertyName is nameof(SerialUpgradeViewModelBase.ShouldPollPortList) or nameof(SerialUpgradeViewModelBase.ShouldPollRunningSlot))
         {
             UpdateIdleRefreshTimers();
         }
     }
 
-    private void LocalViewModel_ViewMessageRequested(object? sender, ViewMessage viewMessage)
+    private void SerialUpgradeViewModel_ViewMessageRequested(object? sender, ViewMessage viewMessage)
     {
         var image = viewMessage.Severity switch
         {
@@ -134,17 +139,19 @@ public partial class MainWindow : Window
 
     private async void IdleRunningSlotRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        if (_viewModel.IsLocalTabSelected)
+        var serialVm = _viewModel.ActiveSerialUpgradeVM;
+        if (serialVm is not null)
         {
-            await _viewModel.LocalVM.PollRunningSlotAsync();
+            await serialVm.PollRunningSlotAsync();
         }
     }
 
     private async void IdlePortListRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        if (_viewModel.IsLocalTabSelected)
+        var serialVm = _viewModel.ActiveSerialUpgradeVM;
+        if (serialVm is not null)
         {
-            await _viewModel.LocalVM.PollPortListAsync();
+            await serialVm.PollPortListAsync();
         }
     }
 
@@ -152,9 +159,15 @@ public partial class MainWindow : Window
     {
         _deviceChangeRefreshTimer.Stop();
 
-        if (!_viewModel.LocalVM.ShouldPollPortList)
+        var serialVm = _viewModel.ActiveSerialUpgradeVM;
+        if (serialVm is null)
         {
-            if (_viewModel.IsLocalTabSelected)
+            return;
+        }
+
+        if (!serialVm.ShouldPollPortList)
+        {
+            if (_viewModel.IsSerialUpgradeTabSelected)
             {
                 _deviceChangeRefreshTimer.Start();
             }
@@ -162,7 +175,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _viewModel.LocalVM.RefreshPortListAsync();
+        await serialVm.RefreshPortListAsync();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -181,7 +194,7 @@ public partial class MainWindow : Window
 
     private void SchedulePortListRefresh()
     {
-        if (!_viewModel.IsLocalTabSelected)
+        if (!_viewModel.IsSerialUpgradeTabSelected)
         {
             return;
         }
@@ -192,7 +205,8 @@ public partial class MainWindow : Window
 
     private void UpdateIdleRefreshTimers()
     {
-        if (_viewModel.IsLocalTabSelected && _viewModel.LocalVM.ShouldPollPortList)
+        var serialVm = _viewModel.ActiveSerialUpgradeVM;
+        if (serialVm is not null && serialVm.ShouldPollPortList)
         {
             _idlePortListRefreshTimer.Start();
         }
@@ -201,7 +215,7 @@ public partial class MainWindow : Window
             _idlePortListRefreshTimer.Stop();
         }
 
-        if (_viewModel.IsLocalTabSelected && _viewModel.LocalVM.ShouldPollRunningSlot)
+        if (serialVm is not null && serialVm.ShouldPollRunningSlot)
         {
             _idleRunningSlotRefreshTimer.Start();
         }

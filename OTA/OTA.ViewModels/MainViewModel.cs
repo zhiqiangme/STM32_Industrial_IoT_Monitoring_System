@@ -8,7 +8,7 @@ namespace OTA.ViewModels;
 /// </summary>
 public sealed class MainViewModel : ObservableObject
 {
-    private int _selectedTabIndex;
+    private int _selectedTabIndex = 1;
 
     public MainViewModel(
         LocalUpgradeViewModel localVM,
@@ -26,9 +26,18 @@ public sealed class MainViewModel : ObservableObject
 
     public RemoteMaintenanceViewModel MaintenanceVM { get; }
 
+    public SerialUpgradeViewModelBase? ActiveSerialUpgradeVM => SelectedTabIndex switch
+    {
+        0 => LocalVM,
+        1 => RemoteVM,
+        _ => null
+    };
+
     public bool IsLocalTabSelected => SelectedTabIndex == 0;
 
     public bool IsRemoteTabSelected => SelectedTabIndex == 1;
+
+    public bool IsSerialUpgradeTabSelected => SelectedTabIndex is 0 or 1;
 
     public bool IsMaintenanceTabSelected => SelectedTabIndex == 2;
 
@@ -39,8 +48,10 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _selectedTabIndex, value))
             {
+                OnPropertyChanged(nameof(ActiveSerialUpgradeVM));
                 OnPropertyChanged(nameof(IsLocalTabSelected));
                 OnPropertyChanged(nameof(IsRemoteTabSelected));
+                OnPropertyChanged(nameof(IsSerialUpgradeTabSelected));
                 OnPropertyChanged(nameof(IsMaintenanceTabSelected));
             }
         }

@@ -269,10 +269,10 @@
                             Style="{StaticResource ContentOnlyTabControlStyle}"
                             SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
                     <TabItem Header="本地升级">
-                        <views:LocalUpgradeView DataContext="{Binding LocalVM}" />
+                        <views:SerialUpgradeView DataContext="{Binding LocalVM}" />
                     </TabItem>
                     <TabItem Header="远程升级">
-                        <views:RemoteUpgradeView DataContext="{Binding RemoteVM}" />
+                        <views:SerialUpgradeView DataContext="{Binding RemoteVM}" />
                     </TabItem>
                     <TabItem Header="远程维护">
                         <views:RemoteMaintenanceView DataContext="{Binding MaintenanceVM}" />

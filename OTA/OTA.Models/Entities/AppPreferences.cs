@@ -8,6 +8,8 @@ public sealed class AppPreferences
 {
     public LocalUpgradePreferences LocalUpgrade { get; set; } = new();
 
+    public RemoteUpgradePreferences RemoteUpgrade { get; set; } = new();
+
     public WindowPreferences Window { get; set; } = new();
 }
 
@@ -15,6 +17,18 @@ public sealed class AppPreferences
 /// 本地升级页面偏好。
 /// </summary>
 public sealed class LocalUpgradePreferences
+{
+    public string LastFirmwarePath { get; set; } = string.Empty;
+
+    public string LastPortName { get; set; } = string.Empty;
+
+    public string BaudRateText { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 远程升级页面偏好。
+/// </summary>
+public sealed class RemoteUpgradePreferences
 {
     public string LastFirmwarePath { get; set; } = string.Empty;
 

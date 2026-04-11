@@ -23,6 +23,10 @@ public sealed record PortOption(string PortName, string DisplayName)
         (DisplayName.Contains("SERIAL", StringComparison.OrdinalIgnoreCase) ||
          DisplayName.Contains("串行", StringComparison.OrdinalIgnoreCase));
 
+    public bool IsUsrVcom =>
+        DisplayName.Contains("USR", StringComparison.OrdinalIgnoreCase) &&
+        DisplayName.Contains("VCOM", StringComparison.OrdinalIgnoreCase);
+
     public override string ToString()
     {
         return PortName;
