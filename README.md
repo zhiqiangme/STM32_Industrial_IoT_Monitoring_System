@@ -9,6 +9,22 @@ This repository contains the current codebase for the STM32 Mill control and mai
 
 The `Windows/` folder is kept only as historical code. It is no longer planned for active maintenance.
 
+## 3-Second Overview
+
+**What this project is**
+
+An industrial control and maintenance stack built around STM32 firmware plus a Windows OTA/maintenance tool.
+
+**What problem it solves**
+
+It brings field data acquisition, relay control, remote maintenance, and safer firmware upgrades into one practical workflow instead of splitting them across unrelated tools.
+
+**Who it is for**
+
+- Engineers maintaining STM32-based field equipment
+- Developers building RS485 / Modbus industrial controllers
+- Teams that need local and remote firmware upgrade capability with rollback awareness
+
 ## Overview
 
 The system combines an STM32F103-based controller, field devices on RS485/Modbus, and a G780S communication path for maintenance and upgrade operations.
@@ -18,6 +34,81 @@ The current codebase covers three practical workflows:
 - Field data acquisition and relay control
 - Remote maintenance through Modbus registers exposed by the device
 - A/B firmware upgrade with bootloader verification and rollback logic
+
+## Features
+
+- Field-side Modbus master polling for PT100, weight, flow, and relay devices
+- Runtime relay control with local key handling and debounced DI processing
+- G780S-facing Modbus slave for remote maintenance and diagnostics
+- A/B slot firmware upgrade with bootloader-side integrity checks
+- CRC32, SHA-256, vector-table validation, and fallback / rollback logic
+- Desktop OTA tool for local upgrade, remote upgrade, and raw Modbus maintenance frames
+
+## System Architecture
+
+```mermaid
+flowchart LR
+    A["PT100 / Weight / Flow / Relay Devices"] --> B["STM32 App<br/>USART2 Modbus Master"]
+    C["Remote Operator / Cloud / Maintenance Tool"] --> D["G780S / Virtual COM / RS485"]
+    D --> E["STM32 App<br/>USART3 Modbus Slave"]
+    F["OTA Desktop Tool"] --> D
+    E --> G["Bootloader"]
+    G --> H["A/B Firmware Slots"]
+```
+
+## Real-World Scenarios
+
+- On-site commissioning: connect through RS485, verify sensor readings, drive relays, and load the correct firmware slot.
+- Remote maintenance: expose Modbus registers through G780S, adjust runtime parameters, and inspect diagnostic state without opening the enclosure.
+- Safer firmware rollout: upgrade the inactive slot first, verify the image in bootloader, then trial-boot with rollback protection.
+
+## Project Status
+
+Status: Active.
+
+Current focus:
+
+- Keep `STM32/` evolving as the production firmware path
+- Keep `OTA/` improving as the primary maintenance and upgrade tool
+- Keep `Windows/` available only as legacy reference
+
+This repository is still moving forward. The current README is intentionally written around the code that is actively being used, not around the older historical layout.
+
+## Roadmap
+
+- Continue stabilizing A/B upgrade flow and diagnostics
+- Improve OTA usability for field deployment and virtual-COM remote upgrade
+- Expand engineering documentation and operator-facing examples
+- Clean up packaging and release outputs under `Deploy/`
+- Gradually retire the legacy `Windows/` path from the main workflow
+
+## Hardware / Software Environment
+
+### Hardware
+
+- STM32F103ZE-based controller board
+- RS485-connected field devices such as PT100, weighing, flowmeter, and relay modules
+- G780S communication module or equivalent transparent transport path
+- USB-to-RS485 adapter for local maintenance
+- Optional virtual COM mapping software for remote upgrade workflows
+
+### Software
+
+- `Keil MDK-ARM` for embedded firmware builds
+- `.NET SDK 10` for the OTA desktop application
+- Windows 10/11 for the WPF toolchain
+- Optional Modbus debugging tools for maintenance and validation
+
+## License
+
+There is currently no `LICENSE` file in the repository, so you should not assume open-source redistribution rights yet.
+
+Recommended choices if you want to publish this project more formally:
+
+- `Apache-2.0`: good default for a serious engineering project, especially if you want an explicit patent grant
+- `MIT`: simpler and more permissive if you want the lowest adoption friction
+
+If you want, the next step can be adding an actual `LICENSE` file rather than only documenting the recommendation here.
 
 ## Repository Focus
 
