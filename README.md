@@ -101,14 +101,16 @@ This repository is still moving forward. The current README is intentionally wri
 
 ## License
 
-There is currently no `LICENSE` file in the repository, so you should not assume open-source redistribution rights yet.
+This repository is licensed under `Apache-2.0`. See [LICENSE](LICENSE).
 
-Recommended choices if you want to publish this project more formally:
+In practice, that means you can:
 
-- `Apache-2.0`: good default for a serious engineering project, especially if you want an explicit patent grant
-- `MIT`: simpler and more permissive if you want the lowest adoption friction
+- Use it commercially
+- Modify and redistribute it
+- Keep proprietary changes in your own downstream project if needed
+- Rely on the explicit patent grant provided by Apache-2.0
 
-If you want, the next step can be adding an actual `LICENSE` file rather than only documenting the recommendation here.
+When redistributing, keep the license text and required notices with the project.
 
 ## Repository Focus
 
