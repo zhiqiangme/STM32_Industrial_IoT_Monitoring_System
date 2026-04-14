@@ -22,6 +22,7 @@
 #ifndef __RT_THREAD_H__
 #define __RT_THREAD_H__
 
+#include <stdarg.h>
 #include <rtconfig.h>
 #include <rtdebug.h>
 #include <rtdef.h>
