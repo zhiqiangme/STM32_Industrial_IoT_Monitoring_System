@@ -21,6 +21,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f1xx_it.h"
+#include <rtthread.h>
    
 /** @addtogroup STM32F1xx_HAL_Examples
   * @{
@@ -49,19 +50,6 @@
   */
 void NMI_Handler(void)
 {
-}
-
-/**
-  * @brief  This function handles Hard Fault exception.
-  * @param  None
-  * @retval None
-  */
-void HardFault_Handler(void)
-{
-  /* Go to infinite loop when Hard Fault exception occurs */
-  while (1)
-  {
-  }
 }
 
 /**
@@ -122,15 +110,6 @@ void DebugMon_Handler(void)
 }
 
 /**
-  * @brief  This function handles PendSVC exception.
-  * @param  None
-  * @retval None
-  */
-void PendSV_Handler(void)
-{
-}
-
-/**
   * @brief  This function handles SysTick Handler.
   * @param  None
   * @retval None
@@ -138,6 +117,14 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   HAL_IncTick();
+
+  /* 调度器起来后再把 1ms tick 交给 RT-Thread，避免早期空指针访问。 */
+  if (rt_thread_self() != RT_NULL)
+  {
+      rt_interrupt_enter();
+      rt_tick_increase();
+      rt_interrupt_leave();
+  }
 }
 
 /******************************************************************************/

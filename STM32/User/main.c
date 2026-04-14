@@ -6,8 +6,15 @@
 #include "G780s.h"
 #include "Upgrade.h"
 #include "DataLogger.h"
+#include <rthw.h>
+
+void rt_hw_board_init(void);
 
 extern TIM_HandleTypeDef g_tim2_handle;
+
+#define APP_RT_THREAD_STACK_SIZE   4096u
+#define APP_RT_THREAD_PRIORITY     8u
+#define APP_RT_THREAD_TIMESLICE    20u
 
 static FlowmeterHandle g_flow_meter;
 
@@ -76,6 +83,9 @@ static void App_SystemInit(void)
     TIM2_Init();
     HAL_TIM_Base_Start(&g_tim2_handle);
 }
+
+static void App_StartScheduler(void);
+static void App_MainThreadEntry(void *parameter);
 
 /* 检查并处理按键事件 */
 static void App_HandleKeys(void)
@@ -176,9 +186,9 @@ static void App_HandleRelayInputs(uint16_t di_mask)
     }
 }
 
-int main(void)
+static void App_MainThreadEntry(void *parameter)
 {
-    App_SystemInit();
+    (void)parameter;
     Modbus_MasterInit();     /* 总线1: USART2 Modbus主站，挂3个传感器 */
     G780s_Init();            /* 总线2: USART3 Modbus从站，等待G780S扫描 */
 
@@ -507,7 +517,46 @@ int main(void)
                 G780s_UpdateData(&slave_data);
             }
         }
-        
+
         delay_ms(5);
+    }
+}
+
+static void App_StartScheduler(void)
+{
+    rt_thread_t app_tid;
+
+    rt_hw_interrupt_disable();
+    rt_hw_board_init();
+    rt_show_version();
+    rt_system_timer_init();
+    rt_system_scheduler_init();
+
+    app_tid = rt_thread_create("app",
+                               App_MainThreadEntry,
+                               RT_NULL,
+                               APP_RT_THREAD_STACK_SIZE,
+                               APP_RT_THREAD_PRIORITY,
+                               APP_RT_THREAD_TIMESLICE);
+    if (app_tid == RT_NULL)
+    {
+        while (1)
+        {
+        }
+    }
+
+    rt_thread_startup(app_tid);
+    rt_system_timer_thread_init();
+    rt_thread_idle_init();
+    rt_system_scheduler_start();
+}
+
+int main(void)
+{
+    App_SystemInit();
+    App_StartScheduler();
+
+    while (1)
+    {
     }
 }

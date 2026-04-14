@@ -23,7 +23,8 @@
 #define RT_USING_COMPONENTS_INIT
 // </c>
 
-#define RT_USING_USER_MAIN
+/* 当前工程采用手动启动 RT-Thread 的方式，保留现有 main() 作为裸机入口。 */
+/* #define RT_USING_USER_MAIN */
 
 // <o>the stack size of main thread<1-4086>
 //  <i>Default: 512
