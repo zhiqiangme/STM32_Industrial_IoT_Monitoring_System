@@ -5,6 +5,7 @@
 #include "Relay.h"
 #include "G780s.h"
 #include "Upgrade.h"
+#include "DataLogger.h"
 
 extern TIM_HandleTypeDef g_tim2_handle;
 
@@ -219,9 +220,18 @@ int main(void)
         printf("[UPGRADE] Running slot confirm skipped/failed\r\n");
     }
 
+    /* ===== 文件系统 (W25Q128 + LittleFS) ===== */
+    printf(">>> Init File System...\r\n");
+    if (DataLogger_Init() != 0)
+    {
+        printf("[LOG] DataLogger init FAILED\r\n");
+    }
+
     printf("\r\n>>> Main loop started...\r\n\r\n");
 
     HAL_Delay(3000);  /* 等待3秒让传感器数据稳定 */
+
+    uint32_t last_flush_tick = HAL_GetTick();
 
     uint32_t last_sensor_tick = 0;
     uint32_t last_config_seq = g_runtime_config.sequence;
@@ -241,6 +251,13 @@ int main(void)
             led_tick = HAL_GetTick();
            // LED_R_TOGGLE();
 			  LED_G_TOGGLE();
+        }
+
+        /* 每60秒刷新一次数据缓冲到Flash */
+        if (HAL_GetTick() - last_flush_tick >= 60000U)
+        {
+            last_flush_tick = HAL_GetTick();
+            DataLogger_Flush();
         }
 
 
@@ -366,6 +383,7 @@ int main(void)
             }
             else
             {
+                DataLogger_LogError("PT100 read failed");
                 printf("[TEMP] --\r\n");
             }
             
@@ -382,7 +400,22 @@ int main(void)
             }
             else
             {
+                DataLogger_LogError("Weight read failed");
                 printf("[WEIGHT] --\r\n");
+            }
+
+            /* ===== 传感器数据记录到 Flash ===== */
+            if (pt100_ok || weight_ok)
+            {
+                SensorSnapshot snap;
+                snap.uptime_s    = HAL_GetTick() / 1000U;
+                snap.temperature = g_sensor_temp;
+                snap.weight      = g_sensor_weight;
+                snap.flow_rate   = g_flow_rate_lpm;
+                snap.flow_total  = g_flow_total_l;
+                snap.relay_do    = g_relay_do_state;
+                snap.relay_di    = g_relay_di_state;
+                DataLogger_LogSensor(&snap);
             }
             
             App_HandleKeys();
