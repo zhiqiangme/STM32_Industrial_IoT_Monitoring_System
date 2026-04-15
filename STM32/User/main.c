@@ -259,8 +259,8 @@ static void App_MainThreadEntry(void *parameter)
         if (HAL_GetTick() - led_tick >= 500)
         {
             led_tick = HAL_GetTick();
-           // LED_R_TOGGLE();
-			  LED_G_TOGGLE();
+            LED_R_TOGGLE();
+			 // LED_G_TOGGLE();
         }
 
         /* 每60秒刷新一次数据缓冲到Flash */
