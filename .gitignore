@@ -174,56 +174,6 @@ STM32/**/EWARM/Debug/
 STM32/**/EWARM/Release/
 STM32/**/EWARM/settings/
 
-####################################
-# STM32_FS 目录 (Keil MDK / STM32_FSCubeIDE / IAR)
-####################################
-
-# --- Keil MDK 编译输出 ---
-STM32_FS/**/*.o
-STM32_FS/**/*.d
-STM32_FS/**/*.crf
-STM32_FS/**/*.dep
-STM32_FS/**/*.axf
-STM32_FS/**/*.htm
-STM32_FS/**/*.lnp
-STM32_FS/**/*.sct
-STM32_FS/**/*.lst
-STM32_FS/**/*.map
-STM32_FS/**/*.iex
-STM32_FS/**/*.uvguix.*
-STM32_FS/**/*.uvoptx
-STM32_FS/**/*.scvd
-STM32_FS/**/*.bak
-STM32_FS/**/*.log
-STM32_FS/**/JLinkLog.txt
-
-# --- Keil 输出目录 ---
-STM32_FS/**/Objects/
-STM32_FS/**/Listings/
-STM32_FS/**/RTE/
-
-# --- STM32_FSCubeIDE ---
-STM32_FS/**/Debug/
-STM32_FS/**/Release/
-STM32_FS/**/.settings/
-STM32_FS/**/RemoteSystemsTempFiles/
-
-# --- STM32_FSCubeMX ---
-STM32_FS/**/*.mxproject
-STM32_FS/**/*.backup
-
-# --- IAR Embedded Workbench ---
-STM32_FS/**/*.ewt
-STM32_FS/**/*.ewd
-STM32_FS/**/*.ewp~
-STM32_FS/**/*.dni
-STM32_FS/**/*.dbgdt
-STM32_FS/**/*.wsdt
-STM32_FS/**/*.wspos
-STM32_FS/**/EWARM/Debug/
-STM32_FS/**/EWARM/Release/
-STM32_FS/**/EWARM/settings/
-
 
 ####################################
 # Windows 目录 (Visual Studio / VS Code)
