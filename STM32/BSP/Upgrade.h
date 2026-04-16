@@ -32,7 +32,8 @@
 #define UPGRADE_IMAGE_SHA256_SIZE      32u
 
 #define UPGRADE_BOOTCTRL_MAGIC         0x55424743UL  /* UBGC */
-#define UPGRADE_BOOTCTRL_VERSION       0x0001u
+#define UPGRADE_BOOTCTRL_VERSION       0x0002u
+#define UPGRADE_BOOTCTRL_VERSION_LEGACY 0x0001u
 
 #define UPGRADE_SLOT_FLAG_PRESENT      0x0001u
 
@@ -48,6 +49,7 @@
  * Bootloader 会把本次升级判定为超时失败并回退到 App。 */
 #define UPGRADE_ACTIVE_STATE_BOOT_LIMIT  3u
 #define UPGRADE_PENDING_BOOT_LIMIT       3u
+#define UPGRADE_WDG_RESET_LIMIT          3u
 
 #define UPGRADE_REQUEST_SOURCE_NONE    0x0000u
 #define UPGRADE_REQUEST_SOURCE_LOCAL   0x0001u
@@ -96,6 +98,8 @@ typedef struct
     uint16_t confirmed_slot;
     uint16_t pending_slot;
     uint16_t boot_attempts;
+    /* 连续 IWDG 复位计数。达到阈值后，Bootloader 会触发故障恢复策略。 */
+    uint16_t watchdog_reset_count;
     UpgradeSlotRecord slots[UPGRADE_SLOT_COUNT];
     uint16_t crc16;
 } UpgradeBootControl;

@@ -205,6 +205,7 @@ COM_StatusTypeDef BootFlash_BeginImage(BootloaderRuntime *runtime,
     runtime->state.active_boot_count = 0u;
     runtime->boot_control.pending_slot = UPGRADE_SLOT_NONE;
     runtime->boot_control.boot_attempts = 0u;
+    runtime->boot_control.watchdog_reset_count = 0u;
     Upgrade_ClearSlotRecord(&runtime->boot_control.slots[runtime->transfer_slot]);
 
     if (Upgrade_SaveState(&runtime->state) != 0u)

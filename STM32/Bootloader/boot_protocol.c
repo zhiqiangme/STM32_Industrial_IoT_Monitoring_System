@@ -8,6 +8,26 @@
 
 #include <stdio.h>
 
+static void BootProtocol_RefreshWatchdog(void)
+{
+    IWDG->KR = 0xAAAAu;
+}
+
+static uint8_t BootProtocol_IsForceStayMagic(uint8_t byte)
+{
+    if (byte == BOOT_FORCE_STAY_UART_MAGIC)
+    {
+        return 1u;
+    }
+
+    if (byte >= 'a' && byte <= 'z' && (byte - 32u) == BOOT_FORCE_STAY_UART_MAGIC)
+    {
+        return 1u;
+    }
+
+    return 0u;
+}
+
 /* 485 收发切换：拉低 PA5 进入接收态。 */
 static void BootProtocol_RxEnable(void)
 {
@@ -83,9 +103,56 @@ static uint8_t BootProtocol_YmodemReadByte(uint8_t *byte, uint32_t timeout_ms, v
 
     while ((HAL_GetTick() - start_tick) < timeout_ms)
     {
+        BootProtocol_RefreshWatchdog();
+
         if (BootProtocol_ReceiveByte(runtime, byte, BOOT_UART_READ_POLL_MS) != 0u)
         {
             return 1u;
+        }
+
+        if ((HAL_GetTick() - s_last_led_tick) >= BOOT_LED_TOGGLE_INTERVAL_MS)
+        {
+            s_last_led_tick = HAL_GetTick();
+            LED_R_TOGGLE();
+        }
+    }
+
+    return 0u;
+}
+
+uint8_t BootProtocol_CheckForceStayWindow(BootloaderRuntime *runtime, uint32_t window_ms)
+{
+    uint32_t start_tick;
+    uint8_t byte = 0u;
+    static uint32_t s_last_led_tick = 0u;
+
+    if (runtime == NULL || window_ms == 0u)
+    {
+        return 0u;
+    }
+
+    printf("[BOOT] force-stay window: send '%c' within %lu ms\r\n",
+           (char)BOOT_FORCE_STAY_UART_MAGIC,
+           (unsigned long)window_ms);
+
+    start_tick = HAL_GetTick();
+    if (s_last_led_tick == 0u)
+    {
+        s_last_led_tick = start_tick;
+    }
+
+    while ((HAL_GetTick() - start_tick) < window_ms)
+    {
+        BootProtocol_RefreshWatchdog();
+
+        if (BootProtocol_ReceiveByte(runtime, &byte, BOOT_UART_READ_POLL_MS) != 0u)
+        {
+            if (BootProtocol_IsForceStayMagic(byte) != 0u)
+            {
+                printf("[BOOT] force-stay magic received: 0x%02X\r\n",
+                       (unsigned int)byte);
+                return 1u;
+            }
         }
 
         if ((HAL_GetTick() - s_last_led_tick) >= BOOT_LED_TOGGLE_INTERVAL_MS)
@@ -202,6 +269,9 @@ void BootProtocol_PrintState(const BootloaderRuntime *runtime)
            runtime->boot_control.pending_slot,
            runtime->boot_control.boot_attempts,
            runtime->transfer_slot);
+    printf("[BOOT] watchdog resets=%u (limit=%u)\r\n",
+           runtime->boot_control.watchdog_reset_count,
+           UPGRADE_WDG_RESET_LIMIT);
 }
 
 void BootProtocol_PrintWaitingMessage(void)

@@ -24,10 +24,30 @@ typedef struct
     uint16_t crc16;
 } UpgradeStateImageLegacy;
 
+/* v1 启动控制页没有 watchdog_reset_count 字段。 */
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t payload_size;
+    uint16_t active_slot;
+    uint16_t confirmed_slot;
+    uint16_t pending_slot;
+    uint16_t boot_attempts;
+    UpgradeSlotRecord slots[UPGRADE_SLOT_COUNT];
+    uint16_t crc16;
+} UpgradeBootControlLegacy;
+
 static uint16_t Upgrade_BootControlPayloadSize(void)
 {
     return (uint16_t)(offsetof(UpgradeBootControl, crc16) -
                       offsetof(UpgradeBootControl, active_slot));
+}
+
+static uint16_t Upgrade_BootControlPayloadSizeLegacy(void)
+{
+    return (uint16_t)(offsetof(UpgradeBootControlLegacy, crc16) -
+                      offsetof(UpgradeBootControlLegacy, active_slot));
 }
 
 static uint8_t Upgrade_WriteBootControl(const UpgradeBootControl *control)
@@ -187,6 +207,7 @@ void Upgrade_InitBootControl(UpgradeBootControl *control)
     control->confirmed_slot = UPGRADE_SLOT_A;
     control->pending_slot = UPGRADE_SLOT_NONE;
     control->boot_attempts = 0u;
+    control->watchdog_reset_count = 0u;
     for (uint32_t i = 0u; i < UPGRADE_SLOT_COUNT; i++)
     {
         Upgrade_ClearSlotRecord(&control->slots[i]);
@@ -361,10 +382,75 @@ uint8_t Upgrade_SaveState(const UpgradeStateImage *image)
     return Upgrade_WriteStateImage(&copy);
 }
 
+/* App 主动请求进入 Bootloader 前，先把“当前实际运行槽”同步到 boot control。
+ * 这样连续刷机时，Bootloader 仍会以当前运行槽为基准选择“另一槽”作为下载目标，
+ * 不会因为 confirmed_slot 尚未延迟确认而沿用上一次稳定槽。 */
+static uint8_t Upgrade_SnapshotRunningSlotForBootRequest(void)
+{
+    UpgradeBootControl control;
+    uint16_t slot = Upgrade_GetRunningSlot();
+    uint8_t control_changed = 0u;
+
+    if (Upgrade_IsSlotIdValid(slot) == 0u)
+    {
+        return 1u;
+    }
+
+    if (Upgrade_LoadBootControl(&control) != 0u)
+    {
+        Upgrade_InitBootControl(&control);
+        control_changed = 1u;
+    }
+
+    if (control.active_slot != slot)
+    {
+        control.active_slot = slot;
+        control_changed = 1u;
+    }
+    if (control.confirmed_slot != slot)
+    {
+        control.confirmed_slot = slot;
+        control_changed = 1u;
+    }
+    if (control.pending_slot != UPGRADE_SLOT_NONE)
+    {
+        control.pending_slot = UPGRADE_SLOT_NONE;
+        control_changed = 1u;
+    }
+    if (control.boot_attempts != 0u)
+    {
+        control.boot_attempts = 0u;
+        control_changed = 1u;
+    }
+    if (control.watchdog_reset_count != 0u)
+    {
+        control.watchdog_reset_count = 0u;
+        control_changed = 1u;
+    }
+    if (Upgrade_IsSlotVectorValid(slot) != 0u &&
+        (control.slots[slot].flags & UPGRADE_SLOT_FLAG_PRESENT) == 0u)
+    {
+        control.slots[slot].flags |= UPGRADE_SLOT_FLAG_PRESENT;
+        control_changed = 1u;
+    }
+
+    if (control_changed != 0u)
+    {
+        return Upgrade_SaveBootControl(&control);
+    }
+
+    return 0u;
+}
+
 /* App 侧请求进入 Bootloader 时调用：写 REQUESTED 状态并记录来源。 */
 uint8_t Upgrade_RequestBootMode(uint16_t request_source, uint32_t target_fw_version)
 {
     UpgradeStateImage image;
+
+    if (Upgrade_SnapshotRunningSlotForBootRequest() != 0u)
+    {
+        return 2u;
+    }
 
     Upgrade_InitStateImage(&image);
     image.state = UPGRADE_STATE_REQUESTED;
@@ -386,6 +472,7 @@ uint8_t Upgrade_ClearState(void)
 uint8_t Upgrade_LoadBootControl(UpgradeBootControl *control)
 {
     const UpgradeBootControl *flash_control = (const UpgradeBootControl *)UPGRADE_BOOTCTRL_PAGE_ADDR;
+    const UpgradeBootControlLegacy *legacy_control = (const UpgradeBootControlLegacy *)UPGRADE_BOOTCTRL_PAGE_ADDR;
     uint16_t crc_calc;
 
     if (control == NULL)
@@ -399,22 +486,46 @@ uint8_t Upgrade_LoadBootControl(UpgradeBootControl *control)
         return 2u;
     }
 
-    if (flash_control->magic != UPGRADE_BOOTCTRL_MAGIC ||
-        flash_control->version != UPGRADE_BOOTCTRL_VERSION ||
-        flash_control->payload_size != Upgrade_BootControlPayloadSize())
+    if (flash_control->magic != UPGRADE_BOOTCTRL_MAGIC)
     {
         return 3u;
     }
 
-    crc_calc = Upgrade_CRC16((const uint8_t *)flash_control,
-                             (uint16_t)offsetof(UpgradeBootControl, crc16));
-    if (crc_calc != flash_control->crc16)
+    if (flash_control->version == UPGRADE_BOOTCTRL_VERSION &&
+        flash_control->payload_size == Upgrade_BootControlPayloadSize())
     {
-        return 4u;
+        crc_calc = Upgrade_CRC16((const uint8_t *)flash_control,
+                                 (uint16_t)offsetof(UpgradeBootControl, crc16));
+        if (crc_calc != flash_control->crc16)
+        {
+            return 4u;
+        }
+
+        *control = *flash_control;
+        return 0u;
     }
 
-    *control = *flash_control;
-    return 0u;
+    if (legacy_control->version == UPGRADE_BOOTCTRL_VERSION_LEGACY &&
+        legacy_control->payload_size == Upgrade_BootControlPayloadSizeLegacy())
+    {
+        crc_calc = Upgrade_CRC16((const uint8_t *)legacy_control,
+                                 (uint16_t)offsetof(UpgradeBootControlLegacy, crc16));
+        if (crc_calc != legacy_control->crc16)
+        {
+            return 4u;
+        }
+
+        Upgrade_InitBootControl(control);
+        control->active_slot = legacy_control->active_slot;
+        control->confirmed_slot = legacy_control->confirmed_slot;
+        control->pending_slot = legacy_control->pending_slot;
+        control->boot_attempts = legacy_control->boot_attempts;
+        memcpy(control->slots, legacy_control->slots, sizeof(control->slots));
+        control->watchdog_reset_count = 0u;
+        return 0u;
+    }
+
+    return 3u;
 }
 
 uint8_t Upgrade_SaveBootControl(const UpgradeBootControl *control)
@@ -737,6 +848,11 @@ uint8_t Upgrade_ConfirmRunningSlot(void)
     if (control.boot_attempts != 0u)
     {
         control.boot_attempts = 0u;
+        control_changed = 1u;
+    }
+    if (control.watchdog_reset_count != 0u)
+    {
+        control.watchdog_reset_count = 0u;
         control_changed = 1u;
     }
     if (Upgrade_IsSlotVectorValid(slot) != 0u &&

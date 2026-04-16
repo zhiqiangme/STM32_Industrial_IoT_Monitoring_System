@@ -12,6 +12,31 @@
 
 static BootloaderRuntime g_boot_runtime = {0};
 
+/* 如果 App 已开启 IWDG，发生看门狗复位后在 Bootloader 侧也要持续喂狗，
+ * 否则驻留升级时会被二次复位打断。 */
+static void BootMain_RefreshWatchdog(void)
+{
+    IWDG->KR = 0xAAAAu;
+}
+
+static void BootMain_InitForceStayInput(void)
+{
+    GPIO_InitTypeDef gpio = {0};
+
+    BOOT_FORCE_STAY_KEY_CLK_ENABLE();
+    gpio.Pin = BOOT_FORCE_STAY_KEY_PIN;
+    gpio.Mode = GPIO_MODE_INPUT;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(BOOT_FORCE_STAY_KEY_PORT, &gpio);
+}
+
+static uint8_t BootMain_IsForceStayKeyPressed(void)
+{
+    return (HAL_GPIO_ReadPin(BOOT_FORCE_STAY_KEY_PORT, BOOT_FORCE_STAY_KEY_PIN) ==
+            BOOT_FORCE_STAY_KEY_ACTIVE_LEVEL) ? 1u : 0u;
+}
+
 static const char *BootMain_SlotName(uint16_t slot)
 {
     if (slot == UPGRADE_SLOT_A)
@@ -172,6 +197,50 @@ static uint16_t BootMain_FindBestSlot(uint16_t exclude_slot)
     return UPGRADE_SLOT_NONE;
 }
 
+static void BootMain_UpdateWatchdogResetCounter(void)
+{
+    uint8_t was_iwdg_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET) ? 1u : 0u;
+    uint8_t changed = 0u;
+
+    if (was_iwdg_reset != 0u)
+    {
+        if (g_boot_runtime.boot_control.watchdog_reset_count < 0xFFFFu)
+        {
+            g_boot_runtime.boot_control.watchdog_reset_count++;
+            changed = 1u;
+        }
+    }
+    else if (g_boot_runtime.boot_control.watchdog_reset_count != 0u)
+    {
+        g_boot_runtime.boot_control.watchdog_reset_count = 0u;
+        changed = 1u;
+    }
+
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+
+    if (changed != 0u)
+    {
+        (void)BootFlash_SaveBootControl(&g_boot_runtime);
+    }
+
+    if (was_iwdg_reset != 0u)
+    {
+        printf("[BOOT] reset cause: IWDG (count=%u)\r\n",
+               g_boot_runtime.boot_control.watchdog_reset_count);
+    }
+}
+
+static uint8_t BootMain_CheckForceStayRequest(void)
+{
+    if (BootMain_IsForceStayKeyPressed() != 0u)
+    {
+        printf("[BOOT] force-stay key pressed, keep loader mode\r\n");
+        return 1u;
+    }
+
+    return BootProtocol_CheckForceStayWindow(&g_boot_runtime, BOOT_FORCE_STAY_UART_WINDOW_MS);
+}
+
 static void BootMain_NormalizeBootControl(void)
 {
     uint16_t best_slot;
@@ -224,10 +293,57 @@ static void BootMain_RollbackToSlot(uint16_t slot, uint16_t error_code)
     g_boot_runtime.boot_control.confirmed_slot = slot;
     g_boot_runtime.boot_control.pending_slot = UPGRADE_SLOT_NONE;
     g_boot_runtime.boot_control.boot_attempts = 0u;
+    g_boot_runtime.boot_control.watchdog_reset_count = 0u;
     (void)BootFlash_SaveBootControl(&g_boot_runtime);
 
     BootMain_MarkUpgradeFailed(error_code);
     g_boot_runtime.boot_slot = slot;
+}
+
+/* 连续看门狗复位达到阈值后，优先回退到另一有效槽；
+ * 如果没有可回退槽，则强制停留 Bootloader，避免继续跳入死循环 App。 */
+static uint8_t BootMain_HandleWatchdogRecovery(void)
+{
+    uint16_t suspect_slot = UPGRADE_SLOT_NONE;
+    uint16_t fallback_slot;
+
+    if (g_boot_runtime.boot_control.watchdog_reset_count < UPGRADE_WDG_RESET_LIMIT)
+    {
+        return 0u;
+    }
+
+    if (Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.pending_slot) != 0u)
+    {
+        suspect_slot = g_boot_runtime.boot_control.pending_slot;
+    }
+    else if (Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.active_slot) != 0u)
+    {
+        suspect_slot = g_boot_runtime.boot_control.active_slot;
+    }
+    else if (Upgrade_IsSlotIdValid(g_boot_runtime.boot_control.confirmed_slot) != 0u)
+    {
+        suspect_slot = g_boot_runtime.boot_control.confirmed_slot;
+    }
+
+    fallback_slot = BootMain_FindBestSlot(suspect_slot);
+    if (fallback_slot != UPGRADE_SLOT_NONE)
+    {
+        printf("[BOOT] watchdog reset count reached %u, rollback to slot %s\r\n",
+               g_boot_runtime.boot_control.watchdog_reset_count,
+               BootMain_SlotName(fallback_slot));
+        BootMain_RollbackToSlot(fallback_slot, BOOT_ERR_WDG_RECOVERY);
+        return 2u;
+    }
+
+    printf("[BOOT] watchdog reset count reached %u, no valid fallback slot, stay in loader\r\n",
+           g_boot_runtime.boot_control.watchdog_reset_count);
+    g_boot_runtime.boot_control.pending_slot = UPGRADE_SLOT_NONE;
+    g_boot_runtime.boot_control.boot_attempts = 0u;
+    g_boot_runtime.boot_control.watchdog_reset_count = 0u;
+    (void)BootFlash_SaveBootControl(&g_boot_runtime);
+    BootMain_MarkUpgradeFailed(BOOT_ERR_WDG_RECOVERY);
+
+    return 1u;
 }
 
 /* 一次完整 YMODEM 会话写完后的收尾逻辑。
@@ -377,6 +493,7 @@ uint8_t BootMain_ShouldStayInLoader(void)
 {
     uint8_t state_status;
     uint8_t boot_ctrl_status;
+    uint8_t watchdog_recovery_action;
     uint16_t boot_slot;
     UpgradeBootControl original_boot_control;
 
@@ -399,6 +516,7 @@ uint8_t BootMain_ShouldStayInLoader(void)
     {
         (void)BootFlash_SaveBootControl(&g_boot_runtime);
     }
+    BootMain_UpdateWatchdogResetCounter();
 
     if (BootFlash_IsUpgradeActiveState(g_boot_runtime.state.state) != 0u)
     {
@@ -423,6 +541,21 @@ uint8_t BootMain_ShouldStayInLoader(void)
             return 0u;
         }
 
+        return 1u;
+    }
+
+    watchdog_recovery_action = BootMain_HandleWatchdogRecovery();
+    if (watchdog_recovery_action == 1u)
+    {
+        return 1u;
+    }
+    if (watchdog_recovery_action == 2u)
+    {
+        return 0u;
+    }
+
+    if (BootMain_CheckForceStayRequest() != 0u)
+    {
         return 1u;
     }
 
@@ -458,6 +591,7 @@ void BootMain_Run(void)
     g_boot_runtime.boot_slot = UPGRADE_SLOT_NONE;
     g_boot_runtime.transfer_slot = UPGRADE_SLOT_NONE;
     BootProtocol_PrintBanner();
+    BootMain_InitForceStayInput();
     BootProtocol_InitUart(&g_boot_runtime);
 
     if (BootMain_ShouldStayInLoader() == 0u)
@@ -473,6 +607,8 @@ void BootMain_Run(void)
 
     while (1)
     {
+        BootMain_RefreshWatchdog();
+
         /* 这里每轮都等待一次完整 YMODEM 会话。
          * 成功则做最终校验并触发复位，失败则保持驻留，允许 PC 端重新发起。 */
         status = BootProtocol_RunYmodemSession(&g_boot_runtime, &result);

@@ -23,6 +23,7 @@
 #define BOOT_ERR_VERIFY_CRC32            0x000Eu
 #define BOOT_ERR_VERIFY_SHA256           0x000Fu
 #define BOOT_ERR_VECTOR_INVALID          0x0010u
+#define BOOT_ERR_WDG_RECOVERY            0x0011u
 
 #define BOOT_UART                         USART3
 #define BOOT_485_EN_PORT                  GPIOA
@@ -36,5 +37,12 @@
 #define BOOT_RS485_RX_SETTLE_DELAY        200u
 #define BOOT_LED_TOGGLE_INTERVAL_MS       200u
 #define BOOT_UART_READ_POLL_MS            20u
+
+#define BOOT_FORCE_STAY_KEY_PORT          GPIOE
+#define BOOT_FORCE_STAY_KEY_PIN           GPIO_PIN_4
+#define BOOT_FORCE_STAY_KEY_ACTIVE_LEVEL  GPIO_PIN_RESET
+#define BOOT_FORCE_STAY_KEY_CLK_ENABLE()  do { __HAL_RCC_GPIOE_CLK_ENABLE(); } while (0)
+#define BOOT_FORCE_STAY_UART_WINDOW_MS    2500u
+#define BOOT_FORCE_STAY_UART_MAGIC        ((uint8_t)'B')
 
 #endif

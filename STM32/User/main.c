@@ -15,8 +15,14 @@ extern TIM_HandleTypeDef g_tim2_handle;
 #define APP_RT_THREAD_STACK_SIZE   4096u
 #define APP_RT_THREAD_PRIORITY     8u
 #define APP_RT_THREAD_TIMESLICE    20u
+#define APP_IWDG_RELOAD            1875u
+#define APP_UPGRADE_CONFIRM_DELAY_MS               60000u
+#define APP_UPGRADE_CONFIRM_RETRY_MS                5000u
+#define APP_UPGRADE_CONFIRM_MIN_HEALTHY_SAMPLES        3u
 
 static FlowmeterHandle g_flow_meter;
+static IWDG_HandleTypeDef g_iwdg_handle = {0};
+static uint8_t g_iwdg_ready = 0u;
 
 /* 按键状态 (在主循环首次运行时根据实际引脚状态初始化) */
 static uint8_t g_key0_last = 1;  /* PE4, 低电平触发 */
@@ -39,6 +45,10 @@ static volatile uint16_t g_relay_di_state = 0;
 /* Modbus PUSH_SEQ (上报序号) */
 static volatile uint16_t g_push_seq = 0;
 static G780sRemoteConfig g_runtime_config;
+static uint32_t g_upgrade_confirm_start_tick = 0u;
+static uint32_t g_upgrade_confirm_next_retry_tick = 0u;
+static uint16_t g_upgrade_health_samples = 0u;
+static uint8_t g_upgrade_confirmed = 0u;
 
 /**
  * @brief 把放大 100 倍保存的整型配置值转换为浮点数。
@@ -53,6 +63,89 @@ static float App_ConfigToFloat2(uint32_t value_x100)
 static uint8_t App_IsManualMode(void)
 {
     return (g_runtime_config.control_mode == G780S_MODE_MANUAL) ? 1u : 0u;
+}
+
+static void App_IwdgInit(void)
+{
+    g_iwdg_handle.Instance = IWDG;
+    g_iwdg_handle.Init.Prescaler = IWDG_PRESCALER_256;
+    g_iwdg_handle.Init.Reload = APP_IWDG_RELOAD;
+
+    if (HAL_IWDG_Init(&g_iwdg_handle) == HAL_OK)
+    {
+        g_iwdg_ready = 1u;
+        printf("[IWDG] enabled (reload=%u)\r\n", (unsigned int)APP_IWDG_RELOAD);
+    }
+    else
+    {
+        g_iwdg_ready = 0u;
+        printf("[IWDG] init failed\r\n");
+    }
+}
+
+static void App_IwdgKick(void)
+{
+    if (g_iwdg_ready != 0u)
+    {
+        (void)HAL_IWDG_Refresh(&g_iwdg_handle);
+    }
+}
+
+static void App_InitUpgradeConfirmPolicy(void)
+{
+    g_upgrade_confirm_start_tick = HAL_GetTick();
+    g_upgrade_confirm_next_retry_tick = g_upgrade_confirm_start_tick + APP_UPGRADE_CONFIRM_DELAY_MS;
+    g_upgrade_health_samples = 0u;
+    g_upgrade_confirmed = 0u;
+
+    printf("[UPGRADE] confirm delayed: wait %lu ms and >=%u healthy samples\r\n",
+           (unsigned long)APP_UPGRADE_CONFIRM_DELAY_MS,
+           (unsigned int)APP_UPGRADE_CONFIRM_MIN_HEALTHY_SAMPLES);
+}
+
+static void App_RecordUpgradeHealthSample(uint8_t pt100_ok, uint8_t weight_ok, uint8_t relay_ok)
+{
+    if ((pt100_ok != 0u || weight_ok != 0u || relay_ok != 0u) &&
+        g_upgrade_health_samples < 0xFFFFu)
+    {
+        g_upgrade_health_samples++;
+    }
+}
+
+static void App_TryConfirmRunningSlot(void)
+{
+    uint32_t now;
+
+    if (g_upgrade_confirmed != 0u)
+    {
+        return;
+    }
+
+    now = HAL_GetTick();
+    if ((now - g_upgrade_confirm_start_tick) < APP_UPGRADE_CONFIRM_DELAY_MS)
+    {
+        return;
+    }
+    if (g_upgrade_health_samples < APP_UPGRADE_CONFIRM_MIN_HEALTHY_SAMPLES)
+    {
+        return;
+    }
+    if ((int32_t)(now - g_upgrade_confirm_next_retry_tick) < 0)
+    {
+        return;
+    }
+
+    if (Upgrade_ConfirmRunningSlot() == 0u)
+    {
+        g_upgrade_confirmed = 1u;
+        printf("[UPGRADE] running slot confirmed (healthy_samples=%u)\r\n",
+               (unsigned int)g_upgrade_health_samples);
+        return;
+    }
+
+    g_upgrade_confirm_next_retry_tick = now + APP_UPGRADE_CONFIRM_RETRY_MS;
+    printf("[UPGRADE] running slot confirm failed, retry in %lu ms\r\n",
+           (unsigned long)APP_UPGRADE_CONFIRM_RETRY_MS);
 }
 
 static void App_HandlePendingUpgrade(void)
@@ -82,6 +175,7 @@ static void App_SystemInit(void)
 
     TIM2_Init();
     HAL_TIM_Base_Start(&g_tim2_handle);
+    App_IwdgInit();
 }
 
 static void App_StartScheduler(void);
@@ -221,14 +315,7 @@ static void App_MainThreadEntry(void *parameter)
                    App_ConfigToFloat2(g_runtime_config.pulses_per_liter_x100),
                    App_ConfigToFloat2(g_runtime_config.hz_per_lpm_x100));
 
-    if (Upgrade_ConfirmRunningSlot() == 0u)
-    {
-        printf("[UPGRADE] Running slot confirmed\r\n");
-    }
-    else
-    {
-        printf("[UPGRADE] Running slot confirm skipped/failed\r\n");
-    }
+    App_InitUpgradeConfirmPolicy();
 
     /* ===== 文件系统 (W25Q128 + LittleFS) ===== */
     printf(">>> Init File System...\r\n");
@@ -248,10 +335,13 @@ static void App_MainThreadEntry(void *parameter)
 
     while (1)
     {
+        App_IwdgKick();
+
         /* ===== 高优先级任务 ===== */
         App_HandleKeys();
         G780s_Process();  /* 响应G780S读取请求 */
         App_HandlePendingUpgrade();
+        App_TryConfirmRunningSlot();
 
         /* LED闪烁 */
         static uint32_t led_tick = 0;
@@ -260,7 +350,7 @@ static void App_MainThreadEntry(void *parameter)
         {
             led_tick = HAL_GetTick();
             LED_R_TOGGLE();
-			 // LED_G_TOGGLE();
+			//  LED_G_TOGGLE();
         }
 
         /* 每60秒刷新一次数据缓冲到Flash */
@@ -268,6 +358,7 @@ static void App_MainThreadEntry(void *parameter)
         {
             last_flush_tick = HAL_GetTick();
             DataLogger_Flush();
+            App_IwdgKick();
         }
 
 
@@ -380,6 +471,7 @@ static void App_MainThreadEntry(void *parameter)
                 g_flow_total_l = total_l;
             }
             printf("[FLOW] %.2fL/min, %.3fL\r\n", g_flow_rate_lpm, g_flow_total_l);
+            App_IwdgKick();
             
             App_HandleKeys();
 
@@ -398,6 +490,7 @@ static void App_MainThreadEntry(void *parameter)
             }
             
             App_HandleKeys();
+            App_IwdgKick();
             delay_ms(30);
 
             /* Weight称重 */
@@ -429,6 +522,7 @@ static void App_MainThreadEntry(void *parameter)
             }
             
             App_HandleKeys();
+            App_IwdgKick();
             delay_ms(30);
             
             /* 继电器状态 */
@@ -440,6 +534,7 @@ static void App_MainThreadEntry(void *parameter)
             }
             
             delay_ms(30);
+            App_IwdgKick();
             
             if (Relay_ReadInputPack(&di_mask) == 0)
             {
@@ -447,6 +542,8 @@ static void App_MainThreadEntry(void *parameter)
                 printf("[IO] DO=0x%04X DI=0x%04X\r\n\r\n", g_relay_do_state, g_relay_di_state);
                 App_HandleRelayInputs(di_mask);
             }
+
+            App_RecordUpgradeHealthSample(pt100_ok, weight_ok, relay_ok);
 
             /* ===== 更新Modbus从站寄存器 (供G780S读取) ===== */
             {
@@ -515,6 +612,7 @@ static void App_MainThreadEntry(void *parameter)
                                     ((g_runtime_config.control_mode == G780S_MODE_AUTO) ? 0x08 : 0);
                 
                 G780s_UpdateData(&slave_data);
+                App_IwdgKick();
             }
         }
 
