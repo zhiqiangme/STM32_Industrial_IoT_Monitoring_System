@@ -15,8 +15,8 @@ namespace OTA.ViewModels;
 public abstract class SerialUpgradeViewModelBase : ObservableObject
 {
     private const string DefaultObjectsDirectory = @"D:\Project\STM32_Mill\STM32\MDK-ARM\Objects";
-    private const string DefaultSlotAImagePath = @"D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App_A.bin";
-    private const string DefaultSlotBImagePath = @"D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App_B.bin";
+    private const string DefaultSlotAImagePath = @"D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App_A\App_A.bin";
+    private const string DefaultSlotBImagePath = @"D:\Project\STM32_Mill\STM32\MDK-ARM\Objects\App_B\App_B.bin";
 
     private readonly PortDiscoveryService _portDiscoveryService;
     private readonly LocalUpgradeCoordinator _upgradeCoordinator;

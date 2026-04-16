@@ -89,25 +89,31 @@ public sealed class LocalUpgradeCoordinator
         string disconnectedPortMessageTemplate,
         out string errorMessage)
     {
-        var availablePorts = System.IO.Ports.SerialPort.GetPortNames();
-        if (!availablePorts.Any(portName => string.Equals(portName, serialSettings.PortName, StringComparison.OrdinalIgnoreCase)))
+        string? localErrorMessage = null;
+        var success = SerialOperationGate.Run(() =>
         {
-            errorMessage = string.Format(
-                CultureInfo.InvariantCulture,
-                disconnectedPortMessageTemplate,
-                serialSettings.PortName);
-            return false;
-        }
+            var availablePorts = System.IO.Ports.SerialPort.GetPortNames();
+            if (!availablePorts.Any(portName => string.Equals(portName, serialSettings.PortName, StringComparison.OrdinalIgnoreCase)))
+            {
+                localErrorMessage = string.Format(
+                    CultureInfo.InvariantCulture,
+                    disconnectedPortMessageTemplate,
+                    serialSettings.PortName);
+                return false;
+            }
 
-        if (!SerialPortHelper.TryOpen(serialSettings.PortName, serialSettings.BaudRate, out var serialPort, out var openErrorMessage))
-        {
-            errorMessage = openErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。";
-            return false;
-        }
+            if (!SerialPortHelper.TryOpen(serialSettings.PortName, serialSettings.BaudRate, out var serialPort, out var openErrorMessage))
+            {
+                localErrorMessage = openErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。";
+                return false;
+            }
 
-        serialPort?.Dispose();
-        errorMessage = string.Empty;
-        return true;
+            serialPort?.Dispose();
+            return true;
+        });
+
+        errorMessage = success ? string.Empty : (localErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。");
+        return success;
     }
 
     /// <summary>
@@ -230,6 +236,18 @@ public sealed class LocalUpgradeCoordinator
     /// </summary>
     public string GetRecommendedLocalImagePath(string objectsDirectory, FirmwareSlot runningSlot)
     {
+        if (TryFindSlotImagePaths(objectsDirectory, out var slotAPath, out var slotBPath))
+        {
+            return runningSlot switch
+            {
+                FirmwareSlot.A when !string.IsNullOrWhiteSpace(slotBPath) => slotBPath,
+                FirmwareSlot.B when !string.IsNullOrWhiteSpace(slotAPath) => slotAPath,
+                _ when !string.IsNullOrWhiteSpace(slotAPath) => slotAPath,
+                _ when !string.IsNullOrWhiteSpace(slotBPath) => slotBPath,
+                _ => Path.Combine(objectsDirectory, UpgradeAbSupport.GetRecommendedFileName(runningSlot))
+            };
+        }
+
         return Path.Combine(objectsDirectory, UpgradeAbSupport.GetRecommendedFileName(runningSlot));
     }
 
@@ -258,32 +276,42 @@ public sealed class LocalUpgradeCoordinator
             return false;
         }
 
-        var slotAPath = Path.Combine(normalizedDirectory, "App_A.bin");
-        var slotBPath = Path.Combine(normalizedDirectory, "App_B.bin");
-        var hasSlotA = File.Exists(slotAPath);
-        var hasSlotB = File.Exists(slotBPath);
-
-        if (!hasSlotA && !hasSlotB)
+        if (!TryFindSlotImagePaths(normalizedDirectory, out var slotAPath, out var slotBPath))
         {
-            errorMessage = $"所选目录中未找到 App_A.bin 或 App_B.bin：{normalizedDirectory}";
+            errorMessage = $"所选目录及其 MDK-ARM\\Objects 子目录中未找到 App_A.bin 或 App_B.bin：{normalizedDirectory}";
             return false;
         }
 
-        var targetFileName = runningSlot switch
+        var hasSlotA = !string.IsNullOrWhiteSpace(slotAPath);
+        var hasSlotB = !string.IsNullOrWhiteSpace(slotBPath);
+
+        if (!hasSlotA && !hasSlotB)
         {
-            FirmwareSlot.A => UpgradeAbSupport.GetRecommendedFileName(FirmwareSlot.A),
-            FirmwareSlot.B => UpgradeAbSupport.GetRecommendedFileName(FirmwareSlot.B),
-            _ => ResolvePreferredImageFileName(currentImagePath, hasSlotA, hasSlotB)
+            errorMessage = $"所选目录及其 MDK-ARM\\Objects 子目录中未找到 App_A.bin 或 App_B.bin：{normalizedDirectory}";
+            return false;
+        }
+
+        imagePath = runningSlot switch
+        {
+            FirmwareSlot.A when hasSlotB => slotBPath,
+            FirmwareSlot.B when hasSlotA => slotAPath,
+            _ => ResolvePreferredImagePath(currentImagePath, slotAPath, slotBPath)
         };
 
-        imagePath = Path.Combine(normalizedDirectory, targetFileName);
-        if (File.Exists(imagePath))
+        if (!string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath))
         {
             errorMessage = string.Empty;
             return true;
         }
 
-        errorMessage = $"所选目录中缺少 {targetFileName}。请确认目录内包含正确的升级文件。";
+        var targetFileName = runningSlot switch
+        {
+            FirmwareSlot.A => "App_B.bin",
+            FirmwareSlot.B => "App_A.bin",
+            _ => "App_A.bin / App_B.bin"
+        };
+
+        errorMessage = $"已找到镜像目录，但缺少 {targetFileName}。请确认目录内包含正确的升级文件。";
         return false;
     }
 
@@ -344,24 +372,159 @@ public sealed class LocalUpgradeCoordinator
     /// <summary>
     /// 在槽位未知时，根据当前文件名和目录内容决定优先使用哪一个镜像。
     /// </summary>
-    private static string ResolvePreferredImageFileName(string? currentImagePath, bool hasSlotA, bool hasSlotB)
+    private static string ResolvePreferredImagePath(string? currentImagePath, string? slotAPath, string? slotBPath)
     {
         var currentFileName = Path.GetFileName(currentImagePath ?? string.Empty);
-        if (string.Equals(currentFileName, "App_A.bin", StringComparison.OrdinalIgnoreCase) && hasSlotA)
+        if (string.Equals(currentFileName, "App_A.bin", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(slotAPath))
         {
-            return currentFileName;
+            return slotAPath;
         }
 
-        if (string.Equals(currentFileName, "App_B.bin", StringComparison.OrdinalIgnoreCase) && hasSlotB)
+        if (string.Equals(currentFileName, "App_B.bin", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(slotBPath))
         {
-            return currentFileName;
+            return slotBPath;
         }
 
-        if (hasSlotA)
+        if (!string.IsNullOrWhiteSpace(slotAPath))
         {
-            return "App_A.bin";
+            return slotAPath;
         }
 
-        return "App_B.bin";
+        return slotBPath ?? string.Empty;
+    }
+
+    /// <summary>
+    /// 在用户所选目录中分别定位 A/B 槽镜像文件。
+    /// </summary>
+    private static bool TryFindSlotImagePaths(string selectedDirectory, out string slotAPath, out string slotBPath)
+    {
+        slotAPath = string.Empty;
+        slotBPath = string.Empty;
+
+        foreach (var searchRoot in EnumerateCandidateSearchRoots(selectedDirectory))
+        {
+            TryAssignSlotImagePath(searchRoot, "App_A.bin", ref slotAPath);
+            TryAssignSlotImagePath(searchRoot, "App_B.bin", ref slotBPath);
+
+            if (!string.IsNullOrWhiteSpace(slotAPath) || !string.IsNullOrWhiteSpace(slotBPath))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 枚举可用于升级镜像查找的搜索根目录。
+    /// </summary>
+    private static IEnumerable<string> EnumerateCandidateSearchRoots(string selectedDirectory)
+    {
+        var yieldedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (Directory.Exists(selectedDirectory) && yieldedDirectories.Add(selectedDirectory))
+        {
+            yield return selectedDirectory;
+        }
+
+        var currentDirectory = new DirectoryInfo(selectedDirectory);
+        while (currentDirectory is not null)
+        {
+            if (IsMdkArmObjectsDirectory(currentDirectory.FullName) &&
+                yieldedDirectories.Add(currentDirectory.FullName))
+            {
+                yield return currentDirectory.FullName;
+                break;
+            }
+
+            currentDirectory = currentDirectory.Parent;
+        }
+
+        var directObjectsDirectory = Path.Combine(selectedDirectory, "Objects");
+        if (IsMdkArmObjectsDirectory(directObjectsDirectory) && yieldedDirectories.Add(directObjectsDirectory))
+        {
+            yield return directObjectsDirectory;
+        }
+
+        IEnumerable<string> recursiveObjectsDirectories;
+        try
+        {
+            recursiveObjectsDirectories = Directory
+                .EnumerateDirectories(selectedDirectory, "Objects", SearchOption.AllDirectories)
+                .Where(IsMdkArmObjectsDirectory)
+                .OrderBy(path => path.Length)
+                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (IOException)
+        {
+            yield break;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            yield break;
+        }
+
+        foreach (var candidateDirectory in recursiveObjectsDirectories)
+        {
+            if (yieldedDirectories.Add(candidateDirectory))
+            {
+                yield return candidateDirectory;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 判断目录是否为 MDK-ARM\Objects。
+    /// </summary>
+    private static bool IsMdkArmObjectsDirectory(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return false;
+        }
+
+        var directoryName = Path.GetFileName(directoryPath);
+        if (!string.Equals(directoryName, "Objects", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var parentDirectory = Directory.GetParent(directoryPath);
+        return string.Equals(parentDirectory?.Name, "MDK-ARM", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 在指定搜索根目录下查找目标镜像文件。
+    /// </summary>
+    private static void TryAssignSlotImagePath(string searchRoot, string fileName, ref string resolvedPath)
+    {
+        if (!string.IsNullOrWhiteSpace(resolvedPath) || !Directory.Exists(searchRoot))
+        {
+            return;
+        }
+
+        var directFilePath = Path.Combine(searchRoot, fileName);
+        if (File.Exists(directFilePath))
+        {
+            resolvedPath = directFilePath;
+            return;
+        }
+
+        try
+        {
+            resolvedPath = Directory
+                .EnumerateFiles(searchRoot, fileName, SearchOption.AllDirectories)
+                .OrderBy(path => path.Length)
+                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault() ?? string.Empty;
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 }

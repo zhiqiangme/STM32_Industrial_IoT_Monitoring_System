@@ -10,6 +10,8 @@ namespace OTA.Core;
 /// </summary>
 public static class UpgradeAbSupport
 {
+    private const uint BootloaderBaseAddress = 0x08000000u;
+    private const uint BootloaderMaxSize = 0x00008000u;
     private const uint SlotABaseAddress = 0x08008000u;
     private const uint SlotBBaseAddress = 0x08043000u;
     private const uint SlotMaxSize = 0x0003B000u;
@@ -56,7 +58,7 @@ public static class UpgradeAbSupport
         if (detectedSlot == FirmwareSlot.Unknown)
         {
             throw new InvalidOperationException(
-                $"无法识别镜像槽位，复位向量为 0x{resetHandler:X8}，文件名也不包含 App_A.bin / App_B.bin。");
+                $"无法识别镜像槽位，复位向量为 0x{resetHandler:X8}，文件名也不包含 Bootloader / App_A.bin / App_B.bin。");
         }
 
         return new FirmwareImageInfo(imagePath, detectedSlot, fileNameSlot, vectorSlot, initialStackPointer, resetHandler);
@@ -101,6 +103,12 @@ public static class UpgradeAbSupport
         }
 
         var upperName = fileName.ToUpperInvariant();
+        if (upperName.Contains("BOOTLOADER", StringComparison.Ordinal) ||
+            upperName.StartsWith("BOOT", StringComparison.Ordinal))
+        {
+            return FirmwareSlot.Bootloader;
+        }
+
         if (upperName.Contains("APP_A", StringComparison.Ordinal))
         {
             return FirmwareSlot.A;
@@ -116,6 +124,11 @@ public static class UpgradeAbSupport
 
     private static FirmwareSlot ResolveSlotFromAddress(uint address)
     {
+        if (address >= BootloaderBaseAddress && address < BootloaderBaseAddress + BootloaderMaxSize)
+        {
+            return FirmwareSlot.Bootloader;
+        }
+
         if (address >= SlotABaseAddress && address < SlotABaseAddress + SlotMaxSize)
         {
             return FirmwareSlot.A;

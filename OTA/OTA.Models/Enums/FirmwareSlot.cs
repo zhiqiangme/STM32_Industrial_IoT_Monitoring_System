@@ -8,7 +8,8 @@ public enum FirmwareSlot
 {
     Unknown = 0,
     A = 1,
-    B = 2
+    B = 2,
+    Bootloader = 3
 }
 
 /// <summary>
@@ -25,6 +26,7 @@ public static class FirmwareSlotExtensions
         {
             FirmwareSlot.A => "A",
             FirmwareSlot.B => "B",
+            FirmwareSlot.Bootloader => "Bootloader",
             _ => "未知"
         };
     }
