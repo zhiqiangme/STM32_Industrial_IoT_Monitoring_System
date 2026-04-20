@@ -12,84 +12,68 @@ public sealed class LocalUpgradeCoordinator
     /// <summary>
     /// 解析并校验串口号、波特率和超时，生成统一的串口设置对象。
     /// </summary>
-    public bool TryReadSerialSettings(
+    public OperationResult<LocalSerialSettings> ReadSerialSettings(
         string portName,
         string baudRateText,
-        string timeoutText,
-        out LocalSerialSettings settings,
-        out string errorMessage)
+        string timeoutText)
     {
-        settings = default;
-
         if (string.IsNullOrWhiteSpace(portName))
         {
-            errorMessage = "请先选择串口号。";
-            return false;
+            return OperationResult<LocalSerialSettings>.Failure(OtaErrorCode.PortNameRequired, "请先选择串口号。");
         }
 
         if (!int.TryParse(baudRateText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var baudRate) || baudRate <= 0)
         {
-            errorMessage = "波特率必须是正整数。";
-            return false;
+            return OperationResult<LocalSerialSettings>.Failure(OtaErrorCode.InvalidBaudRate, "波特率必须是正整数。");
         }
 
         if (!double.TryParse(timeoutText, NumberStyles.Float, CultureInfo.InvariantCulture, out var timeoutSeconds) || timeoutSeconds <= 0)
         {
-            errorMessage = "超时必须是大于 0 的数字。";
-            return false;
+            return OperationResult<LocalSerialSettings>.Failure(OtaErrorCode.InvalidTimeout, "超时必须是大于 0 的数字。");
         }
 
-        settings = new LocalSerialSettings(portName, baudRate, timeoutSeconds);
-        errorMessage = string.Empty;
-        return true;
+        return OperationResult<LocalSerialSettings>.Success(new LocalSerialSettings(portName, baudRate, timeoutSeconds));
     }
 
     /// <summary>
     /// 校验固件路径并组装升级执行参数。
     /// </summary>
-    public bool TryBuildLocalUpgradeOptions(
+    public OperationResult<LocalUpgradeOptions> BuildLocalUpgradeOptions(
         LocalSerialSettings serialSettings,
-        string imagePath,
-        out LocalUpgradeOptions options,
-        out string errorMessage)
+        string imagePath)
     {
-        options = default;
-
         var normalizedPath = imagePath.Trim();
         if (string.IsNullOrWhiteSpace(normalizedPath))
         {
-            errorMessage = "STM32 程序路径不能为空。";
-            return false;
+            return OperationResult<LocalUpgradeOptions>.Failure(OtaErrorCode.ImagePathRequired, "STM32 程序路径不能为空。");
         }
 
         if (!File.Exists(normalizedPath))
         {
-            errorMessage = $"STM32 程序不存在：{normalizedPath}";
-            return false;
+            return OperationResult<LocalUpgradeOptions>.Failure(OtaErrorCode.ImageFileNotFound, $"STM32 程序不存在：{normalizedPath}");
         }
 
-        options = new LocalUpgradeOptions(serialSettings.PortName, serialSettings.BaudRate, serialSettings.TimeoutSeconds, normalizedPath);
-        errorMessage = string.Empty;
-        return true;
+        return OperationResult<LocalUpgradeOptions>.Success(
+            new LocalUpgradeOptions(serialSettings.PortName, serialSettings.BaudRate, serialSettings.TimeoutSeconds, normalizedPath));
     }
 
     /// <summary>
     /// 使用本地升级默认提示文案检查串口是否存在且可打开。
     /// </summary>
-    public bool TryValidatePortAvailability(LocalSerialSettings serialSettings, out string errorMessage)
+    public OperationResult ValidatePortAvailability(LocalSerialSettings serialSettings)
     {
-        return TryValidatePortAvailability(serialSettings, "串口 {0} 当前未连接。请先连接 USB 转 485 串口设备并确认端口号。", out errorMessage);
+        return ValidatePortAvailability(serialSettings, "串口 {0} 当前未连接。请先连接 USB 转 485 串口设备并确认端口号。");
     }
 
     /// <summary>
     /// 按指定模式文案检查串口是否存在且可打开。
     /// </summary>
-    public bool TryValidatePortAvailability(
+    public OperationResult ValidatePortAvailability(
         LocalSerialSettings serialSettings,
-        string disconnectedPortMessageTemplate,
-        out string errorMessage)
+        string disconnectedPortMessageTemplate)
     {
         string? localErrorMessage = null;
+        OtaError? localError = null;
         var success = SerialOperationGate.Run(() =>
         {
             var availablePorts = System.IO.Ports.SerialPort.GetPortNames();
@@ -99,12 +83,14 @@ public sealed class LocalUpgradeCoordinator
                     CultureInfo.InvariantCulture,
                     disconnectedPortMessageTemplate,
                     serialSettings.PortName);
+                localError = OtaErrorMapper.Create(OtaErrorCode.PortUnavailable, localErrorMessage);
                 return false;
             }
 
             if (!SerialPortHelper.TryOpen(serialSettings.PortName, serialSettings.BaudRate, out var serialPort, out var openErrorMessage))
             {
                 localErrorMessage = openErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。";
+                localError = OtaErrorMapper.MapPortOpenFailure(localErrorMessage);
                 return false;
             }
 
@@ -112,26 +98,28 @@ public sealed class LocalUpgradeCoordinator
             return true;
         });
 
-        errorMessage = success ? string.Empty : (localErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。");
-        return success;
+        if (success)
+        {
+            return OperationResult.Success();
+        }
+
+        return OperationResult.Failure(localError ?? OtaErrorMapper.Create(
+            OtaErrorCode.PortOpenFailed,
+            localErrorMessage ?? $"无法打开串口 {serialSettings.PortName}。"));
     }
 
     /// <summary>
     /// 检查镜像文件并识别其槽位信息。
     /// </summary>
-    public bool TryInspectImage(string imagePath, out FirmwareImageInfo imageInfo, out string errorMessage)
+    public OperationResult<FirmwareImageInfo> InspectImage(string imagePath)
     {
         try
         {
-            imageInfo = UpgradeAbSupport.InspectImage(imagePath);
-            errorMessage = string.Empty;
-            return true;
+            return OperationResult<FirmwareImageInfo>.Success(UpgradeAbSupport.InspectImage(imagePath));
         }
         catch (Exception ex)
         {
-            imageInfo = default;
-            errorMessage = $"STM32 程序槽位识别失败：{ex.Message}";
-            return false;
+            return OperationResult<FirmwareImageInfo>.Failure(OtaErrorMapper.MapImageInspectionException(ex));
         }
     }
 
@@ -155,7 +143,7 @@ public sealed class LocalUpgradeCoordinator
                     FirmwareSlot.Unknown,
                     "未读到槽位，请手动选择另一槽镜像。",
                     false,
-                    result.errorMessage);
+                    result.errorMessage is null ? null : OtaErrorMapper.MapRunningSlotFailure(result.errorMessage));
             }
 
             if (result.slot == FirmwareSlot.Unknown)
@@ -163,7 +151,8 @@ public sealed class LocalUpgradeCoordinator
                 return new RunningSlotRefreshResult(
                     FirmwareSlot.Unknown,
                     "设备返回槽位 unknown，请手动选择另一槽镜像。",
-                    false);
+                    false,
+                    OtaErrorMapper.Create(OtaErrorCode.RunningSlotUnknown, "设备返回槽位 unknown，请手动选择另一槽镜像。"));
             }
 
             return new RunningSlotRefreshResult(
@@ -177,37 +166,35 @@ public sealed class LocalUpgradeCoordinator
                 FirmwareSlot.Unknown,
                 "未读到槽位，请手动选择另一槽镜像。",
                 false,
-                ex.Message);
+                OtaErrorMapper.MapRunningSlotFailure(ex.Message));
         }
     }
 
     /// <summary>
     /// 升级前校验镜像与槽位关系，并生成启动日志内容。
     /// </summary>
-    public bool TryPrepareLocalUpgrade(
+    public OperationResult<LocalUpgradePreparation> PrepareLocalUpgrade(
         LocalUpgradeOptions options,
         FirmwareSlot runningSlot,
-        string modeName,
-        out LocalUpgradePreparation preparation,
-        out string errorMessage)
+        string modeName)
     {
-        preparation = default;
-
-        if (!TryInspectImage(options.ImagePath, out var imageInfo, out errorMessage))
+        var imageResult = InspectImage(options.ImagePath);
+        if (!imageResult.IsSuccess)
         {
-            return false;
+            return OperationResult<LocalUpgradePreparation>.Failure(imageResult.Error!);
         }
 
+        var imageInfo = imageResult.Value;
         if (runningSlot != FirmwareSlot.Unknown && imageInfo.DetectedSlot == runningSlot)
         {
             var recommendedFile = UpgradeAbSupport.GetRecommendedFileName(runningSlot);
-            errorMessage = $"设备当前运行槽位为 {runningSlot.ToDisplayText()}，不能继续发送同槽镜像。请改选 {recommendedFile}。";
-            return false;
+            return OperationResult<LocalUpgradePreparation>.Failure(
+                OtaErrorCode.SameSlotUpgradeNotAllowed,
+                $"设备当前运行槽位为 {runningSlot.ToDisplayText()}，不能继续发送同槽镜像。请改选 {recommendedFile}。");
         }
 
-        preparation = new LocalUpgradePreparation(options, imageInfo, runningSlot, BuildStartupMessages(modeName, runningSlot, imageInfo));
-        errorMessage = string.Empty;
-        return true;
+        return OperationResult<LocalUpgradePreparation>.Success(
+            new LocalUpgradePreparation(options, imageInfo, runningSlot, BuildStartupMessages(modeName, runningSlot, imageInfo)));
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 #include "Temperature.h"
+#include "BusService.h"
 #include "Modbus_Master.h"
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +42,15 @@ uint8_t Temperature_Read(float *temp_val)
 {
     uint8_t tx_buf[8];
     uint8_t rx_buf[20];
+    uint16_t crc;
+    uint16_t raw_data;
+    float val;
+
+    /* PT100 与其他现场设备共享 USART2，总线事务需要互斥保护。 */
+    if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
+    {
+        return 1;
+    }
 
     /* 组帧：01 04 00 03 00 01 CRC_L CRC_H */
     tx_buf[0] = PT100_SLAVE_ID;
@@ -50,7 +60,7 @@ uint8_t Temperature_Read(float *temp_val)
     tx_buf[4] = 0x00;
     tx_buf[5] = 0x01;
 
-    uint16_t crc = PT100_CalcCrc(tx_buf, 6);
+    crc = PT100_CalcCrc(tx_buf, 6);
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
@@ -59,33 +69,38 @@ uint8_t Temperature_Read(float *temp_val)
     /* 期望响应长度：ID + FC + Len + Data(2) + CRC(2) = 7 字节 */
     if (Modbus_MasterReceive(rx_buf, 7, 500) != HAL_OK)
     {
+        BusService_Unlock();
         return 1;
     }
 
     if (rx_buf[0] != PT100_SLAVE_ID || rx_buf[1] != PT100_FUNC_READ)
     {
+        BusService_Unlock();
         return 1;
     }
 
     crc = PT100_CalcCrc(rx_buf, 5);
     if (((crc & 0xFF) != rx_buf[5]) || (((crc >> 8) & 0xFF) != rx_buf[6]))
     {
+        BusService_Unlock();
         return 1;
     }
 
     if (rx_buf[2] != 0x02)
     {
+        BusService_Unlock();
         return 1;
     }
 
-    uint16_t raw_data = ((uint16_t)rx_buf[3] << 8) | rx_buf[4];
+    raw_data = ((uint16_t)rx_buf[3] << 8) | rx_buf[4];
     if (raw_data == 0xFFFF)
     {
+        BusService_Unlock();
         return 1;
     }
 
     /* bit15 符号位，低 15 位为 0.1℃ 精度的幅值 */
-    float val = (float)(raw_data & 0x7FFF) * 0.1f;
+    val = (float)(raw_data & 0x7FFF) * 0.1f;
     if (raw_data & 0x8000)
     {
         val = -val;
@@ -96,5 +111,6 @@ uint8_t Temperature_Read(float *temp_val)
         *temp_val = val;
     }
 
+    BusService_Unlock();
     return 0;
 }

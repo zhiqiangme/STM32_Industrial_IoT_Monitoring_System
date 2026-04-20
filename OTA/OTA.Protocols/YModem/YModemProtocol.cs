@@ -22,11 +22,11 @@ public static class YModemProtocol
     private const int MaxRetries = 10;
     private const byte CpmEof = 0x1A;
 
-    public static void SendFile(SerialPort serialPort, LocalUpgradeOptions options, byte[] image, uint crc32, string sha256Hex, Action<string> log)
+    public static void SendFile(SerialPort serialPort, LocalUpgradeOptions options, byte[] image, uint crc32, string sha256Hex, IUpgradeLogSink logSink)
     {
         var headerPacket = BuildInitialPacket(Path.GetFileName(options.ImagePath), image.Length, crc32, sha256Hex, options.TargetFirmwareVersion);
         SendPacketWithRetry(serialPort, headerPacket, TimeSpan.FromSeconds(options.TimeoutSeconds), expectCrcRequest: true);
-        log("YMODEM 头包已确认。");
+        logSink.Write("YMODEM 头包已确认。");
 
         var packetNo = 1;
         var sent = 0;
@@ -41,7 +41,7 @@ public static class YModemProtocol
 
             sent += chunk.Length;
             packetNo = (packetNo + 1) & 0xFF;
-            log($"DATA: {sent}/{image.Length} bytes ({sent * 100 / image.Length}%)");
+            logSink.WriteProgress($"{sent}/{image.Length} bytes ({sent * 100 / image.Length}%)");
         }
 
         var eotAccepted = false;
@@ -79,15 +79,15 @@ public static class YModemProtocol
             throw new InvalidOperationException("Bootloader 未确认 EOT。");
         }
 
-        log("EOT 已确认。");
+        logSink.Write("EOT 已确认。");
         var finalPacket = BuildFinalPacket();
         SendPacketWithRetry(serialPort, finalPacket, TimeSpan.FromSeconds(options.TimeoutSeconds), expectCrcRequest: false);
-        log("最终空包已确认。");
+        logSink.Write("最终空包已确认。");
     }
 
-    public static void WaitReceiverReady(SerialPort serialPort, TimeSpan readTimeout, TimeSpan totalTimeout, Action<string> log)
+    public static void WaitReceiverReady(SerialPort serialPort, TimeSpan readTimeout, TimeSpan totalTimeout, IUpgradeLogSink logSink)
     {
-        log("等待 Bootloader YMODEM 握手 ('C')...");
+        logSink.Write("等待 Bootloader YMODEM 握手 ('C')...");
         var deadline = DateTime.UtcNow + totalTimeout;
         var ignoredCount = 0;
 
@@ -110,7 +110,7 @@ public static class YModemProtocol
                 var value = ReadByte(serialPort, currentTimeout);
                 if (value == Crc16Request)
                 {
-                    log("已收到 Bootloader 握手字符 'C'。");
+                    logSink.Write("已收到 Bootloader 握手字符 'C'。");
                     return;
                 }
 
@@ -126,16 +126,16 @@ public static class YModemProtocol
                 ignoredCount++;
                 if (ignoredCount <= 8)
                 {
-                    log($"握手阶段忽略字节: 0x{value:X2}");
+                    logSink.Write($"握手阶段忽略字节: 0x{value:X2}");
                 }
                 else if (ignoredCount == 9)
                 {
-                    log("握手阶段仍有非 'C' 字节输入，后续忽略日志已省略。");
+                    logSink.Write("握手阶段仍有非 'C' 字节输入，后续忽略日志已省略。");
                 }
             }
             catch (TimeoutException)
             {
-                log("仍在等待 Bootloader 握手...");
+                logSink.Write("仍在等待 Bootloader 握手...");
             }
         }
     }

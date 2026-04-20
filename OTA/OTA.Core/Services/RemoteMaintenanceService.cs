@@ -1,4 +1,5 @@
 using System.Globalization;
+using OTA.Models;
 using OTA.Protocols;
 
 namespace OTA.Core;
@@ -9,7 +10,7 @@ namespace OTA.Core;
 /// </summary>
 public sealed class RemoteMaintenanceService
 {
-    public bool TryGenerateFrame(
+    public OperationResult<RemoteMaintenanceFrameResult> GenerateFrame(
         string slaveAddressText,
         NumberBase slaveAddressBase,
         string functionCodeText,
@@ -17,82 +18,59 @@ public sealed class RemoteMaintenanceService
         string registerAddressText,
         NumberBase registerAddressBase,
         string dataText,
-        NumberBase dataBase,
-        out RemoteMaintenanceFrameResult result,
-        out string errorMessage)
+        NumberBase dataBase)
     {
-        result = default!;
-
-        if (!TryParseByte(slaveAddressText, slaveAddressBase, out var slaveAddress, out var slaveError))
+        var slaveAddressResult = ParseByte(slaveAddressText, slaveAddressBase, OtaErrorCode.InvalidSlaveAddress, "从站地址错误");
+        if (!slaveAddressResult.IsSuccess)
         {
-            errorMessage = $"从站地址错误：{slaveError}";
-            return false;
+            return OperationResult<RemoteMaintenanceFrameResult>.Failure(slaveAddressResult.Error!);
         }
 
-        if (!TryParseByte(functionCodeText, functionCodeBase, out var functionCode, out var functionError))
+        var functionCodeResult = ParseByte(functionCodeText, functionCodeBase, OtaErrorCode.InvalidFunctionCodeInput, "功能码错误");
+        if (!functionCodeResult.IsSuccess)
         {
-            errorMessage = $"功能码错误：{functionError}";
-            return false;
+            return OperationResult<RemoteMaintenanceFrameResult>.Failure(functionCodeResult.Error!);
         }
 
-        if (!TryParseUInt16(registerAddressText, registerAddressBase, out var registerAddress, out var registerError))
+        var registerAddressResult = ParseUInt16(registerAddressText, registerAddressBase, OtaErrorCode.InvalidRegisterAddress, "寄存器地址错误");
+        if (!registerAddressResult.IsSuccess)
         {
-            errorMessage = $"寄存器地址错误：{registerError}";
-            return false;
+            return OperationResult<RemoteMaintenanceFrameResult>.Failure(registerAddressResult.Error!);
         }
 
-        if (!TryParseUInt16(dataText, dataBase, out var dataValue, out var dataError))
+        var dataValueResult = ParseUInt16(dataText, dataBase, OtaErrorCode.InvalidDataValue, "数据错误");
+        if (!dataValueResult.IsSuccess)
         {
-            errorMessage = $"数据错误：{dataError}";
-            return false;
+            return OperationResult<RemoteMaintenanceFrameResult>.Failure(dataValueResult.Error!);
         }
 
-        result = BuildResult(new ModbusRawFrameData(slaveAddress, functionCode, registerAddress, dataValue));
-        errorMessage = string.Empty;
-        return true;
+        return OperationResult<RemoteMaintenanceFrameResult>.Success(
+            BuildResult(new ModbusRawFrameData(
+                slaveAddressResult.Value,
+                functionCodeResult.Value,
+                registerAddressResult.Value,
+                dataValueResult.Value)));
     }
 
-    public bool TryImportFrame(
-        string frameText,
-        out RemoteMaintenanceImportResult result,
-        out string errorMessage)
+    public OperationResult<RemoteMaintenanceImportResult> ImportFrame(string frameText)
     {
-        result = default!;
-
-        if (!ModbusRawFrameParser.TryParse(frameText, out var frameData, out var crcMatchedOriginal, out errorMessage))
+        if (!ModbusRawFrameParser.TryParse(frameText, out var frameData, out var crcMatchedOriginal, out var errorMessage))
         {
-            return false;
+            return OperationResult<RemoteMaintenanceImportResult>.Failure(OtaErrorMapper.MapRawFrameImportFailure(errorMessage));
         }
 
-        result = new RemoteMaintenanceImportResult(BuildResult(frameData), crcMatchedOriginal);
-        errorMessage = string.Empty;
-        return true;
+        return OperationResult<RemoteMaintenanceImportResult>.Success(
+            new RemoteMaintenanceImportResult(BuildResult(frameData), crcMatchedOriginal));
     }
 
-    public bool TryParseByte(string input, NumberBase numberBase, out byte value, out string errorMessage)
+    public OperationResult<byte> ParseByte(string input, NumberBase numberBase)
     {
-        if (!TryParseFieldValue(input, numberBase, byte.MaxValue, out var parsedValue, out errorMessage))
-        {
-            value = 0;
-            return false;
-        }
-
-        value = (byte)parsedValue;
-        errorMessage = string.Empty;
-        return true;
+        return ParseByte(input, numberBase, OtaErrorCode.InvalidDataValue, "数值错误");
     }
 
-    public bool TryParseUInt16(string input, NumberBase numberBase, out ushort value, out string errorMessage)
+    public OperationResult<ushort> ParseUInt16(string input, NumberBase numberBase)
     {
-        if (!TryParseFieldValue(input, numberBase, ushort.MaxValue, out var parsedValue, out errorMessage))
-        {
-            value = 0;
-            return false;
-        }
-
-        value = (ushort)parsedValue;
-        errorMessage = string.Empty;
-        return true;
+        return ParseUInt16(input, numberBase, OtaErrorCode.InvalidDataValue, "数值错误");
     }
 
     public string FormatValue(uint value, NumberBase numberBase, int hexDigits)
@@ -123,6 +101,26 @@ public sealed class RemoteMaintenanceService
             crc,
             string.Join(" ", frame.Select(static b => b.ToString("X2", CultureInfo.InvariantCulture))),
             Convert.ToHexString(frame));
+    }
+
+    private static OperationResult<byte> ParseByte(string input, NumberBase numberBase, OtaErrorCode errorCode, string errorPrefix)
+    {
+        if (!TryParseFieldValue(input, numberBase, byte.MaxValue, out var parsedValue, out var errorMessage))
+        {
+            return OperationResult<byte>.Failure(errorCode, $"{errorPrefix}：{errorMessage}");
+        }
+
+        return OperationResult<byte>.Success((byte)parsedValue);
+    }
+
+    private static OperationResult<ushort> ParseUInt16(string input, NumberBase numberBase, OtaErrorCode errorCode, string errorPrefix)
+    {
+        if (!TryParseFieldValue(input, numberBase, ushort.MaxValue, out var parsedValue, out var errorMessage))
+        {
+            return OperationResult<ushort>.Failure(errorCode, $"{errorPrefix}：{errorMessage}");
+        }
+
+        return OperationResult<ushort>.Success((ushort)parsedValue);
     }
 
     private static bool TryParseFieldValue(string? input, NumberBase numberBase, uint maxValue, out uint value, out string errorMessage)

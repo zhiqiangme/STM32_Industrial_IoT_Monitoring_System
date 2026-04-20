@@ -42,7 +42,7 @@
 #define RT_DEBUG_INIT 0
 // <c1>thread stack over flow detect
 //  <i> Diable Thread stack over flow detect
-//#define RT_USING_OVERFLOW_CHECK
+#define RT_USING_OVERFLOW_CHECK
 // </c>
 // </h>
 
@@ -78,7 +78,7 @@
 // </c>
 // <c1>Using Mutex
 //  <i>Using Mutex
-//#define RT_USING_MUTEX
+#define RT_USING_MUTEX
 // </c>
 // <c1>Using Event
 //  <i>Using Event
@@ -94,7 +94,7 @@
 // </c>
 // <c1>Using Message Queue
 //  <i>Using Message Queue
-//#define RT_USING_MESSAGEQUEUE
+#define RT_USING_MESSAGEQUEUE
 // </c>
 // </h>
 

@@ -1,4 +1,5 @@
 #include "Weight.h"
+#include "BusService.h"
 #include "Modbus_Master.h"
 #include <stdio.h>
 #include <string.h>
@@ -42,6 +43,13 @@ uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
 {
     uint8_t tx_buf[8];
     uint8_t rx_buf[10];
+    uint16_t crc;
+
+    /* 单次读寄存器视为一个完整主站事务。 */
+    if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
+    {
+        return 1;
+    }
 
     tx_buf[0] = WEIGHT_SLAVE_ID;
     tx_buf[1] = WEIGHT_FUNC_READ;
@@ -50,7 +58,7 @@ uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
     tx_buf[4] = 0x00;
     tx_buf[5] = 0x01;
 
-    uint16_t crc = Weight_CalcCrc(tx_buf, 6);
+    crc = Weight_CalcCrc(tx_buf, 6);
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
@@ -58,17 +66,20 @@ uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
 
     if (Modbus_MasterReceive(rx_buf, 7, 500) != HAL_OK)
     {
+        BusService_Unlock();
         return 1;
     }
 
     if (rx_buf[0] != WEIGHT_SLAVE_ID || rx_buf[1] != WEIGHT_FUNC_READ)
     {
+        BusService_Unlock();
         return 1;
     }
 
     crc = Weight_CalcCrc(rx_buf, 5);
     if ((crc & 0xFF) != rx_buf[5] || ((crc >> 8) & 0xFF) != rx_buf[6])
     {
+        BusService_Unlock();
         return 1;
     }
 
@@ -77,6 +88,7 @@ uint8_t Weight_ReadRegister(uint16_t reg_addr, uint16_t *value)
         *value = ((uint16_t)rx_buf[3] << 8) | rx_buf[4];
     }
 
+    BusService_Unlock();
     return 0;
 }
 
@@ -90,6 +102,13 @@ uint8_t Weight_WriteRegister(uint16_t reg_addr, uint16_t value)
 {
     uint8_t tx_buf[8];
     uint8_t rx_buf[8];
+    uint16_t crc;
+
+    /* 写寄存器和回包确认必须在同一互斥区间内完成。 */
+    if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
+    {
+        return 1;
+    }
 
     tx_buf[0] = WEIGHT_SLAVE_ID;
     tx_buf[1] = WEIGHT_FUNC_WRITE;
@@ -98,7 +117,7 @@ uint8_t Weight_WriteRegister(uint16_t reg_addr, uint16_t value)
     tx_buf[4] = (uint8_t)(value >> 8);
     tx_buf[5] = (uint8_t)(value & 0xFF);
 
-    uint16_t crc = Weight_CalcCrc(tx_buf, 6);
+    crc = Weight_CalcCrc(tx_buf, 6);
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
@@ -109,10 +128,12 @@ uint8_t Weight_WriteRegister(uint16_t reg_addr, uint16_t value)
     if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
     {
         printf("[Weight] Write timeout\r\n");
+        BusService_Unlock();
         return 1;
     }
 
     printf("[Weight] Write OK\r\n");
+    BusService_Unlock();
     return 0;
 }
 
@@ -227,9 +248,16 @@ uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
 {
     uint8_t tx_buf[8];
     uint8_t rx_buf[20];
+    uint16_t crc;
 
     /* channel 取值 1-4，每个通道占两个寄存器 (ABCD) */
     if (channel < 1 || channel > 4)
+    {
+        return 1;
+    }
+
+    /* 32 位重量值跨两个寄存器读取，需要占住总线直到拼包结束。 */
+    if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
     {
         return 1;
     }
@@ -243,7 +271,7 @@ uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
     tx_buf[4] = 0x00;
     tx_buf[5] = 0x02;
 
-    uint16_t crc = Weight_CalcCrc(tx_buf, 6);
+    crc = Weight_CalcCrc(tx_buf, 6);
     tx_buf[6] = (uint8_t)(crc & 0xFF);
     tx_buf[7] = (uint8_t)((crc >> 8) & 0xFF);
 
@@ -251,20 +279,24 @@ uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
 
     if (Modbus_MasterReceive(rx_buf, 9, 500) != HAL_OK)
     {
+        BusService_Unlock();
         return 1;
     }
     if (rx_buf[0] != WEIGHT_SLAVE_ID || rx_buf[1] != WEIGHT_FUNC_READ)
     {
+        BusService_Unlock();
         return 1;
     }
 
     crc = Weight_CalcCrc(rx_buf, 7);
     if ((crc & 0xFF) != rx_buf[7] || ((crc >> 8) & 0xFF) != rx_buf[8])
     {
+        BusService_Unlock();
         return 1;
     }
     if (rx_buf[2] != 0x04)
     {
+        BusService_Unlock();
         return 1;
     }
 
@@ -277,6 +309,7 @@ uint8_t Weight_ReadChannel(uint8_t channel, int32_t *weight_g)
         *weight_g = weight;
     }
 
+    BusService_Unlock();
     return 0;
 }
 

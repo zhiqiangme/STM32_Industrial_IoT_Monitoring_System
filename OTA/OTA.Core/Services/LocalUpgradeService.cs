@@ -22,33 +22,42 @@ public static class LocalUpgradeService
     private static readonly byte[] UnlockCommand = Convert.FromHexString("0A060030A55A73D5");
     private static readonly byte[] EnterBootloaderCommand = Convert.FromHexString("0A0600310005197D");
 
-    public static Task RunAsync(LocalUpgradeOptions options, Action<string> log)
+    public static Task<OperationResult> RunAsync(LocalUpgradeOptions options, IUpgradeLogSink logSink)
     {
-        ArgumentNullException.ThrowIfNull(log);
-        return Task.Run(() => Execute(options, log));
+        ArgumentNullException.ThrowIfNull(logSink);
+        return Task.Run(() => Execute(options, logSink));
     }
 
-    private static void Execute(LocalUpgradeOptions options, Action<string> log)
+    private static OperationResult Execute(LocalUpgradeOptions options, IUpgradeLogSink logSink)
     {
-        var image = File.ReadAllBytes(options.ImagePath);
-        var crc32 = YModemProtocol.ComputeCrc32(image);
-        var sha256Hex = Convert.ToHexString(SHA256.HashData(image)).ToLowerInvariant();
+        try
+        {
+            var image = File.ReadAllBytes(options.ImagePath);
+            var crc32 = YModemProtocol.ComputeCrc32(image);
+            var sha256Hex = Convert.ToHexString(SHA256.HashData(image)).ToLowerInvariant();
 
-        log($"固件: {options.ImagePath}");
-        log($"固件大小: {image.Length} bytes (0x{image.Length:X8})");
-        log($"固件 CRC32: 0x{crc32:X8}");
-        log($"固件 SHA256: {sha256Hex}");
+            logSink.Write($"固件: {options.ImagePath}");
+            logSink.Write($"固件大小: {image.Length} bytes (0x{image.Length:X8})");
+            logSink.Write($"固件 CRC32: 0x{crc32:X8}");
+            logSink.Write($"固件 SHA256: {sha256Hex}");
 
-        LocalUpgradeTransport.Run(
-            options,
-            image,
-            crc32,
-            sha256Hex,
-            UnlockCommand,
-            EnterBootloaderCommand,
-            AppCommandGap,
-            BootloaderSwitchDelay,
-            HandshakeWindow,
-            log);
+            LocalUpgradeTransport.Run(
+                options,
+                image,
+                crc32,
+                sha256Hex,
+                UnlockCommand,
+                EnterBootloaderCommand,
+                AppCommandGap,
+                BootloaderSwitchDelay,
+                HandshakeWindow,
+                logSink);
+
+            return OperationResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return OperationResult.Failure(OtaErrorMapper.MapUpgradeExecutionException(ex));
+        }
     }
 }

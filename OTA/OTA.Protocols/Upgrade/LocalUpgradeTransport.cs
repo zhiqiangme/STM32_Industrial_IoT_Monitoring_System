@@ -20,7 +20,7 @@ public static class LocalUpgradeTransport
         TimeSpan appCommandGap,
         TimeSpan bootloaderSwitchDelay,
         TimeSpan handshakeWindow,
-        Action<string> log)
+        IUpgradeLogSink logSink)
     {
         SerialOperationGate.Run(() =>
         {
@@ -28,44 +28,44 @@ public static class LocalUpgradeTransport
             Thread.Sleep(200);
             serialPort.DiscardInBuffer();
 
-            log($"打开串口 {options.PortName}，波特率 {options.BaudRate}。");
-            SendAppStageCommand(serialPort, unlockCommand, "解锁", TimeSpan.FromSeconds(options.TimeoutSeconds), log);
+            logSink.Write($"打开串口 {options.PortName}，波特率 {options.BaudRate}。");
+            SendAppStageCommand(serialPort, unlockCommand, "解锁", TimeSpan.FromSeconds(options.TimeoutSeconds), logSink);
             Thread.Sleep(appCommandGap);
-            SendAppStageCommand(serialPort, enterBootloaderCommand, "进入 Bootloader", TimeSpan.FromSeconds(options.TimeoutSeconds), log);
-            log($"等待 {bootloaderSwitchDelay.TotalMilliseconds:0}ms 让设备从 App 切到 Bootloader。");
+            SendAppStageCommand(serialPort, enterBootloaderCommand, "进入 Bootloader", TimeSpan.FromSeconds(options.TimeoutSeconds), logSink);
+            logSink.Write($"等待 {bootloaderSwitchDelay.TotalMilliseconds:0}ms 让设备从 App 切到 Bootloader。");
             Thread.Sleep(bootloaderSwitchDelay);
             serialPort.DiscardInBuffer();
 
-            YModemProtocol.WaitReceiverReady(serialPort, TimeSpan.FromSeconds(options.TimeoutSeconds), handshakeWindow, log);
-            YModemProtocol.SendFile(serialPort, options, image, crc32, sha256Hex, log);
-            log("升级传输完成，设备应完成校验并自动复位回 App。");
+            YModemProtocol.WaitReceiverReady(serialPort, TimeSpan.FromSeconds(options.TimeoutSeconds), handshakeWindow, logSink);
+            YModemProtocol.SendFile(serialPort, options, image, crc32, sha256Hex, logSink);
+            logSink.Write("升级传输完成，设备应完成校验并自动复位回 App。");
         });
     }
 
-    private static void SendFrame(SerialPort serialPort, byte[] frame, string logMessage, Action<string> log)
+    private static void SendFrame(SerialPort serialPort, byte[] frame, string logMessage, IUpgradeLogSink logSink)
     {
-        log(logMessage);
+        logSink.Write(logMessage);
         serialPort.Write(frame, 0, frame.Length);
         serialPort.BaseStream.Flush();
     }
 
-    private static void SendAppStageCommand(SerialPort serialPort, byte[] frame, string label, TimeSpan timeout, Action<string> log)
+    private static void SendAppStageCommand(SerialPort serialPort, byte[] frame, string label, TimeSpan timeout, IUpgradeLogSink logSink)
     {
-        SendFrame(serialPort, frame, $"TX {label}: {Convert.ToHexString(frame)}", log);
+        SendFrame(serialPort, frame, $"TX {label}: {Convert.ToHexString(frame)}", logSink);
 
         try
         {
             var response = ReadExact(serialPort, frame.Length, timeout);
-            log($"RX {label}: {Convert.ToHexString(response)}");
+            logSink.Write($"RX {label}: {Convert.ToHexString(response)}");
 
             if (!response.AsSpan().SequenceEqual(frame))
             {
-                log($"警告: {label} 回包与请求帧不一致。");
+                logSink.Write($"警告: {label} 回包与请求帧不一致。");
             }
         }
         catch (TimeoutException)
         {
-            log($"警告: {label} 未在 {timeout.TotalSeconds:0.###} 秒内收到回包，继续尝试后续流程。");
+            logSink.Write($"警告: {label} 未在 {timeout.TotalSeconds:0.###} 秒内收到回包，继续尝试后续流程。");
         }
     }
 

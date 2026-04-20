@@ -214,7 +214,7 @@ public sealed class RemoteMaintenanceViewModel : ObservableObject
     {
         SetFrameImportStatus(null);
 
-        if (!_service.TryGenerateFrame(
+        var frameResult = _service.GenerateFrame(
                 SlaveAddressText,
                 _slaveAddressBase,
                 FunctionCodeText,
@@ -222,15 +222,14 @@ public sealed class RemoteMaintenanceViewModel : ObservableObject
                 RegisterAddressText,
                 _registerAddressBase,
                 DataText,
-                _dataBase,
-                out var result,
-                out var errorMessage))
+                _dataBase);
+        if (!frameResult.IsSuccess)
         {
-            ShowValidationError(errorMessage);
+            ShowValidationError(frameResult.ErrorMessage);
             return;
         }
 
-        ApplyFrameValues(result, "已复制到剪贴板");
+        ApplyFrameValues(frameResult.Value, "已复制到剪贴板");
     }
 
     private void FillExampleAndGenerate()
@@ -269,13 +268,15 @@ public sealed class RemoteMaintenanceViewModel : ObservableObject
 
     private void ImportFrameTextCore(string frameText, string successTextWhenNotCorrected)
     {
-        if (!_service.TryImportFrame(frameText, out var result, out var errorMessage))
+        var importResult = _service.ImportFrame(frameText);
+        if (!importResult.IsSuccess)
         {
             SetFrameImportStatus("无效输入", isWarning: true);
-            ShowValidationError($"原始帧导入失败：{errorMessage}");
+            ShowValidationError($"原始帧导入失败：{importResult.ErrorMessage}");
             return;
         }
 
+        var result = importResult.Value;
         _suppressAutoGenerate = true;
         SetFieldText(nameof(SlaveAddressText), result.Frame.SlaveAddress);
         SetFieldText(nameof(FunctionCodeText), result.Frame.FunctionCode);
@@ -322,19 +323,34 @@ public sealed class RemoteMaintenanceViewModel : ObservableObject
     {
         value = 0;
 
-        return fieldKey switch
+        switch (fieldKey)
         {
-            nameof(SlaveAddressText) => _service.TryParseByte(input, numberBase, out var parsedByte, out _) && AssignValue(parsedByte, out value),
-            nameof(FunctionCodeText) => _service.TryParseByte(input, numberBase, out var parsedByte, out _) && AssignValue(parsedByte, out value),
-            nameof(RegisterAddressText) => _service.TryParseUInt16(input, numberBase, out var parsedUInt16, out _) && AssignValue(parsedUInt16, out value),
-            nameof(DataText) => _service.TryParseUInt16(input, numberBase, out var parsedUInt16, out _) && AssignValue(parsedUInt16, out value),
-            _ => false
-        };
+            case nameof(SlaveAddressText):
+            case nameof(FunctionCodeText):
+            {
+                var parseResult = _service.ParseByte(input, numberBase);
+                if (!parseResult.IsSuccess)
+                {
+                    return false;
+                }
 
-        static bool AssignValue(uint parsedValue, out uint target)
-        {
-            target = parsedValue;
-            return true;
+                value = parseResult.Value;
+                return true;
+            }
+            case nameof(RegisterAddressText):
+            case nameof(DataText):
+            {
+                var parseResult = _service.ParseUInt16(input, numberBase);
+                if (!parseResult.IsSuccess)
+                {
+                    return false;
+                }
+
+                value = parseResult.Value;
+                return true;
+            }
+            default:
+                return false;
         }
     }
 

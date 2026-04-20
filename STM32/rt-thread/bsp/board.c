@@ -17,7 +17,7 @@
  * 这里只补最小的 RT-Thread 板级接线：堆和组件初始化。
  */
 #if defined(RT_USING_HEAP)
-#define RT_HEAP_SIZE (16 * 1024)
+#define RT_HEAP_SIZE (12 * 1024)
 static rt_uint8_t rt_heap[RT_HEAP_SIZE];
 
 RT_WEAK void *rt_heap_begin_get(void)

@@ -23,6 +23,7 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
     private readonly Func<SerialUpgradePreferenceSnapshot> _loadPreferences;
     private readonly Action<string?, string?, string?> _savePreferences;
     private readonly SynchronizationContext _uiContext;
+    private readonly IUpgradeLogSink _upgradeLogSink;
     private readonly SemaphoreSlim _runningSlotRefreshLock = new(1, 1);
     private readonly SemaphoreSlim _portListRefreshLock = new(1, 1);
     private readonly HashSet<string> _knownPortNames = new(StringComparer.OrdinalIgnoreCase);
@@ -65,6 +66,7 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
         _loadPreferences = loadPreferences;
         _savePreferences = savePreferences;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
+        _upgradeLogSink = new UiUpgradeLogSink(this, _uiContext);
 
         _baudRateText = modeProfile.DefaultBaudRateText;
         _timeoutText = modeProfile.DefaultTimeoutText;
@@ -347,46 +349,64 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
     /// </summary>
     private async Task StartUpgradeAsync()
     {
-        if (!TryReadLocalSerialSettings(out var serialSettings, out var errorMessage))
-        {
-            RequestViewMessage("参数错误", errorMessage, ViewMessageSeverity.Warning);
-            return;
-        }
-
-        if (!_upgradeCoordinator.TryValidatePortAvailability(serialSettings, ModeProfile.DisconnectedPortMessageTemplate, out errorMessage))
-        {
-            AppendLog($"串口检查失败：{errorMessage}");
-            RequestViewMessage("串口不可用", errorMessage, ViewMessageSeverity.Warning);
-            return;
-        }
-
-        await RefreshRunningSlotAsync(serialSettings, logSuccess: true, logFailure: true, allowAutoSuggestPath: true);
-
-        if (!TryReadLocalSettings(out var options, out errorMessage))
-        {
-            RequestViewMessage("参数错误", errorMessage, ViewMessageSeverity.Warning);
-            return;
-        }
-
-        if (!_upgradeCoordinator.TryPrepareLocalUpgrade(options, _runningSlot, ModeProfile.PreparationModeName, out var preparation, out errorMessage))
-        {
-            RequestViewMessage("升级准备失败", errorMessage, ViewMessageSeverity.Warning);
-            return;
-        }
-
-        SetBusyState(true, "执行中");
-        ClearLog();
-
-        foreach (var message in preparation.StartupMessages)
-        {
-            AppendLog(message);
-        }
-
         try
         {
-            await LocalUpgradeService.RunAsync(preparation.Options, AppendLogFromWorker);
-            AppendLog("流程结束。");
-            StatusText = "完成";
+            var serialSettingsResult = ReadLocalSerialSettings();
+            if (!serialSettingsResult.IsSuccess)
+            {
+                RequestViewMessage("参数错误", serialSettingsResult.ErrorMessage, ViewMessageSeverity.Warning);
+                return;
+            }
+
+            var serialSettings = serialSettingsResult.Value;
+            var portValidationResult = _upgradeCoordinator.ValidatePortAvailability(serialSettings, ModeProfile.DisconnectedPortMessageTemplate);
+            if (!portValidationResult.IsSuccess)
+            {
+                AppendLog($"串口检查失败：{portValidationResult.ErrorMessage}");
+                RequestViewMessage("串口不可用", portValidationResult.ErrorMessage, ViewMessageSeverity.Warning);
+                return;
+            }
+
+            await RefreshRunningSlotAsync(serialSettings, logSuccess: true, logFailure: true, allowAutoSuggestPath: true);
+
+            var optionsResult = ReadLocalSettings();
+            if (!optionsResult.IsSuccess)
+            {
+                RequestViewMessage("参数错误", optionsResult.ErrorMessage, ViewMessageSeverity.Warning);
+                return;
+            }
+
+            var preparationResult = _upgradeCoordinator.PrepareLocalUpgrade(
+                optionsResult.Value,
+                _runningSlot,
+                ModeProfile.PreparationModeName);
+            if (!preparationResult.IsSuccess)
+            {
+                RequestViewMessage("升级准备失败", preparationResult.ErrorMessage, ViewMessageSeverity.Warning);
+                return;
+            }
+
+            var preparation = preparationResult.Value;
+            SetBusyState(true, "执行中");
+            ClearLog();
+
+            foreach (var message in preparation.StartupMessages)
+            {
+                AppendLog(message);
+            }
+
+            var executionResult = await LocalUpgradeService.RunAsync(preparation.Options, _upgradeLogSink);
+            if (executionResult.IsSuccess)
+            {
+                AppendLog("流程结束。");
+                StatusText = "完成";
+            }
+            else
+            {
+                AppendLog($"失败: {executionResult.ErrorMessage}");
+                StatusText = "失败";
+                RequestViewMessage("执行失败", executionResult.ErrorMessage, ViewMessageSeverity.Error);
+            }
         }
         catch (Exception ex)
         {
@@ -403,23 +423,23 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
     /// <summary>
     /// 从界面字段读取并校验串口参数。
     /// </summary>
-    private bool TryReadLocalSerialSettings(out LocalSerialSettings settings, out string errorMessage)
+    private OperationResult<LocalSerialSettings> ReadLocalSerialSettings()
     {
-        return _upgradeCoordinator.TryReadSerialSettings(SelectedPort?.PortName ?? string.Empty, BaudRateText, TimeoutText, out settings, out errorMessage);
+        return _upgradeCoordinator.ReadSerialSettings(SelectedPort?.PortName ?? string.Empty, BaudRateText, TimeoutText);
     }
 
     /// <summary>
     /// 从界面字段读取并校验完整升级参数。
     /// </summary>
-    private bool TryReadLocalSettings(out LocalUpgradeOptions options, out string errorMessage)
+    private OperationResult<LocalUpgradeOptions> ReadLocalSettings()
     {
-        options = default;
-        if (!TryReadLocalSerialSettings(out var serialSettings, out errorMessage))
+        var serialSettingsResult = ReadLocalSerialSettings();
+        if (!serialSettingsResult.IsSuccess)
         {
-            return false;
+            return OperationResult<LocalUpgradeOptions>.Failure(serialSettingsResult.Error!);
         }
 
-        return _upgradeCoordinator.TryBuildLocalUpgradeOptions(serialSettings, ScriptPath, out options, out errorMessage);
+        return _upgradeCoordinator.BuildLocalUpgradeOptions(serialSettingsResult.Value, ScriptPath);
     }
 
     /// <summary>
@@ -485,21 +505,28 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
             var result = await _upgradeCoordinator.ReadRunningSlotAsync(serialSettings);
             SetRunningSlotState(result.Slot, result.RecommendationText, result.TreatUnknownAsUnread);
 
-            if (result.HasError)
+            if (result.Slot == FirmwareSlot.Unknown)
             {
-                if (logFailure)
+                if (result.HasError && result.ErrorCode != OtaErrorCode.RunningSlotUnknown)
                 {
-                    AppendLog($"读取当前运行槽失败：{result.ErrorMessage}");
+                    if (logFailure)
+                    {
+                        AppendLog($"读取当前运行槽失败：{result.ErrorMessage}");
+                    }
+                }
+                else if (logSuccess)
+                {
+                    AppendLog("已读取当前运行槽：unknown。");
                 }
 
                 return FirmwareSlot.Unknown;
             }
 
-            if (result.Slot == FirmwareSlot.Unknown)
+            if (result.HasError)
             {
-                if (logSuccess)
+                if (logFailure)
                 {
-                    AppendLog("已读取当前运行槽：unknown。");
+                    AppendLog($"读取当前运行槽失败：{result.ErrorMessage}");
                 }
 
                 return FirmwareSlot.Unknown;
@@ -540,17 +567,20 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
     /// </summary>
     private bool TryGetLocalSerialSettingsForRead(out LocalSerialSettings settings)
     {
-        settings = default;
         if (SelectedPort is null)
         {
+            settings = default;
             return false;
         }
 
-        if (!_upgradeCoordinator.TryReadSerialSettings(SelectedPort.PortName, BaudRateText, TimeoutText, out settings, out _))
+        var serialSettingsResult = _upgradeCoordinator.ReadSerialSettings(SelectedPort.PortName, BaudRateText, TimeoutText);
+        if (!serialSettingsResult.IsSuccess)
         {
             settings = new LocalSerialSettings(SelectedPort.PortName, 115200, 5);
+            return true;
         }
 
+        settings = serialSettingsResult.Value;
         return true;
     }
 
@@ -621,13 +651,17 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
     /// </summary>
     private bool TryReadImageInfo(string imagePath, out FirmwareImageInfo imageInfo, out string errorMessage, bool logFailure)
     {
-        if (_upgradeCoordinator.TryInspectImage(imagePath, out imageInfo, out errorMessage))
+        var imageResult = _upgradeCoordinator.InspectImage(imagePath);
+        if (imageResult.IsSuccess)
         {
+            imageInfo = imageResult.Value;
             ImageHintText = _upgradeCoordinator.BuildImageHint(imageInfo);
+            errorMessage = string.Empty;
             return true;
         }
 
         imageInfo = default;
+        errorMessage = imageResult.ErrorMessage;
         ImageHintText = $"镜像槽位：无法识别。{errorMessage.Replace("STM32 程序槽位识别失败：", string.Empty)}";
 
         if (logFailure)
@@ -690,25 +724,14 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
         StartUpgradeCommand.NotifyCanExecuteChanged();
     }
 
-    /// <summary>
-    /// 把后台线程日志切回 UI 线程追加到界面。
-    /// </summary>
-    private void AppendLogFromWorker(string message)
-    {
-        _uiContext.Post(_ => AppendLog(message), null);
-    }
-
-    /// <summary>
-    /// 追加一行日志；连续进度日志会覆盖上一条进度，避免刷屏。
-    /// </summary>
-    private void AppendLog(string message)
+    private void AppendLog(string message, bool isProgressMessage = false)
     {
         var normalizedMessage = (message ?? string.Empty).TrimEnd('\r', '\n');
         var renderedLine = $"[{DateTime.Now:HH:mm:ss}] {normalizedMessage}{Environment.NewLine}";
-        var isProgressMessage = IsProgressMessage(normalizedMessage);
+        var shouldTreatAsProgress = isProgressMessage || IsProgressMessage(normalizedMessage);
 
         if (((string.Equals(_lastLoggedMessage, normalizedMessage, StringComparison.Ordinal)) ||
-             (_lastLoggedWasProgress && isProgressMessage)) &&
+             (_lastLoggedWasProgress && shouldTreatAsProgress)) &&
             _lastLoggedLineLength > 0 &&
             LogText.Length >= _lastLoggedLineLength)
         {
@@ -720,7 +743,7 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
         }
 
         _lastLoggedMessage = normalizedMessage;
-        _lastLoggedWasProgress = isProgressMessage;
+        _lastLoggedWasProgress = shouldTreatAsProgress;
         _lastLoggedLineLength = renderedLine.Length;
     }
 
@@ -750,5 +773,27 @@ public abstract class SerialUpgradeViewModelBase : ObservableObject
     {
         var viewMessage = new ViewMessage(title, message, severity);
         _uiContext.Post(_ => ViewMessageRequested?.Invoke(this, viewMessage), null);
+    }
+
+    private sealed class UiUpgradeLogSink : IUpgradeLogSink
+    {
+        private readonly SerialUpgradeViewModelBase _owner;
+        private readonly SynchronizationContext _uiContext;
+
+        public UiUpgradeLogSink(SerialUpgradeViewModelBase owner, SynchronizationContext uiContext)
+        {
+            _owner = owner;
+            _uiContext = uiContext;
+        }
+
+        public void Write(string message)
+        {
+            _uiContext.Post(_ => _owner.AppendLog(message), null);
+        }
+
+        public void WriteProgress(string message)
+        {
+            _uiContext.Post(_ => _owner.AppendLog(message, isProgressMessage: true), null);
+        }
     }
 }

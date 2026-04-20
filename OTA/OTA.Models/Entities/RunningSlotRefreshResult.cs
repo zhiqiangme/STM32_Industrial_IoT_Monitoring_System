@@ -7,7 +7,11 @@ public readonly record struct RunningSlotRefreshResult(
     FirmwareSlot Slot,
     string RecommendationText,
     bool TreatUnknownAsUnread,
-    string? ErrorMessage = null)
+    OtaError? Error = null)
 {
-    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+    public bool HasError => Error is not null;
+
+    public OtaErrorCode? ErrorCode => Error?.Code;
+
+    public string ErrorMessage => Error?.Message ?? string.Empty;
 }

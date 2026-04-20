@@ -28,11 +28,7 @@
 #include "stm32f1xx.h"
 
 
-/**
- * SYS_SUPPORT_OS用于定义系统文件夹是否支持OS
- * 0,不支持OS
- * 1,支持OS
- */
+/* 兼容旧驱动头文件保留，RT-Thread 路径不再依赖该宏。 */
 #define SYS_SUPPORT_OS          0
 
 
