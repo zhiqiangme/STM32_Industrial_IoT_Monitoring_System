@@ -6,7 +6,7 @@
  * Change Logs:
  * Date           Author       Notes
  * 2021-05-24                  the first version
- * 2026-04-14     Codex        adapt minimal board init for STM32 Mill
+ * 2026-04-14     zhiqiangme   adapt minimal board init for STM32 Mill
  */
 
 #include <rthw.h>
