@@ -1,0 +1,59 @@
+####################################
+# STM32 目录 (Keil MDK / STM32CubeIDE / IAR)
+####################################
+
+# --- 通用本地目录 ---
+**/.dotnet/
+**/.vs/
+**/.vscode/
+
+# --- Python ---
+__pycache__/
+**/__pycache__/
+
+# --- Keil MDK 编译输出 ---
+**/*.o
+**/*.d
+**/*.crf
+**/*.dep
+**/*.axf
+**/*.htm
+**/*.lnp
+**/*.sct
+**/*.lst
+**/*.map
+**/*.iex
+**/*.uvguix.*
+**/*.uvoptx
+**/*.scvd
+**/*.bak
+**/*.log
+**/JLinkLog.txt
+
+# --- Keil 输出目录 ---
+**/Objects/
+**/Listings/
+**/RTE/
+/MDK-ARM/DebugConfig/
+
+# --- STM32CubeIDE ---
+**/Debug/
+**/Release/
+**/.settings/
+**/RemoteSystemsTempFiles/
+
+# --- STM32CubeMX ---
+**/*.mxproject
+**/*.backup
+
+# --- IAR Embedded Workbench ---
+**/*.ewt
+**/*.ewd
+**/*.ewp~
+**/*.dni
+**/*.dbgdt
+**/*.wsdt
+**/*.wspos
+**/EWARM/Debug/
+**/EWARM/Release/
+**/EWARM/settings/

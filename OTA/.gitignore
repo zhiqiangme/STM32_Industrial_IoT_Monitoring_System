@@ -1,0 +1,41 @@
+####################################
+# OTA 目录 (Visual Studio / VS Code)
+####################################
+
+# --- 通用本地目录 ---
+**/.dotnet/
+**/.vs/
+**/.vscode/
+
+# --- Visual Studio ---
+**/*.suo
+**/*.user
+**/*.userosscache
+**/*.sln.docstates
+**/*.ncb
+**/*.aps
+**/*.pdb
+**/*.ilk
+**/*.obj
+**/*.pch
+**/*.sbr
+**/*.tlb
+**/*.tlh
+**/*.bak
+**/*.log
+**/*.cache
+**/*.VC.db
+**/*.VC.VC.opendb
+**/ipch/
+**/x64/
+**/x86/
+
+# --- Visual Studio Code ---
+**/*.code-workspace
+
+# --- OTA 构建输出 ---
+**/[Dd]ebug/
+**/[Rr]elease/
+**/[Bb]in/
+**/[Oo]bj/
+**/[Ii]nstallers/
