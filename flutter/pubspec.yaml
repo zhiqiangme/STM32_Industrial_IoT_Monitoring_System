@@ -1,0 +1,43 @@
+name: project
+description: "Flowmeter mobile app — remote monitoring and control."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management + DI (official architecture uses Provider + ChangeNotifier)
+  provider: ^6.1.2
+
+  # Networking
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.0
+
+  # Charting
+  fl_chart: ^0.68.0
+
+  # Storage
+  shared_preferences: ^2.3.0
+  flutter_secure_storage: ^9.2.2
+
+  # Routing
+  go_router: ^14.0.0
+
+  # Utilities
+  intl: ^0.19.0
+  logger: ^2.4.0
+  package_info_plus: ^8.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

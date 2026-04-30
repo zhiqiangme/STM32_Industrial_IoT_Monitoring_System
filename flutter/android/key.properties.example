@@ -1,0 +1,4 @@
+storePassword=replace_with_store_password
+keyPassword=replace_with_key_password
+keyAlias=flowmeter-release
+storeFile=release/flowmeter-release.jks
