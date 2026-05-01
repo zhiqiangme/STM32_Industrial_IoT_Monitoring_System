@@ -359,11 +359,21 @@ static void App_UpdateSlaveData(float sensor_temp,
                                 uint8_t relay_ok)
 {
     static int16_t s_last_temp[4] = {0};
+    static int32_t s_last_weight = 0;
+    static uint16_t s_last_flow_rate = 0u;
+    static uint32_t s_last_flow_total = 0u;
+    static uint16_t s_last_relay_do = 0u;
+    static uint16_t s_last_relay_di = 0u;
+    static uint16_t s_last_status = 0u;
     static uint8_t s_first_run = 1u;
     ModbusSlaveData_t slave_data;
     int16_t cur_temp[4];
     uint16_t push_seq;
     uint8_t temp_changed = 0u;
+    uint8_t telemetry_changed = 0u;
+    uint16_t flow_rate_raw;
+    uint32_t flow_total_raw;
+    uint16_t status_raw;
     int i;
 
     if (runtime_config == RT_NULL)
@@ -376,6 +386,13 @@ static void App_UpdateSlaveData(float sensor_temp,
     cur_temp[1] = 0;
     cur_temp[2] = 0;
     cur_temp[3] = (int16_t)(sensor_temp * 10.0f);
+
+    flow_rate_raw = (uint16_t)(flow_rate_lpm * 100.0f);
+    flow_total_raw = (uint32_t)(flow_total_l * 1000.0f);
+    status_raw = (pt100_ok ? 0x01u : 0u) |
+                 (weight_ok ? 0x02u : 0u) |
+                 (relay_ok ? 0x04u : 0u) |
+                 ((runtime_config->control_mode == G780S_MODE_AUTO) ? 0x08u : 0u);
 
     for (i = 0; i < 4; i++)
     {
@@ -392,15 +409,52 @@ static void App_UpdateSlaveData(float sensor_temp,
         }
     }
 
-    if (s_first_run != 0u || temp_changed != 0u)
+    /* 历史样本去重依赖 push_seq，必须跟随实际遥测值变化推进。
+       以前只在温度跨大阈值时才递增，会让 Flutter 历史曲线长时间保持直线。 */
+    if (s_first_run != 0u)
+    {
+        telemetry_changed = 1u;
+    }
+    else
+    {
+        for (i = 0; i < 4; i++)
+        {
+            if (cur_temp[i] != s_last_temp[i])
+            {
+                telemetry_changed = 1u;
+                break;
+            }
+        }
+        if (telemetry_changed == 0u &&
+            (sensor_weight != s_last_weight ||
+             flow_rate_raw != s_last_flow_rate ||
+             flow_total_raw != s_last_flow_total ||
+             relay_do_state != s_last_relay_do ||
+             relay_di_state != s_last_relay_di ||
+             status_raw != s_last_status))
+        {
+            telemetry_changed = 1u;
+        }
+    }
+
+    if (telemetry_changed != 0u)
     {
         push_seq = App_StateUpdatePushSeq(1u);
         for (i = 0; i < 4; i++)
         {
             s_last_temp[i] = cur_temp[i];
         }
+        s_last_weight = sensor_weight;
+        s_last_flow_rate = flow_rate_raw;
+        s_last_flow_total = flow_total_raw;
+        s_last_relay_do = relay_do_state;
+        s_last_relay_di = relay_di_state;
+        s_last_status = status_raw;
         s_first_run = 0u;
-        printf("[PUSH_SEQ] %u (temp changed)\r\n", push_seq);
+        if (temp_changed != 0u)
+        {
+            printf("[PUSH_SEQ] %u (temp changed)\r\n", push_seq);
+        }
     }
     else
     {
@@ -416,14 +470,11 @@ static void App_UpdateSlaveData(float sensor_temp,
     slave_data.weight_ch[1] = -1;
     slave_data.weight_ch[2] = sensor_weight;
     slave_data.weight_ch[3] = -1;
-    slave_data.flow_rate = (uint16_t)(flow_rate_lpm * 100.0f);
-    slave_data.flow_total = (uint32_t)(flow_total_l * 1000.0f);
+    slave_data.flow_rate = flow_rate_raw;
+    slave_data.flow_total = flow_total_raw;
     slave_data.relay_do = relay_do_state;
     slave_data.relay_di = relay_di_state;
-    slave_data.status = (pt100_ok ? 0x01u : 0u) |
-                        (weight_ok ? 0x02u : 0u) |
-                        (relay_ok ? 0x04u : 0u) |
-                        ((runtime_config->control_mode == G780S_MODE_AUTO) ? 0x08u : 0u);
+    slave_data.status = status_raw;
 
     /* G780S 对外读取的寄存器镜像统一在采集线程这里提交。 */
     G780s_UpdateData(&slave_data);
