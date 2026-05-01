@@ -45,6 +45,32 @@ class CommandRepository {
   /// 只要位图已经到达目标值，就不再继续把 UI 卡在 timeout。
   final Map<int, int> _expectedRelayMasks = {};
 
+  /// 整个位图控制是“后发覆盖前发”语义：
+  /// 当用户连续点多个开关时，新的目标位图已经包含了最新意图，
+  /// 旧的未确认命令不应再等到 timeout。
+  void _completeSupersededRelaySetCommands() {
+    if (_pending.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final pendingSeqs = _pending.keys.toList(growable: false);
+    for (final seq in pendingSeqs) {
+      final completer = _pending.remove(seq);
+      final cmd = _inFlight.remove(seq);
+      _expectedRelayMasks.remove(seq);
+      if (completer == null || cmd == null || completer.isCompleted) {
+        continue;
+      }
+
+      completer.complete(cmd.copyWith(
+        ackedAt: now,
+        status: CommandStatus.acked,
+        result: 'superseded',
+      ));
+    }
+  }
+
   /// ack 到达：根据 result 决定状态是 acked 还是 failed。
   void _onAck(AckEvent evt) {
     final completer = _pending.remove(evt.cmdSeq);
@@ -93,6 +119,8 @@ class CommandRepository {
   Future<Result<Command>> sendRelaySet(int mask) async {
     try {
       final cmd = await _api.sendRelaySet(mask: mask);
+      // 继电器命令发送的是完整位图，新命令一旦发出，旧命令就按“被覆盖”处理。
+      _completeSupersededRelaySetCommands();
       final completer = Completer<Command>();
       _pending[cmd.seq] = completer;
       _inFlight[cmd.seq] = cmd;

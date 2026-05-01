@@ -64,9 +64,11 @@ class ControlViewModel extends ChangeNotifier {
     switch (res) {
       case Ok(:final value):
         _lastCommand = value;
-        _message = value.status == CommandStatus.acked
-            ? '继电器状态已确认 (seq=${value.seq})'
-            : '继电器控制失败：${value.result ?? '未知'}';
+        if (value.result != 'superseded') {
+          _message = value.status == CommandStatus.acked
+              ? '继电器状态已确认 (seq=${value.seq})'
+              : '继电器控制失败：${value.result ?? '未知'}';
+        }
       case Err(:final error):
         _message = '发送失败：$error';
     }
