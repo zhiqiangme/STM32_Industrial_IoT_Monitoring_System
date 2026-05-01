@@ -1,7 +1,9 @@
 #include "sys.h"
 #include "delay.h"
 
+#ifdef RTOS_ENABLED
 #include <rtthread.h>
+#endif
 
 /* SysTick 计数换算因子：72MHz 时 1us 对应 72 个计数。 */
 static uint32_t g_fac_us = 0u;
@@ -53,11 +55,13 @@ __weak void delay_ms(uint16_t nms)
     }
 
     /* 线程上下文优先让出 CPU；只有无线程/中断上下文才退回忙等。 */
+#ifdef RTOS_ENABLED
     if (rt_thread_self() != RT_NULL && rt_interrupt_get_nest() == 0u)
     {
         (void)rt_thread_mdelay((rt_int32_t)nms);
         return;
     }
+#endif
 
     while (nms > 0u)
     {
