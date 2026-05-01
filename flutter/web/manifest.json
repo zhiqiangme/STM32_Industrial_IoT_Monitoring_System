@@ -1,11 +1,11 @@
 {
-    "name": "管道监控系统",
-    "short_name": "管道监控系统",
+    "name": "磨坊系统",
+    "short_name": "磨坊系统",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "管道监控系统 Web 应用。",
+    "description": "磨坊系统 Web 应用。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -85,8 +85,8 @@ class MockRealtimeService implements RealtimeService {
       total: 1234.5 + _seq * 0.2,
       velocity: 0.85 + _jitter(0.1),
       pressure: 0.52 + _jitter(0.03),
-      // T0 为温压一体传感器温度，T1-T6 为 PT100 温度。
-      temperatures: List.generate(7, (i) => 23.0 + _jitter(1.0) + i * 0.3),
+      // 4 路 PT100 温度（T0-T3）。
+      temperatures: List.generate(4, (i) => 23.0 + _jitter(1.0) + i * 0.3),
       heartCount: ++_heartCount,
       validBits: 0x3F, // 兼容固件当前有效位图定义。
     );

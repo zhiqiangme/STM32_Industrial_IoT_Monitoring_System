@@ -95,6 +95,6 @@ class HomeShell extends StatelessWidget {
     1 => '历史曲线',
     2 => '报警',
     3 => '用户',
-    _ => '管道监控系统',
+    _ => '磨坊系统',
   };
 }

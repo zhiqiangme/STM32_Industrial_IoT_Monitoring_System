@@ -24,7 +24,7 @@ class Measurement {
   /// 压力。
   final double? pressure;
 
-  /// T0 为温压一体传感器温度，T1-T6 为 PT100 温度。
+  /// 4 路 PT100 温度（T0-T3，对应 STM32 寄存器 0x0001-0x0004）。
   final List<double?> temperatures;
 
   /// 单片机每完成一轮采集轮询递增一次，用于判断程序是否仍在运行。
@@ -72,9 +72,9 @@ class Measurement {
       total: (j['total'] as num?)?.toDouble(),
       velocity: (j['v'] as num?)?.toDouble(),
       pressure: (j['pres'] as num?)?.toDouble(),
-      // 不管设备实际给了几个温度通道，都补齐 T0-T6 七路（缺位为 null）。
+      // 4 路 PT100 通道，缺位补 null。
       temperatures: List.generate(
-        7,
+        4,
         (i) => i < tempList.length ? tempList[i]?.toDouble() : null,
       ),
       heartCount: (j['heart_count'] as num?)?.toInt(),

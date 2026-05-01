@@ -24,7 +24,7 @@ choice /C YN /M "Continue with clean reinstall"
 if errorlevel 2 goto cancel
 
 rem Clean reinstall is only for reset testing; it intentionally removes app data.
-"%ADB_BIN%" uninstall com.varka.pipemonitor
+"%ADB_BIN%" uninstall com.varka.mill
 "%ADB_BIN%" install "%RELEASE_APK%"
 if errorlevel 1 goto fail
 

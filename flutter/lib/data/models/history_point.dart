@@ -31,9 +31,6 @@ class HistoryPoint {
       case HistoryField.t1:
       case HistoryField.t2:
       case HistoryField.t3:
-      case HistoryField.t4:
-      case HistoryField.t5:
-      case HistoryField.t6:
         final temps = (j['temp'] as List?)?.cast<num?>() ?? const [];
         raw = field.tempIndex < temps.length ? temps[field.tempIndex] : null;
     }
@@ -57,10 +54,7 @@ enum HistoryField {
   t0('t0', 'T0 温度', '°C', 0),
   t1('t1', 'T1 温度', '°C', 1),
   t2('t2', 'T2 温度', '°C', 2),
-  t3('t3', 'T3 温度', '°C', 3),
-  t4('t4', 'T4 温度', '°C', 4),
-  t5('t5', 'T5 温度', '°C', 5),
-  t6('t6', 'T6 温度', '°C', 6);
+  t3('t3', 'T3 温度', '°C', 3);
 
   /// 服务端字段名 / `temp[]` 之外的顶层 key。
   final String id;

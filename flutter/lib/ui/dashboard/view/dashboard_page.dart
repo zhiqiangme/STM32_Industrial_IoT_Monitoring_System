@@ -79,8 +79,8 @@ class DashboardPage extends StatelessWidget {
         valid: m?.pressureValid ?? true,
       ),
     ];
-    // 7 路温度通道：T0 为温压一体传感器温度，T1-T6 为 PT100。
-    final temperatureTiles = List.generate(7, (i) {
+    // 4 路 PT100 温度通道（T0-T3）。
+    final temperatureTiles = List.generate(4, (i) {
       return ValueTile(
         label: 'T$i',
         value: fmt(m == null ? null : m.temperatures[i], 1),
@@ -143,7 +143,7 @@ class DashboardPage extends StatelessWidget {
                 maxCrossAxisExtent: compactWidth
                     ? _maxExtentForColumns(width, 3)
                     : _temperatureTileWideMaxExtent,
-                // 手机竖屏下压缩卡片高度，保证 7 路温度尽量同屏展示。
+                // 手机竖屏下压缩卡片高度，保证 4 路温度尽量同屏展示。
                 mainAxisExtent: compactWidth ? 94 : 128,
                 mainAxisSpacing: _gridSpacing,
                 crossAxisSpacing: _gridSpacing,

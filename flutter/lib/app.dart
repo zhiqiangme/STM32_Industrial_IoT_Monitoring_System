@@ -52,7 +52,7 @@ class _FlowmeterAppState extends State<FlowmeterApp> {
     return Consumer<ThemeModeController>(
       builder: (context, themeController, _) {
         return MaterialApp.router(
-          title: '管道监控系统',
+          title: '磨坊系统',
           // 亮色 / 暗色主题固定，具体跟随哪套由用户偏好决定。
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),

@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="管道监控系统"
+        android:label="磨坊系统"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

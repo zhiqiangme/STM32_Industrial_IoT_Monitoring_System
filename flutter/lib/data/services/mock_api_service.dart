@@ -132,10 +132,7 @@ class MockApiService implements ApiService {
         HistoryField.t0 ||
         HistoryField.t1 ||
         HistoryField.t2 ||
-        HistoryField.t3 ||
-        HistoryField.t4 ||
-        HistoryField.t5 ||
-        HistoryField.t6 =>
+        HistoryField.t3 =>
           23.0,
       };
 

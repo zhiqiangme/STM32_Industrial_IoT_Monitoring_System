@@ -66,7 +66,7 @@ class _LoginFormViewState extends State<_LoginFormView> {
             children: [
               const FlutterLogo(size: 72),
               const SizedBox(height: 16),
-              Text('管道监控系统', style: Theme.of(context).textTheme.headlineSmall),
+              Text('磨坊系统', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
                 '请使用后台预置账号登录',

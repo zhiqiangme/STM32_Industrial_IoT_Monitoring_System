@@ -21,7 +21,7 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace = "com.varka.pipemonitor"
+    namespace = "com.varka.mill"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -35,7 +35,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.varka.pipemonitor"
+        applicationId = "com.varka.mill"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
