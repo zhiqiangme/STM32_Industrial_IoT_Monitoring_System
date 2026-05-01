@@ -160,6 +160,10 @@ class HttpApiService implements ApiService {
         'mask': mask,
       },
     );
-    return Command.fromJson(res.data!);
+    final body = res.data;
+    if (body == null) {
+      throw StateError('继电器控制接口返回了空响应');
+    }
+    return Command.fromJson(body);
   }
 }
