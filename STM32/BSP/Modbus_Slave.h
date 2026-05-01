@@ -65,6 +65,16 @@ void Modbus_Slave_RxCallback(uint8_t byte);
 UART_HandleTypeDef *Modbus_Slave_GetHandle(void);
 
 /**
+ * @brief 通过 USART3 + PA5 透传链路发送原始字节，函数内部负责 RS-485
+ *        方向切换、TC 等待和接收缓冲清理。供业务层透传 JSON 等非 Modbus
+ *        负载使用。
+ * @param data: 待发送数据区
+ * @param len:  待发送字节数
+ * @retval 无
+ */
+void Modbus_Slave_SendRawBytes(const uint8_t *data, uint16_t len);
+
+/**
  * @brief 通知从站引擎发生了一次 USART overrun 异常。
  * @param 无
  * @retval 无

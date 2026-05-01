@@ -478,7 +478,6 @@ static void G780s_HandleJsonFrame(const char *json_text)
  */
 static void G780s_TrySendTelemetry(uint8_t force_resend)
 {
-    UART_HandleTypeDef *huart;
     char local_buffer[sizeof(g_telemetry_tx_buffer)];
     size_t frame_length;
 
@@ -496,16 +495,12 @@ static void G780s_TrySendTelemetry(uint8_t force_resend)
     memcpy(local_buffer, g_telemetry_tx_buffer, frame_length + 1u);
     __enable_irq();
 
-    huart = Modbus_Slave_GetHandle();
-    if (huart == NULL)
+    if (frame_length == 0u)
     {
         return;
     }
 
-    (void)HAL_UART_Transmit(huart,
-                            (uint8_t *)local_buffer,
-                            (uint16_t)frame_length,
-                            300u);
+    Modbus_Slave_SendRawBytes((const uint8_t *)local_buffer, (uint16_t)frame_length);
     g_telemetry_waiting_ack = 1u;
     g_telemetry_last_send_tick = HAL_GetTick();
 }
@@ -1817,7 +1812,6 @@ void G780s_ReportCommandAck(const G780sJsonCommand *command,
                             uint16_t relay_do,
                             uint16_t relay_di)
 {
-    UART_HandleTypeDef *huart;
     const char *cmd_name = "unknown";
     char buffer[224];
     int length;
@@ -1859,11 +1853,5 @@ void G780s_ReportCommandAck(const G780sJsonCommand *command,
         return;
     }
 
-    huart = Modbus_Slave_GetHandle();
-    if (huart == NULL)
-    {
-        return;
-    }
-
-    (void)HAL_UART_Transmit(huart, (uint8_t *)buffer, (uint16_t)length, 300u);
+    Modbus_Slave_SendRawBytes((const uint8_t *)buffer, (uint16_t)length);
 }

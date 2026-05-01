@@ -451,6 +451,33 @@ UART_HandleTypeDef *Modbus_Slave_GetHandle(void)
     return &g_uart3_handle;
 }
 
+void Modbus_Slave_SendRawBytes(const uint8_t *data, uint16_t len)
+{
+    if (data == NULL || len == 0u)
+    {
+        return;
+    }
+
+    /* 半双工 485：和 Modbus 应答完全一致的方向切换序列，
+       否则透传 JSON 不会真正出现在总线上，G780S 永远收不到。 */
+    MODBUS_SLAVE_TX_ENABLE();
+    for (volatile int i = 0; i < 500; i++)
+    {
+    }
+
+    (void)HAL_UART_Transmit(&g_uart3_handle, (uint8_t *)data, len, 300);
+    while (__HAL_UART_GET_FLAG(&g_uart3_handle, UART_FLAG_TC) == RESET)
+    {
+    }
+
+    for (volatile int i = 0; i < 200; i++)
+    {
+    }
+
+    MODBUS_SLAVE_RX_ENABLE();
+    Modbus_Slave_ClearPendingRx();
+}
+
 /**
  * @brief 通知从站引擎记录一次 UART 异常。
  * @param 无
