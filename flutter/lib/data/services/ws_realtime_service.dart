@@ -123,23 +123,27 @@ class WsRealtimeService implements RealtimeService {
   /// 普通消息帧：根据 kind 字段拆分。
   void _onMessageFrame(Map<String, dynamic> frame) {
     final kind = frame['kind'] as String?;
-    final payload = frame['payload'];
-    if (payload is! Map<String, dynamic>) return;
     switch (kind) {
       case 'tele':
+        final payload = frame['payload'];
+        if (payload is! Map<String, dynamic>) return;
         _controller.add(
           TelemetryEvent(
             Measurement.fromJson(payload, receivedAt: frame['receivedAt']),
           ),
         );
       case 'alarm':
+        final payload = frame['payload'];
+        if (payload is! Map<String, dynamic>) return;
         // Alarm.fromJson 同时接受外层封装 + payload，这里把两者合并传入。
         _controller.add(AlarmEvent(Alarm.fromJson({...frame, 'payload': payload})));
       case 'ack':
+        final payload = frame['payload'];
+        final ackSource = payload is Map<String, dynamic> ? payload : frame;
         _controller.add(AckEvent(
-          // 兼容服务端 ack 的下划线/驼峰两种序号字段。
-          cmdSeq: _readAckSeq(payload),
-          result: payload['result'] as String? ?? 'unknown',
+          // 兼容扁平 ack 与 payload ack 两种形状。
+          cmdSeq: _readAckSeq(ackSource),
+          result: _readAckResult(ackSource),
         ));
     }
   }
@@ -154,7 +158,7 @@ class WsRealtimeService implements RealtimeService {
       case 'ack':
         _controller.add(AckEvent(
           cmdSeq: _readAckSeq(frame),
-          result: frame['result'] as String? ?? 'unknown',
+          result: _readAckResult(frame),
         ));
     }
   }
@@ -197,4 +201,30 @@ int _readAckSeq(Map<String, dynamic> j) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value) ?? 0;
   return 0;
+}
+
+String _readAckResult(Map<String, dynamic> j) {
+  final result = j['result'];
+  if (result is String && result.isNotEmpty) {
+    return result;
+  }
+
+  final ok = j['ok'];
+  if (ok is bool) {
+    return ok ? 'ok' : 'failed';
+  }
+  if (ok is num) {
+    return ok != 0 ? 'ok' : 'failed';
+  }
+  if (ok is String) {
+    final normalized = ok.trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1' || normalized == 'ok') {
+      return 'ok';
+    }
+    if (normalized == 'false' || normalized == '0') {
+      return 'failed';
+    }
+  }
+
+  return 'unknown';
 }
