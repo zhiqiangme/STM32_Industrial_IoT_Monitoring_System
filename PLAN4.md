@@ -222,32 +222,96 @@ AT+POLLTIMEOUT=300
 
 ---
 
-## 任务清单（18 项，已写入 TodoWrite）
+## 任务清单（共 18 项，状态实时同步）
 
-1. G780s FOTA 升级到固件 V2.4.01.000000.0000+（用户硬件操作）
-2. VPS 上配置 mosquitto passwordfile + aclfile（FM001 + pipe-monitor-api 两组凭据）
-3. 本地 docker-compose 跑通，用 mosquitto_pub 模拟 G780s JSON 上行，验证字段映射
-4. G780s AT 配置：MQTT 客户端（broker/clientid/user/pass/LWT/pub/sub topic）
-5. G780s AT 配置：边缘采集启用 + JSON 组包模式 + 周期/间隔/超时
-6. G780s 录入 16 项点表（seq/temp[0-3]/weight[0-3]/flow/total/valid），与 STM32 寄存器布局对齐
-7. 上线抓包验证：mosquitto -v 看到完整 JSON，字节序/倍率正确
-8. 新增 pipe-monitor-api/src/g780s_mapper.js：r_data → Measurement schema
-9. 改 pipe-monitor-api MQTT 订阅入口：JSON.parse 后按格式分支（params.dir=up 走 mapper）
-10. pipe-monitor-api 启动时若 users 表为空，按 env seed admin / user 两个账号
-11. Flutter 项目改名：pubspec.yaml name=mill / 应用名=磨坊系统 / bundle id=com.varka.mill（Android + iOS）
-12. Flutter Measurement 模型 temp 收为 4 通道，Dashboard / History UI 同步收 4 条
-13. Flutter UI：pres / v / heart_count 字段值为 0/null 时隐藏卡片
-14. Flutter 复核：登录页若有注册入口则隐藏
-15. GitHub Secrets 新增：JWT_SECRET / SEED_* / MYSQL_* / MQTT_* / MOSQUITTO_DEVICE_PWD
-16. 改 deploy-server.yml：rsync 前 ssh 渲染 /opt/pipe-monitor/.env + 在 VPS 渲染 mosquitto passwordfile
-17. push main 触发部署，验证 /health 200 + Flutter 登录 + Dashboard 出数
-18. （本期）mosquitto 加 8883 + LE 证书 + AT+SSLCFG 切 TLS + 关闭 1883 公网
+| # | 状态 | 任务 | 责任侧 |
+|---|---|---|---|
+| 1 | ⬜ pending | G780s FOTA 升级到固件 ≥ V2.4.01.000000.0000 | 用户硬件 |
+| 2 | ⬜ pending | VPS 上配置 mosquitto passwordfile + aclfile（FM001 + pipe-monitor-api 两组凭据） | 部署 |
+| 3 | ⬜ pending | 本地 docker-compose 跑通，用 mosquitto_pub 模拟 G780s JSON 上行，验证字段映射 | 联调 |
+| 4 | ⬜ pending | G780s AT 配置：MQTT 客户端（broker/clientid/user/pass/LWT/pub/sub topic） | 用户硬件 |
+| 5 | ⬜ pending | G780s AT 配置：边缘采集启用 + JSON 组包模式 + 周期/间隔/超时 | 用户硬件 |
+| 6 | ⬜ pending | G780s 录入 16 项点表（seq/temp[0-3]/weight[0-3]/flow/total/valid），与 STM32 寄存器布局对齐 | 用户硬件 |
+| 7 | ⬜ pending | 上线抓包验证：mosquitto -v 看到完整 JSON，字节序/倍率正确 | 联调 |
+| 8 | ✅ done | 新增 `pipe-monitor-api/src/g780s_mapper.js`：r_data → Measurement schema | 代码 |
+| 9 | ✅ done | 改 pipe-monitor-api MQTT 订阅入口：`isG780sEdgePayload` 分流后转 tele | 代码 |
+| 10 | ✅ done | pipe-monitor-api 启动时若 users 表为空，按 env seed admin / user 两个账号 | 代码 |
+| 11 | ✅ done | Flutter 项目改名：name=mill / 应用名=磨坊系统 / bundle id=com.varka.mill（Android-only，无 iOS 目录） | 代码 |
+| 12 | ✅ done | Flutter Measurement 模型 temp 收为 4 通道，Dashboard / History UI 同步收 4 条 | 代码 |
+| 13 | 🟡 in_progress | Flutter UI：pres / v / heart_count 字段值为 0/null 时隐藏卡片 | 代码 |
+| 14 | ⬜ pending | Flutter 复核：登录页若有注册入口则隐藏（已初步确认无注册入口，仅复核） | 代码 |
+| 15 | ⬜ pending | GitHub Secrets 新增：JWT_SECRET / SEED_* / MYSQL_* / MQTT_* / MOSQUITTO_DEVICE_PWD | 部署 |
+| 16 | ⬜ pending | 改 deploy-server.yml：rsync 前 ssh 渲染 /opt/pipe-monitor/.env + 在 VPS 渲染 mosquitto passwordfile | 部署 |
+| 17 | ⬜ pending | push main 触发部署，验证 /health 200 + Flutter 登录 + Dashboard 出数 | 联调 |
+| 18 | ⬜ pending | mosquitto 加 8883 + LE 证书 + AT+SSLCFG 切 TLS + 关闭 1883 公网 | 部署+硬件 |
 
 ---
 
-## 已完成
+## 已完成详情
 
-- ✅ 任务 8（部分）：`g780s_mapper.js` 已写入 `D:/Project/HTML/server/services/pipe-monitor-api/src/g780s_mapper.js`
-- ✅ 任务 9：`state.js` ingest 已接入 mapper（`isG780sEdgePayload` 分流后转 tele）
+### ✅ 任务 8 — G780s 边缘 JSON 映射器
+**文件**：`D:/Project/HTML/server/services/pipe-monitor-api/src/g780s_mapper.js`（新增）
+- `isG780sEdgePayload(payload)`：判别 `{params:{dir:"up", r_data:[...]}}` 形态
+- `mapG780sEdgePayload(payload, fallbackDeviceId)`：按 name 索引出 seq / temp[0-3] / weight[0-3] / flow / total / valid，输出兼容 Measurement schema 的 tele 对象
+- 温度倍率 0.1，err≠"0" 字段置 null，valid 缺省时按各点 err 拼简化 mask
 
-> 下次会话直接接续任务 10（用户 seed）。
+### ✅ 任务 9 — 接入订阅入口
+**文件**：`D:/Project/HTML/server/services/pipe-monitor-api/src/state.js`（修改）
+- 顶部 `import { isG780sEdgePayload, mapG780sEdgePayload } from "./g780s_mapper.js"`
+- `JSON.parse` 后立即检测 G780s 形态并归一化，下游 switch 分支无需感知设备厂商
+- 保留对 `t:"tele"` 直发设备的兼容
+
+### ✅ 任务 10 — 用户 seed
+**文件**：
+- `D:/Project/HTML/server/services/pipe-monitor-api/src/seed_users.js`（新增）
+- `D:/Project/HTML/server/services/pipe-monitor-api/src/config.js`（修改：增 `seed.admin` / `seed.user`）
+- `D:/Project/HTML/server/services/pipe-monitor-api/src/server.js`（修改：`createDbStore` 后调 `seedUsers`）
+
+env 约定：`SEED_ADMIN_USER` / `SEED_ADMIN_PASS` / `SEED_USER_USER` / `SEED_USER_PASS`，可选 `SEED_ADMIN_DISPLAY` / `SEED_USER_DISPLAY`。仅在用户名不存在时插入，幂等；env 缺省或 db 未启用则 warn 跳过。
+
+### ✅ 任务 11 — Flutter 项目改名
+- `flutter/pubspec.yaml`：`name: project` → `name: mill`，描述改为"磨坊系统"
+- `flutter/android/app/build.gradle.kts`：`namespace` + `applicationId` → `com.varka.mill`
+- Kotlin 源码目录从 `kotlin/com/varka/pipemonitor/` 移到 `kotlin/com/varka/mill/`，`MainActivity.kt` 包声明同步
+- `flutter/android/app/src/main/AndroidManifest.xml`：`android:label="磨坊系统"`
+- `flutter/lib/app.dart`、`lib/ui/core/shell/home_shell.dart`、`lib/ui/user/view/user_page.dart`：标题"磨坊系统"
+- `flutter/web/manifest.json` + `flutter/web/index.html`：所有"管道监控系统" → "磨坊系统"
+- `flutter/Flutter_Reinstall_Clean.bat`：`adb uninstall com.varka.pipemonitor` → `com.varka.mill`
+- `FlowmeterApp` 类名保留（不影响用户可见 UI）
+- iOS 跳过：项目无 `ios/` 目录
+
+### ✅ 任务 12 — 温度通道收为 4 路
+- `flutter/lib/data/models/measurement.dart`：`temperatures` 注释改为"4 路 PT100（T0-T3）"，`fromJson` 中 `List.generate(7, ...)` 改为 `List.generate(4, ...)`
+- `flutter/lib/data/models/history_point.dart`：`HistoryField` 枚举去掉 `t4 / t5 / t6`；`fromJson` switch 分支同步收
+- `flutter/lib/ui/dashboard/view/dashboard_page.dart`：`temperatureTiles` 由 7 改为 4；注释"7 路温度"改为"4 路温度"
+- `flutter/lib/data/services/mock_api_service.dart` + `mock_realtime_service.dart`：mock 数据同步收 4 通道
+
+---
+
+## 已发现并记录的非计划信息
+
+- Flutter 项目原本只有 Android 平台（无 `ios/` 目录），故所有 iOS 相关步骤跳过
+- 原 namespace `com.varka.pipemonitor` 表明该模板源自 Varka 的"管道监控"项目（与服务端 pipe-monitor-api 同源）
+- Dart 代码全部使用相对 import，无 `package:project/...` 引用，所以 pubspec name 改动**不影响**任何 import 语句
+- pipe-monitor-api 的 `db.js` 已带 `findUserByUsername` / `createUser`，seed 直接复用，不需新增 db API
+- mosquitto 现有 `aclfile.template` 已有 FM001 条目（设备 user `dr154-fm001` 上行 `device/FM001/up`、下行 `device/FM001/down`），与本期 topic 完全一致，无需改动
+- pipe-monitor-api 的 `state.js` 还有一条 gateway 离线告警分支（订阅 `device/+/gateway/status`），用 LWT 实现 — 阶段 1 配置 G780s LWT 时可以选择把遗嘱发到该 topic 触发告警
+
+---
+
+## 下次会话接续点
+
+**当前进行中**：任务 13 — Flutter UI 隐藏未使用的卡片（pres / velocity / heart_count）
+
+**实施位置**：
+- `flutter/lib/ui/dashboard/view/dashboard_page.dart`：在 `metricTiles` / `temperatureAndHeartTiles` 拼装时按字段是否有效条件加入；或直接删除"压力 / 流速 / 心跳计数"三个 ValueTile
+- `flutter/lib/ui/history/view/history_page.dart`（待读）：HistoryField 选择器去掉 `velocity` / `pressure`
+- 配套：`mock_api_service.dart` / `mock_realtime_service.dart` 把对应 mock 字段去掉或保留只用于联调
+
+**实施策略选择**：
+- **方案 A（彻底删）**：直接删卡片，HistoryField 枚举里去掉 velocity/pressure，前端永远不显示。优点：UI 干净；缺点：后续若加传感器要恢复多处代码
+- **方案 B（条件隐藏）**：保留卡片定义，运行时 `m?.pressure == null || pressure == 0` 时不加入列表。优点：随设备能力自动适配；缺点：代码稍乱
+
+> 推荐方案 A — 本期就单设备且确定不上压力/流速，删干净更明确。下次会话开工时按 A 执行。
+
+**之后顺序**：14 → 15 → 16 → 18 → 2 → 3 → 17（最后端到端验证）。任务 1 / 4-7 是用户硬件操作，并行进行。
