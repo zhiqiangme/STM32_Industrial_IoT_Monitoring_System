@@ -28,22 +28,27 @@ class ControlPage extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // 页面顶部只保留一行标题 + 位图，避免卡片里再重复一份。
+            Row(
+              children: [
+                const Text(
+                  '继电器控制',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  '0x${vm.relayMask.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '继电器控制',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '当前输出位图：0x${vm.relayMask.toRadixString(16).padLeft(4, '0').toUpperCase()}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 16),
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final compact = constraints.maxWidth < 600;
