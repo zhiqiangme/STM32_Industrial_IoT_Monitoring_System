@@ -338,7 +338,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_HAL_DRIVER,STM32F103xE,LFS_NO_MALLOC,LFS_NO_ASSERT,LFS_NO_DEBUG,LFS_NO_WARN</Define>
+              <Define>USE_HAL_DRIVER,STM32F103xE,RTOS_ENABLED,LFS_NO_MALLOC,LFS_NO_ASSERT,LFS_NO_DEBUG,LFS_NO_WARN</Define>
               <Undefine></Undefine>
               <IncludePath>..\Drivers\CMSIS\Device\ST\STM32F1xx\Include;..\Drivers\CMSIS\Include;..\Drivers\STM32F1xx_HAL_Driver\Inc;..\User;..\BSP;..\System;..\APP;..\LittleFS;..\rt-thread\include;..\rt-thread\bsp</IncludePath>
             </VariousControls>
@@ -1224,7 +1224,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_HAL_DRIVER,STM32F103xE,LFS_NO_MALLOC,LFS_NO_ASSERT,LFS_NO_DEBUG,LFS_NO_WARN</Define>
+              <Define>USE_HAL_DRIVER,STM32F103xE,RTOS_ENABLED,LFS_NO_MALLOC,LFS_NO_ASSERT,LFS_NO_DEBUG,LFS_NO_WARN</Define>
               <Undefine></Undefine>
               <IncludePath>..\Drivers\CMSIS\Device\ST\STM32F1xx\Include;..\Drivers\CMSIS\Include;..\Drivers\STM32F1xx_HAL_Driver\Inc;..\User;..\BSP;..\System;..\APP;..\LittleFS;..\rt-thread\include;..\rt-thread\bsp</IncludePath>
             </VariousControls>
