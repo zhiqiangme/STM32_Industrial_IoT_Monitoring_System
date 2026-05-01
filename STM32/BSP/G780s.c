@@ -43,7 +43,7 @@ static char g_telemetry_tx_buffer[320];
 #define G780S_CFG_MAGIC             0x47584346UL  /* GXCF */
 #define G780S_DIAG_MAGIC            0x47584449UL  /* GXDI */
 #define G780S_DIAG_VERSION          0x0002u
-#define G780S_JSON_DEVICE_ID        "FM001"
+#define G780S_JSON_DEVICE_ID        "FM002"
 #define G780S_JSON_ACK_TIMEOUT_MS   5000UL
 
 typedef struct
