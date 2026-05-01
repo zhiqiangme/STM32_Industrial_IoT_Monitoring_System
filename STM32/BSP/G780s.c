@@ -431,8 +431,11 @@ static void G780s_HandleJsonFrame(const char *json_text)
     if (G780s_JsonExtractString(json_text, "t", type, sizeof(type)) != 0u &&
         strcmp(type, "cloud_ack") == 0)
     {
+        /* seq 是按键计数，云端处理期间可能已经叠加多次按键，
+           因此只要 ack_seq 不超过当前最新帧序号就视为"链路已收到一条"，
+           解除等待，避免 5s 超时重发循环。 */
         if (G780s_JsonExtractUint32(json_text, "ack_seq", &value) != 0u &&
-            value == g_telemetry_pending_seq)
+            value <= g_telemetry_pending_seq)
         {
             g_telemetry_waiting_ack = 0u;
         }

@@ -15,21 +15,23 @@ class Env {
   );
 
   /// REST 接口的基础地址。最终 URL 形如 `$apiBase/api/...`。
+  /// STM32_Mill 项目独立部署在 mill-api.varka.cn，与 Flowmeter 的
+  /// api.varka.cn 物理隔离（不同后端、不同 DB、不同 JWT 密钥）。
   static const String apiBase = String.fromEnvironment(
     'API_BASE',
-    defaultValue: 'https://api.varka.cn',
+    defaultValue: 'https://mill-api.varka.cn',
   );
 
-  /// 实时通道（遥测 / 告警 / ack）的 WebSocket 地址。
+  /// 实时通道（遥测 / ack）的 WebSocket 地址。
   static const String wsUrl = String.fromEnvironment(
     'WS_URL',
-    defaultValue: 'wss://api.varka.cn/ws/live',
+    defaultValue: 'wss://mill-api.varka.cn/ws/live',
   );
 
   /// 单设备部署下使用的固定设备 ID。
   static const String deviceId = String.fromEnvironment(
     'DEVICE_ID',
-    defaultValue: 'FM001',
+    defaultValue: 'FM002',
   );
 
   /// 下行命令的 ack 超时阈值。设备在该窗口内未回执则 UI 显示失败。

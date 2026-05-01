@@ -1,0 +1,180 @@
+mydei@iZ2ze5bvud73y8ketctqm3Z:~$ sudo docker logs -f pipe-monitor-mqtt
+
+1777621338: mosquitto version 2.1.2 starting
+
+1777621338: Info: running mosquitto as user: mosquitto.
+
+1777621338: Config loaded from /mosquitto/config/mosquitto.conf.
+
+1777621338: Bridge support available.
+
+1777621338: Persistence support available.
+
+1777621338: TLS support available.
+
+1777621338: TLS-PSK support available.
+
+1777621338: Websockets support available.
+
+1777621338: Warning: File /mosquitto/config/passwordfile has world readable permissions. Future versions will refuse to load this file.
+
+To fix this, use `chmod 0700 /mosquitto/config/passwordfile`.
+
+
+
+1777621338: Warning: File /mosquitto/config/passwordfile owner is not mosquitto. Future versions will refuse to load this file.To fix this, use `chown mosquitto /mosquitto/config/passwordfile`.
+
+
+
+1777621338: Warning: File /mosquitto/config/passwordfile group is not mosquitto. Future versions will refuse to load this file.
+
+
+
+1777621338: Plugin builtin-security has registered to receive 'basic-auth' events.
+
+1777621338: Warning: File /mosquitto/config/aclfile has world readable permissions. Future versions will refuse to load this file.
+
+To fix this, use `chmod 0700 /mosquitto/config/aclfile`.
+
+
+
+1777621338: Warning: File /mosquitto/config/aclfile owner is not mosquitto. Future versions will refuse to load this file.To fix this, use `chown mosquitto /mosquitto/config/aclfile`.
+
+
+
+1777621338: Warning: File /mosquitto/config/aclfile group is not mosquitto. Future versions will refuse to load this file.
+
+
+
+1777621338: Plugin builtin-security has registered to receive 'acl-check' events.
+
+1777621338: Opening ipv4 listen socket on port 1883.
+
+1777621338: mosquitto version 2.1.2 running
+
+1777621338: New connection from 117.61.54.104:63027 on port 1883.
+
+1777621338: New client connected from 117.61.54.104:63027 as DR154-FM001 (p4, c0, k120, u'dr154-fm001').
+
+1777621338: Client DR154-FM001 [117.61.54.104:63027] disconnected: malformed packet.
+
+1777621338: New connection from 117.61.54.104:63028 on port 1883.
+
+1777621338: Client DR154-FM001 [117.61.54.104:63027] disconnected: session taken over.
+
+1777621338: New client connected from 117.61.54.104:63028 as DR154-FM001 (p4, c0, k120, u'dr154-fm001').
+
+1777621338: Client DR154-FM001 [117.61.54.104:63028] disconnected: malformed packet.
+
+1777621339: New connection from 117.61.54.104:63029 on port 1883.
+
+1777621339: Client DR154-FM001 [117.61.54.104:63028] disconnected: session taken over.
+
+1777621339: New client connected from 117.61.54.104:63029 as DR154-FM001 (p4, c0, k120, u'dr154-fm001').
+
+1777621339: Client DR154-FM001 [117.61.54.104:63029] disconnected: malformed packet.
+
+1777621339: New connection from 117.61.54.104:63030 on port 1883.
+
+1777621339: Client DR154-FM001 [117.61.54.104:63029] disconnected: session taken over.
+
+1777621339: New client connected from 117.61.54.104:63030 as DR154-FM001 (p4, c0, k120, u'dr154-fm001').
+
+1777621339: Client DR154-FM001 [117.61.54.104:63030] disconnected: malformed packet.
+
+1777621339: New connection from 117.61.54.104:63031 on port 1883.
+
+。。。很多未连接
+
+1777623647: New connection from 117.61.155.172:29631 on port 1883.
+
+1777623647: Client G780S-FM002 [117.61.185.245:44522] disconnected: session taken over.
+
+1777623647: New client connected from 117.61.155.172:29631 as G780S-FM002 (p3, c0, k60, u'g780s-fm002').
+
+1777623678: New connection from 117.61.52.214:28660 on port 1883.
+
+1777623678: Client G780S-FM002 [117.61.155.172:29631] disconnected: session taken over.
+
+1777623678: New client connected from 117.61.52.214:28660 as G780S-FM002 (p4, c0, k60, u'g780s-fm002').
+
+1777623689: New connection from 117.61.192.222:40298 on port 1883.
+
+1777623689: Client G780S-FM002 [117.61.52.214:28660] disconnected: session taken over.
+
+1777623689: New client connected from 117.61.192.222:40298 as G780S-FM002 (p4, c0, k60, u'g780s-fm002').
+
+1777624451: Saving in-memory database to /mosquitto/data//mosquitto.db.
+
+1777624551: New connection from 117.61.185.210:10515 on port 1883.
+
+1777624551: Client G780S-FM002 [117.61.192.222:40298] disconnected: session taken over.
+
+1777624551: New client connected from 117.61.185.210:10515 as G780S-FM002 (p4, c0, k60, u'g780s-fm002').
+
+1777625775: New connection from 47.99.34.115:47022 on port 1883.
+
+1777625775: Client from 47.99.34.115:47022 appears to be using TLS to connect to a non-TLS listener.
+
+1777625775: Client 47.99.34.115 [47.99.34.115:47022] disconnected: protocol error.
+
+1777625775: New connection from 47.99.34.115:47024 on port 1883.
+
+1777625775: Protocol error from 47.99.34.115:47024: First packet not CONNECT (48).
+
+1777625775: Client 47.99.34.115 [47.99.34.115:47024] disconnected: protocol error.
+
+1777626253: Saving in-memory database to /mosquitto/data//mosquitto.db.
+
+1777626625: New connection from 48.44.13.109:35056 on port 1883.
+
+1777626625: New client connected from 48.44.13.109:35056 as test-pc-001 (p4, c1, k60, u'g780s-fm002').
+
+1777626645: Client test-pc-001 [48.44.13.109:35056] disconnected.
+
+1777626654: New connection from 48.44.13.109:63062 on port 1883.
+
+1777626654: New client connected from 48.44.13.109:63062 as test-pc-001 (p4, c1, k60, u'g780s-fm002').
+
+1777626743: Client test-pc-001 [48.44.13.109:63062] disconnected.
+
+1777626745: New connection from 48.44.13.109:40558 on port 1883.
+
+1777626745: New client connected from 48.44.13.109:40558 as test-pc-001 (p4, c1, k60, u'g780s-fm002').
+
+
+
+mydei@iZ2ze5bvud73y8ketctqm3Z:~$ sudo docker logs -f stm32-mill-api
+
+[http] stm32-mill-api listening on :3001
+
+[mqtt] connected mqtt://mqtt.varka.cn:1883
+
+[mqtt] subscribed device/+/up(q0)
+
+[mqtt] closed
+
+[mqtt] reconnecting
+
+[mqtt] connected mqtt://mqtt.varka.cn:1883
+
+[mqtt] subscribed
+
+[mqtt] closed
+
+[mqtt] reconnecting
+
+[mqtt] connected mqtt://mqtt.varka.cn:1883
+
+[mqtt] subscribed
+
+[mqtt] closed
+
+[mqtt] reconnecting
+
+[mqtt] connected mqtt://mqtt.varka.cn:1883
+
+[mqtt] subscribed
+
+
+
