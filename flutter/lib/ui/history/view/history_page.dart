@@ -146,6 +146,7 @@ class _Chart extends StatelessWidget {
           (p) => FlSpot(p.timestamp.millisecondsSinceEpoch.toDouble(), p.value),
         )
         .toList();
+    final hasSinglePoint = rawSpots.length == 1;
     final spots = <FlSpot>[];
     for (var i = 0; i < rawSpots.length; i++) {
       spots.add(rawSpots[i]);
@@ -179,93 +180,125 @@ class _Chart extends StatelessWidget {
           final yFontSize = narrow ? 9.0 : 11.0;
           final yReserved = narrow ? 48.0 : 44.0;
           final xLabelFormat = _xAxisFormat(vm.from, vm.to);
-          return LineChart(
-            LineChartData(
-              minX: minX,
-              maxX: maxX,
-              // y 轴上下各留 10% 余量，避免曲线贴边。
-              minY: minY - ySpan * 0.1,
-              maxY: maxY + ySpan * 0.1,
-              titlesData: FlTitlesData(
-                // 屏蔽顶部 / 右侧坐标轴标题。
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                // x 轴：宽屏 4 个、窄屏 3 个时间刻度，按 MM-dd \n HH:mm 排版。
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: xReserved,
-                    interval: xSpan / xTickCount,
-                    getTitlesWidget: (value, meta) {
-                      final d = DateTime.fromMillisecondsSinceEpoch(
-                        value.toInt(),
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          DateFormat(xLabelFormat).format(d),
-                          style: TextStyle(fontSize: xFontSize),
-                          textAlign: TextAlign.center,
-                        ),
-                      );
-                    },
+          return Stack(
+            children: [
+              LineChart(
+                LineChartData(
+                  minX: minX,
+                  maxX: maxX,
+                  // y 轴上下各留 10% 余量，避免曲线贴边。
+                  minY: minY - ySpan * 0.1,
+                  maxY: maxY + ySpan * 0.1,
+                  titlesData: FlTitlesData(
+                    // 屏蔽顶部 / 右侧坐标轴标题。
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    // x 轴：宽屏 4 个、窄屏 3 个时间刻度，按 MM-dd \n HH:mm 排版。
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: xReserved,
+                        interval: xSpan / xTickCount,
+                        getTitlesWidget: (value, meta) {
+                          final d = DateTime.fromMillisecondsSinceEpoch(
+                            value.toInt(),
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              DateFormat(xLabelFormat).format(d),
+                              style: TextStyle(fontSize: xFontSize),
+                              textAlign: TextAlign.center,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    // y 轴：把单位（如 L/min）作为坐标轴名展示，刻度字号随宽度调节。
+                    leftTitles: AxisTitles(
+                      axisNameWidget: Text(vm.field.unit),
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: yReserved,
+                        getTitlesWidget: (value, meta) {
+                          if (_isAxisEdgeLabel(value, meta)) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Text(
+                              meta.formattedValue,
+                              style: TextStyle(fontSize: yFontSize),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
-                // y 轴：把单位（如 L/min）作为坐标轴名展示，刻度字号随宽度调节。
-                leftTitles: AxisTitles(
-                  axisNameWidget: Text(vm.field.unit),
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: yReserved,
-                    getTitlesWidget: (value, meta) {
-                      if (_isAxisEdgeLabel(value, meta)) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Text(
-                          meta.formattedValue,
-                          style: TextStyle(fontSize: yFontSize),
-                        ),
-                      );
-                    },
+                  gridData: const FlGridData(show: true),
+                  borderData: FlBorderData(show: true),
+                  // 触摸 tooltip：只显示数值，省略时间（x 轴本身已经标了）。
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          return LineTooltipItem(
+                            spot.y.toStringAsFixed(1),
+                            const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          );
+                        }).toList();
+                      },
+                    ),
                   ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: true,
+                      barWidth: 2,
+                      color: Theme.of(context).colorScheme.primary,
+                      // 只有一个点时显式画圆点，否则折线会看起来像空白图。
+                      dotData: FlDotData(
+                        show: hasSinglePoint,
+                        getDotPainter: (spot, percent, bar, index) {
+                          return FlDotCirclePainter(
+                            radius: 4,
+                            color: Theme.of(context).colorScheme.primary,
+                            strokeWidth: 1.5,
+                            strokeColor: Colors.white,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              gridData: const FlGridData(show: true),
-              borderData: FlBorderData(show: true),
-              // 触摸 tooltip：只显示数值，省略时间（x 轴本身已经标了）。
-              lineTouchData: LineTouchData(
-                touchTooltipData: LineTouchTooltipData(
-                  getTooltipItems: (touchedSpots) {
-                    return touchedSpots.map((spot) {
-                      return LineTooltipItem(
-                        spot.y.toStringAsFixed(1),
-                        const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      );
-                    }).toList();
-                  },
+              if (hasSinglePoint)
+                const Positioned(
+                  top: 8,
+                  right: 8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Color(0xCCFFFFFF),
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Text(
+                        '当前时间段仅 1 个点',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: spots,
-                  isCurved: true,
-                  barWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                  // 不画散点，避免数据点多时全屏堆叠。
-                  dotData: const FlDotData(show: false),
-                ),
-              ],
-            ),
+            ],
           );
         },
       ),

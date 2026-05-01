@@ -7,6 +7,7 @@ import '../../../data/models/history_point.dart';
 import '../../../data/models/measurement.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/measurement_repository.dart';
+import '../../../utils/app_logger.dart';
 import '../../../utils/result.dart';
 
 /// 历史曲线页面的 ViewModel。
@@ -87,12 +88,20 @@ class HistoryViewModel extends ChangeNotifier {
       case Ok(:final value):
         _points = value;
         _lastLoadFailed = false;
+        appLog.i(
+          'history loaded field=${_field.id} from=${_from.toIso8601String()} '
+          'to=${_to.toIso8601String()} count=${value.length}',
+        );
       case Err():
         // 未登录时数据接口会返回 401；这里把错误静默吞掉，
         // 让页面停留在"此时间段内无数据"的空壳状态，
         // 等用户去"用户"Tab 登录后会自动 refresh。
         _points = const [];
         _lastLoadFailed = true;
+        appLog.w(
+          'history load failed field=${_field.id} '
+          'from=${_from.toIso8601String()} to=${_to.toIso8601String()}',
+        );
     }
     _loading = false;
     notifyListeners();
