@@ -4,6 +4,7 @@ import '../../config/env.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/result.dart';
 import '../models/command.dart';
+import '../models/measurement.dart';
 import '../services/api_service.dart';
 import '../services/realtime_service.dart';
 
@@ -20,7 +21,11 @@ class CommandRepository {
   })  : _api = api,
         _realtime = realtime {
     _sub = _realtime.events.listen((evt) {
-      if (evt is AckEvent) _onAck(evt);
+      if (evt is AckEvent) {
+        _onAck(evt);
+      } else if (evt is TelemetryEvent) {
+        _onTelemetry(evt.measurement);
+      }
     });
   }
 
@@ -35,10 +40,16 @@ class CommandRepository {
   /// `seq → 当前未完成的 [Command] 快照`，用于 ack 到达时拷贝出最终状态。
   final Map<int, Command> _inFlight = {};
 
+  /// `seq → 目标继电器位图`。
+  /// 某些现场链路上 ack 回传不稳定，但实时遥测里的 relay_do 会先更新；
+  /// 只要位图已经到达目标值，就不再继续把 UI 卡在 timeout。
+  final Map<int, int> _expectedRelayMasks = {};
+
   /// ack 到达：根据 result 决定状态是 acked 还是 failed。
   void _onAck(AckEvent evt) {
     final completer = _pending.remove(evt.cmdSeq);
     final cmd = _inFlight.remove(evt.cmdSeq);
+    _expectedRelayMasks.remove(evt.cmdSeq);
     if (completer == null || cmd == null) return;
     final updated = cmd.copyWith(
       ackedAt: DateTime.now(),
@@ -48,6 +59,36 @@ class CommandRepository {
     completer.complete(updated);
   }
 
+  /// 遥测确认：如果最新继电器输出位图已经等于本次命令目标值，
+  /// 就把命令直接视为成功，避免 ack 缺失时误报 timeout。
+  void _onTelemetry(Measurement measurement) {
+    final relayDo = measurement.relayDo;
+    if (relayDo == null || _expectedRelayMasks.isEmpty) {
+      return;
+    }
+
+    final matchedSeq = _expectedRelayMasks.entries
+        .where((entry) => entry.value == relayDo)
+        .map((entry) => entry.key)
+        .fold<int?>(null, (best, seq) => best == null || seq < best ? seq : best);
+    if (matchedSeq == null) {
+      return;
+    }
+
+    final completer = _pending.remove(matchedSeq);
+    final cmd = _inFlight.remove(matchedSeq);
+    _expectedRelayMasks.remove(matchedSeq);
+    if (completer == null || cmd == null || completer.isCompleted) {
+      return;
+    }
+
+    completer.complete(cmd.copyWith(
+      ackedAt: DateTime.now(),
+      status: CommandStatus.acked,
+      result: cmd.result ?? 'ok',
+    ));
+  }
+
   /// 发起一次继电器位图控制命令并等待 ack。
   Future<Result<Command>> sendRelaySet(int mask) async {
     try {
@@ -55,12 +96,14 @@ class CommandRepository {
       final completer = Completer<Command>();
       _pending[cmd.seq] = completer;
       _inFlight[cmd.seq] = cmd;
+      _expectedRelayMasks[cmd.seq] = mask;
 
       // 超时兜底：ack 一直没来就把命令置为 failed("timeout")。
       Timer(Env.commandAckTimeout, () {
         if (!completer.isCompleted) {
           _pending.remove(cmd.seq);
           _inFlight.remove(cmd.seq);
+          _expectedRelayMasks.remove(cmd.seq);
           completer.complete(cmd.copyWith(
             status: CommandStatus.failed,
             result: 'timeout',
