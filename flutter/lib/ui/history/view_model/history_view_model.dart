@@ -42,6 +42,7 @@ class HistoryViewModel extends ChangeNotifier {
   bool _wasLoggedIn = false;
   bool _lastLoadFailed = false;
   bool _lastStatusOnline = false;
+  int _loadRevision = 0;
   DateTime? _lastStatusSeen;
   StreamSubscription<Measurement>? _liveSub;
   StreamSubscription<DeviceStatus>? _statusSub;
@@ -80,17 +81,28 @@ class HistoryViewModel extends ChangeNotifier {
 
   /// 重新拉取曲线数据。
   Future<void> load() async {
+    final loadRevision = ++_loadRevision;
+    final field = _field;
+    final from = _from;
+    final to = _to;
     _loading = true;
     _error = null;
     notifyListeners();
-    final res = await _repo.fetchHistory(field: _field, from: _from, to: _to);
+    final res = await _repo.fetchHistory(field: field, from: from, to: to);
+    if (loadRevision != _loadRevision) {
+      appLog.d(
+        'history drop stale response field=${field.id} '
+        'from=${from.toIso8601String()} to=${to.toIso8601String()}',
+      );
+      return;
+    }
     switch (res) {
       case Ok(:final value):
         _points = value;
         _lastLoadFailed = false;
         appLog.i(
-          'history loaded field=${_field.id} from=${_from.toIso8601String()} '
-          'to=${_to.toIso8601String()} count=${value.length}',
+          'history loaded field=${field.id} from=${from.toIso8601String()} '
+          'to=${to.toIso8601String()} count=${value.length}',
         );
       case Err():
         // 未登录时数据接口会返回 401；这里把错误静默吞掉，
@@ -99,8 +111,8 @@ class HistoryViewModel extends ChangeNotifier {
         _points = const [];
         _lastLoadFailed = true;
         appLog.w(
-          'history load failed field=${_field.id} '
-          'from=${_from.toIso8601String()} to=${_to.toIso8601String()}',
+          'history load failed field=${field.id} '
+          'from=${from.toIso8601String()} to=${to.toIso8601String()}',
         );
     }
     _loading = false;
@@ -117,6 +129,7 @@ class HistoryViewModel extends ChangeNotifier {
       load();
     } else {
       // 登出：清空展示数据，回到"暂无数据"空壳。
+      _loadRevision++;
       _autoReloadTimer?.cancel();
       _points = const [];
       _error = null;

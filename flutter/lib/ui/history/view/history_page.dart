@@ -279,6 +279,7 @@ class _Chart extends StatelessWidget {
                     ),
                   ],
                 ),
+                duration: Duration.zero,
               ),
               if (hasSinglePoint)
                 const Positioned(
