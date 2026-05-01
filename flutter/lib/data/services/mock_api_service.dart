@@ -110,16 +110,20 @@ class MockApiService implements ApiService {
   }
 
   @override
-  Future<Command> sendReboot() async {
+  Future<Command> sendRelaySet({required int mask}) async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     final cmd = Command(
       seq: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      cmd: 'reboot',
+      cmd: 'relay_set',
+      params: {'mask': mask},
       sentAt: DateTime.now(),
       status: CommandStatus.sent,
     );
-    // 模拟设备 3 秒后回 ack，让 UI 能完整跑一遍 reboot 流程。
-    Timer(const Duration(seconds: 3), () => realtime.simulateAck(cmd.seq, 'ok'));
+    // 模拟设备先执行，再回 ack，让控制页能看到继电器状态变化。
+    Timer(const Duration(milliseconds: 600), () {
+      realtime.simulateRelayMask(mask);
+      realtime.simulateAck(cmd.seq, 'ok');
+    });
     return cmd;
   }
 
@@ -127,12 +131,11 @@ class MockApiService implements ApiService {
   double _baseFor(HistoryField f) => switch (f) {
         HistoryField.flow => 12.0,
         HistoryField.total => 1000.0,
-        HistoryField.velocity => 0.85,
-        HistoryField.pressure => 0.52,
-        HistoryField.t0 ||
+        HistoryField.weight => 1200.0,
         HistoryField.t1 ||
         HistoryField.t2 ||
-        HistoryField.t3 =>
+        HistoryField.t3 ||
+        HistoryField.t4 =>
           23.0,
       };
 
@@ -140,8 +143,7 @@ class MockApiService implements ApiService {
   double _amplitudeFor(HistoryField f) => switch (f) {
         HistoryField.flow => 2.0,
         HistoryField.total => 200.0,
-        HistoryField.velocity => 0.1,
-        HistoryField.pressure => 0.05,
+        HistoryField.weight => 150.0,
         _ => 1.0,
       };
 }

@@ -39,7 +39,6 @@ abstract interface class ApiService {
   /// `GET /api/status` —— 链路 / 服务健康状态。
   Future<DeviceStatus> getStatus();
 
-  /// 服务端尚未实现，真实实现会抛 [UnimplementedError]。
-  /// 等后端补上 `/api/cmd/reboot` 后才能启用。
-  Future<Command> sendReboot();
+  /// `POST /api/commands/relay-set` —— 下发继电器目标位图。
+  Future<Command> sendRelaySet({required int mask});
 }

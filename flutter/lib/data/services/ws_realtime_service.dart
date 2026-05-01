@@ -107,7 +107,11 @@ class WsRealtimeService implements RealtimeService {
     for (final item in latest.cast<Map<String, dynamic>>()) {
       final payload = item['payload'];
       if (payload is Map<String, dynamic>) {
-        _controller.add(TelemetryEvent(Measurement.fromJson(payload)));
+        _controller.add(
+          TelemetryEvent(
+            Measurement.fromJson(payload, receivedAt: item['receivedAt']),
+          ),
+        );
       }
     }
     final stats = frame['stats'];
@@ -123,7 +127,11 @@ class WsRealtimeService implements RealtimeService {
     if (payload is! Map<String, dynamic>) return;
     switch (kind) {
       case 'tele':
-        _controller.add(TelemetryEvent(Measurement.fromJson(payload)));
+        _controller.add(
+          TelemetryEvent(
+            Measurement.fromJson(payload, receivedAt: frame['receivedAt']),
+          ),
+        );
       case 'alarm':
         // Alarm.fromJson 同时接受外层封装 + payload，这里把两者合并传入。
         _controller.add(AlarmEvent(Alarm.fromJson({...frame, 'payload': payload})));

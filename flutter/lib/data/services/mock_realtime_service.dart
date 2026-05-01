@@ -68,10 +68,30 @@ class MockRealtimeService implements RealtimeService {
     _connected = false;
   }
 
-  /// 外部可调（[MockApiService.sendReboot] 用）：在仿真延时后
+  /// 外部可调（[MockApiService.sendRelaySet] 用）：在仿真延时后
   /// 推送一条 ack 事件。
   void simulateAck(int cmdSeq, String result) {
     _controller.add(AckEvent(cmdSeq: cmdSeq, result: result));
+  }
+
+  /// 模拟设备切换继电器输出，并立刻推一帧新 telemetry。
+  void simulateRelayMask(int mask) {
+    final current = latest ?? synthesize();
+    latest = Measurement(
+      timestamp: DateTime.now(),
+      seq: current.seq + 1,
+      flow: current.flow,
+      total: current.total,
+      velocity: current.velocity,
+      weight: current.weight,
+      temperatures: current.temperatures,
+      relayDo: mask,
+      relayDi: current.relayDi,
+      statusBits: current.statusBits,
+      heartCount: (current.heartCount ?? 0) + 1,
+      validBits: current.validBits,
+    );
+    _controller.add(TelemetryEvent(latest!));
   }
 
   /// 即便定时器还没触发，也能合成一帧 [Measurement]。
@@ -84,11 +104,14 @@ class MockRealtimeService implements RealtimeService {
       flow: 12.0 + _jitter(2.0),
       total: 1234.5 + _seq * 0.2,
       velocity: 0.85 + _jitter(0.1),
-      pressure: 0.52 + _jitter(0.03),
-      // 4 路 PT100 温度（T0-T3）。
-      temperatures: List.generate(4, (i) => 23.0 + _jitter(1.0) + i * 0.3),
+      weight: 1200 + _jitter(150),
+      // 当前设备只展示 4 路 PT100 槽位。
+      temperatures: List.generate(4, (i) => i == 3 ? 23.0 + _jitter(1.0) : null),
+      relayDo: 0,
+      relayDi: 0,
+      statusBits: 0x07,
       heartCount: ++_heartCount,
-      validBits: 0x3F, // 兼容固件当前有效位图定义。
+      validBits: 0x07,
     );
     latest = m;
     return m;

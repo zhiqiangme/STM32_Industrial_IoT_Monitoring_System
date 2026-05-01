@@ -3,9 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../view_model/control_view_model.dart';
 
-/// 控制页：远程操作（重启设备 + 未来的参数下发）。
-///
-/// 当前未挂路由，作为占位 UI 保留。
+/// 控制页：展示当前继电器输出，并允许逐路开关。
 class ControlPage extends StatelessWidget {
   const ControlPage({super.key});
 
@@ -23,71 +21,82 @@ class ControlPage extends StatelessWidget {
             vm.clearMessage();
           });
         }
-        return Padding(
+        if (!vm.isLoggedIn) {
+          return const SizedBox.expand();
+        }
+
+        return ListView(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 卡片 1：远程操作（当前只有重启）。
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('远程操作',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '重启设备将使所有运行中的采集/上报任务暂停约 30 秒。',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                      const SizedBox(height: 16),
-                      // busy 时按钮置灰并显示一个小转圈。
-                      FilledButton.icon(
-                        onPressed: vm.busy ? null : () => _confirmReboot(context, vm),
-                        icon: vm.busy
-                            ? const SizedBox(
-                                width: 16, height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.restart_alt),
-                        label: Text(vm.busy ? '等待设备确认...' : '重启设备'),
-                      ),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '继电器控制',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '当前输出位图：0x${vm.relayMask.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 600;
+                        final crossAxisCount = compact ? 2 : 4;
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: 16,
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            childAspectRatio: compact ? 2.2 : 2.8,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                          ),
+                          itemBuilder: (context, index) {
+                            final enabled = vm.relayEnabled(index);
+                            return Card(
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'CH${index + 1}',
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    Switch(
+                                      value: enabled,
+                                      onChanged: vm.busy
+                                          ? null
+                                          : (value) => vm.setRelay(index, value),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    if (vm.busy) ...[
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(),
                     ],
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              // 卡片 2：占位，后续接"参数下发"。
-              const Card(
-                child: ListTile(
-                  leading: Icon(Icons.tune),
-                  title: Text('参数下发'),
-                  subtitle: Text('K 系数、零点标定、报警阈值（后续版本支持）'),
-                  enabled: false,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
-  }
-
-  /// 重启二次确认对话框。避免误触。
-  Future<void> _confirmReboot(BuildContext context, ControlViewModel vm) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确认重启'),
-        content: const Text('设备将立即重启，是否继续？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('重启')),
-        ],
-      ),
-    );
-    if (ok == true) vm.reboot();
   }
 }

@@ -10,9 +10,9 @@ import '../services/realtime_service.dart';
 /// 下行命令仓库：发送命令并跟踪到完成。
 ///
 /// 流程：
-///   UI → [sendReboot] → API POST → 返回处于 sent 状态的 [Command]
-///                                → 注册超时定时器并等待 AckEvent
-///                                → 解析 `Future<Result<Command>>`
+///   UI → `sendRelaySet` → API POST → 返回处于 sent 状态的 [Command]
+///                                 → 注册超时定时器并等待 AckEvent
+///                                 → 解析 `Future<Result<Command>>`
 class CommandRepository {
   CommandRepository({
     required ApiService api,
@@ -48,10 +48,10 @@ class CommandRepository {
     completer.complete(updated);
   }
 
-  /// 发起一次"重启设备"命令并等待 ack。
-  Future<Result<Command>> sendReboot() async {
+  /// 发起一次继电器位图控制命令并等待 ack。
+  Future<Result<Command>> sendRelaySet(int mask) async {
     try {
-      final cmd = await _api.sendReboot();
+      final cmd = await _api.sendRelaySet(mask: mask);
       final completer = Completer<Command>();
       _pending[cmd.seq] = completer;
       _inFlight[cmd.seq] = cmd;
@@ -71,7 +71,7 @@ class CommandRepository {
       final finished = await completer.future;
       return Ok(finished);
     } catch (e, st) {
-      appLog.w('sendReboot failed: $e');
+      appLog.w('sendRelaySet failed: $e');
       return Err(e, st);
     }
   }

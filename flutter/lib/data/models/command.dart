@@ -15,13 +15,13 @@ enum CommandStatus {
 
 /// 一次完整的命令往返记录。
 ///
-/// 当前只接入 `reboot`，但字段保持通用，
+/// 当前已接入 `relay_set`，但字段保持通用，
 /// 后续 `set_param` 之类命令直接复用同一个数据结构即可。
 class Command {
   /// 命令序号（由后端分配，用于匹配 ack）。
   final int seq;
 
-  /// 命令名，例如 `reboot`、未来的 `set_param` 等。
+  /// 命令名，例如 `relay_set`、未来的 `set_param` 等。
   final String cmd;
 
   /// 命令参数（自由 JSON）。

@@ -91,7 +91,7 @@ class HttpApiService implements ApiService {
     if (payload == null) {
       throw StateError('Unexpected /api/latest shape: ${body.keys}');
     }
-    return Measurement.fromJson(payload);
+    return Measurement.fromJson(payload, receivedAt: body['receivedAt']);
   }
 
   @override
@@ -152,9 +152,14 @@ class HttpApiService implements ApiService {
   }
 
   @override
-  Future<Command> sendReboot() {
-    throw UnimplementedError(
-      'Server has no /api/cmd/reboot endpoint yet; control UI is disabled.',
+  Future<Command> sendRelaySet({required int mask}) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/api/commands/relay-set',
+      data: {
+        'dev': Env.deviceId,
+        'mask': mask,
+      },
     );
+    return Command.fromJson(res.data!);
   }
 }

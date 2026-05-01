@@ -1,8 +1,8 @@
 /// 历史曲线上的单个采样点。
 ///
 /// 由 `GET /api/history` 返回 —— 每行的顶层字段
-/// 形如 `{ts, seq, flow, total, v, pres, temp[], valid, ...}`。
-/// `ts` 当前由后端原样透传设备侧 Unix 秒；这里同时兼容秒 / 毫秒。
+/// 形如 `{ts, seq, flow, total, weight, temp[], valid, receivedAt, ...}`。
+/// `ts` 优先使用服务端归一化后的时间戳；缺失时退回 `receivedAt`。
 class HistoryPoint {
   /// 采样时间（本地时区）。
   final DateTime timestamp;
@@ -14,23 +14,22 @@ class HistoryPoint {
 
   /// 从历史行中按 [field] 取出对应字段。
   ///
-  /// `t0..t6` 通过 [HistoryField.tempIndex] 索引到 `temp[]` 数组；
+  /// `t1..t4` 通过 [HistoryField.tempIndex] 索引到 `temp[]` 数组；
   /// 其余字段直接读取顶层 key。
   factory HistoryPoint.fromJson(Map<String, dynamic> j, HistoryField field) {
-    final ts = _parseHistoryTimestamp(j['ts']);
+    final ts = _parseHistoryTimestamp(j['ts'], receivedAt: j['receivedAt']);
     final num? raw;
     switch (field) {
       // 顶层数值字段。
       case HistoryField.flow:
       case HistoryField.total:
-      case HistoryField.velocity:
-      case HistoryField.pressure:
+      case HistoryField.weight:
         raw = j[field.id] as num?;
       // 温度通道：到 temp[] 数组里取。
-      case HistoryField.t0:
       case HistoryField.t1:
       case HistoryField.t2:
       case HistoryField.t3:
+      case HistoryField.t4:
         final temps = (j['temp'] as List?)?.cast<num?>() ?? const [];
         raw = field.tempIndex < temps.length ? temps[field.tempIndex] : null;
     }
@@ -49,12 +48,11 @@ class HistoryPoint {
 enum HistoryField {
   flow('flow', '瞬时流量', 'L/min', -1),
   total('total', '累计量', 'L', -1),
-  velocity('v', '流速', 'm/s', -1),
-  pressure('pres', '压力', 'MPa', -1),
-  t0('t0', 'T0 温度', '°C', 0),
-  t1('t1', 'T1 温度', '°C', 1),
-  t2('t2', 'T2 温度', '°C', 2),
-  t3('t3', 'T3 温度', '°C', 3);
+  weight('weight', '重量', 'g', -1),
+  t1('t1', 'T1 温度', '°C', 0),
+  t2('t2', 'T2 温度', '°C', 1),
+  t3('t3', 'T3 温度', '°C', 2),
+  t4('t4', 'T4 温度', '°C', 3);
 
   /// 服务端字段名 / `temp[]` 之外的顶层 key。
   final String id;
@@ -71,9 +69,31 @@ enum HistoryField {
   const HistoryField(this.id, this.label, this.unit, this.tempIndex);
 }
 
-/// 历史接口的时间戳兼容层：小于 1e12 视为 Unix 秒，否则按毫秒处理。
-DateTime _parseHistoryTimestamp(Object? raw) {
-  final value = (raw as num?)?.toInt() ?? 0;
-  final millis = value.abs() < 1000000000000 ? value * 1000 : value;
+/// 历史接口时间戳兼容层。
+DateTime _parseHistoryTimestamp(Object? raw, {Object? receivedAt}) {
+  final direct = _parseWallClock(raw);
+  if (direct != null) {
+    return direct;
+  }
+  final fallback = _parseWallClock(receivedAt);
+  if (fallback != null) {
+    return fallback;
+  }
+  return DateTime.now();
+}
+
+DateTime? _parseWallClock(Object? raw) {
+  if (raw == null) return null;
+  if (raw is String) return DateTime.tryParse(raw)?.toLocal();
+  if (raw is! num) return null;
+
+  final value = raw.toInt();
+  if (value == 0) return null;
+
+  final abs = value.abs();
+  final millis = abs >= 1000000000000 ? value : value * 1000;
+  if (millis < 946684800000) {
+    return null;
+  }
   return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toLocal();
 }

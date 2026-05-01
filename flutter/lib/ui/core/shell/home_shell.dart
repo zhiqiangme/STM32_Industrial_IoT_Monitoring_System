@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/repositories/alarm_repository.dart';
 
-/// 顶层 Scaffold：承载四个 Tab（实时 / 历史 / 报警 / 用户）。
+/// 顶层 Scaffold：承载五个 Tab（实时 / 控制 / 历史 / 报警 / 用户）。
 ///
 /// 使用 go_router 的 [StatefulNavigationShell]，
 /// 切换 Tab 时各自的页面状态（滚动位置、表单值等）会被保留。
@@ -58,6 +58,11 @@ class HomeShell extends StatelessWidget {
                       label: '实时',
                     ),
                     const NavigationDestination(
+                      icon: Icon(Icons.tune_outlined),
+                      selectedIcon: Icon(Icons.tune),
+                      label: '控制',
+                    ),
+                    const NavigationDestination(
                       icon: Icon(Icons.show_chart),
                       selectedIcon: Icon(Icons.show_chart),
                       label: '历史',
@@ -92,9 +97,10 @@ class HomeShell extends StatelessWidget {
   /// 根据当前 Tab 下标决定 AppBar 标题。
   String _titleFor(int index) => switch (index) {
     0 => '实时数据',
-    1 => '历史曲线',
-    2 => '报警',
-    3 => '用户',
+    1 => '继电器控制',
+    2 => '历史曲线',
+    3 => '报警',
+    4 => '用户',
     _ => '磨坊系统',
   };
 }

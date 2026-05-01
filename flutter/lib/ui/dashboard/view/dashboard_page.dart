@@ -6,7 +6,7 @@ import '../../core/widgets/status_banner.dart';
 import '../../core/widgets/value_tile.dart';
 import '../view_model/dashboard_view_model.dart';
 
-/// 实时数据页：顶部状态横幅 + 主指标卡 + 温度/心跳状态卡。
+/// 实时数据页：顶部状态横幅 + 主指标卡 + 温度/继电器状态卡。
 class DashboardPage extends StatelessWidget {
   /// 卡片间距。
   static const double _gridSpacing = 6;
@@ -46,11 +46,13 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  /// 把测量数据拆分成主指标 + 温度/心跳两组卡片。
+  /// 把测量数据拆分成主指标 + 温度/状态两组卡片。
   Widget _tiles(BuildContext context, Measurement? m) {
     // 缺测时显示 "--"，不显示 "NaN"。
     String fmt(double? v, [int digits = 2]) =>
         v?.toStringAsFixed(digits) ?? '--';
+    String fmtMask(int? mask) =>
+        mask == null ? '--' : '0x${mask.toRadixString(16).padLeft(4, '0').toUpperCase()}';
 
     // 4 张主指标。
     final metricTiles = [
@@ -67,22 +69,22 @@ class DashboardPage extends StatelessWidget {
         valid: m?.totalValid ?? true,
       ),
       ValueTile(
-        label: '流速',
-        value: fmt(m?.velocity),
-        unit: 'm/s',
-        valid: m?.velocityValid ?? true,
+        label: '重量',
+        value: fmt(m?.weight, 0),
+        unit: 'g',
+        valid: m?.weightValid ?? true,
       ),
       ValueTile(
-        label: '压力',
-        value: fmt(m?.pressure, 3),
-        unit: 'MPa',
-        valid: m?.pressureValid ?? true,
+        label: '控制模式',
+        value: m == null ? '--' : (m.autoMode ? '自动' : '手动'),
+        unit: '',
+        valid: true,
       ),
     ];
-    // 4 路 PT100 温度通道（T0-T3）。
+    // 4 路 PT100 温度槽位（T1-T4）。
     final temperatureTiles = List.generate(4, (i) {
       return ValueTile(
-        label: 'T$i',
+        label: 'T${i + 1}',
         value: fmt(m == null ? null : m.temperatures[i], 1),
         unit: '°C',
         valid: m?.temperatureValid(i) ?? true,
@@ -94,8 +96,24 @@ class DashboardPage extends StatelessWidget {
       unit: '',
       valid: true,
     );
-    // 心跳计数紧跟在最后一路温度后面，网格会自动同行或换到下一排。
-    final temperatureAndHeartTiles = [...temperatureTiles, heartTile];
+    final relayOutTile = ValueTile(
+      label: '继电器输出',
+      value: fmtMask(m?.relayDo),
+      unit: '',
+      valid: true,
+    );
+    final relayInTile = ValueTile(
+      label: '继电器输入',
+      value: fmtMask(m?.relayDi),
+      unit: '',
+      valid: true,
+    );
+    final temperatureAndHeartTiles = [
+      ...temperatureTiles,
+      relayOutTile,
+      relayInTile,
+      heartTile,
+    ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -123,11 +141,11 @@ class DashboardPage extends StatelessWidget {
               itemBuilder: (context, index) => metricTiles[index],
             ),
             const SizedBox(height: 10),
-            // 温度通道分区标题。
+            // 温度和继电器状态分区标题。
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
-                '温度通道',
+                '温度 / 状态',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),

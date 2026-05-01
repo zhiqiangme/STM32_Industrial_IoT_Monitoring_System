@@ -6,6 +6,8 @@ import 'config/theme.dart';
 import 'data/repositories/auth_repository.dart';
 import 'ui/alarm/view/alarm_page.dart';
 import 'ui/alarm/view_model/alarm_view_model.dart';
+import 'ui/control/view/control_page.dart';
+import 'ui/control/view_model/control_view_model.dart';
 import 'ui/core/shell/home_shell.dart';
 import 'ui/dashboard/view/dashboard_page.dart';
 import 'ui/dashboard/view_model/dashboard_view_model.dart';
@@ -19,8 +21,9 @@ import 'ui/user/view_model/user_view_model.dart';
 /// 应用根 Widget。只构造一次 [GoRouter]，并通过嵌套的
 /// [ChangeNotifierProvider] 给每页注入对应的 ViewModel。
 ///
-/// 路由共有 4 个 Tab：
+/// 路由共有 5 个 Tab：
 /// - `/`        实时数据
+/// - `/control` 继电器控制
 /// - `/history` 历史曲线
 /// - `/alarm`   告警列表
 /// - `/user`    用户（含登录表单与已登录设置面板）
@@ -87,6 +90,20 @@ class _FlowmeterAppState extends State<FlowmeterApp> {
                     auth: c.read<AuthRepository>(),
                   ),
                   child: const DashboardPage(),
+                ),
+              ),
+            ]),
+            // 继电器控制页。
+            StatefulShellBranch(routes: [
+              GoRoute(
+                path: '/control',
+                builder: (context, state) => ChangeNotifierProvider(
+                  create: (c) => ControlViewModel(
+                    repository: c.read(),
+                    measurements: c.read(),
+                    auth: c.read<AuthRepository>(),
+                  ),
+                  child: const ControlPage(),
                 ),
               ),
             ]),
