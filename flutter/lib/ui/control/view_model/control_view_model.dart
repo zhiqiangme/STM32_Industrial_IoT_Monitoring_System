@@ -30,29 +30,33 @@ class ControlViewModel extends ChangeNotifier {
   final AuthRepository _auth;
   StreamSubscription<Measurement>? _liveSub;
 
-  bool _busy = false;
+  int _pendingCount = 0;
   Command? _lastCommand;
   String? _message;
   Measurement? _measurement;
+  int? _requestedMask;
 
-  bool get busy => _busy;
+  bool get hasPending => _pendingCount > 0;
   Command? get lastCommand => _lastCommand;
   String? get message => _message;
   bool get isLoggedIn => _auth.isLoggedIn;
   int get relayMask => _measurement?.relayDo ?? 0;
+  int get displayRelayMask => _requestedMask ?? relayMask;
 
   /// 统一用 16 路 bitmask 表示继电器状态。
-  bool relayEnabled(int index) => (relayMask & (1 << index)) != 0;
+  bool relayEnabled(int index) => (displayRelayMask & (1 << index)) != 0;
 
   Future<void> setRelay(int index, bool enabled) async {
-    if (_busy || index < 0 || index >= 16 || !_auth.isLoggedIn) return;
+    if (index < 0 || index >= 16 || !_auth.isLoggedIn) return;
 
-    final currentMask = relayMask;
+    final currentMask = displayRelayMask;
     final targetMask = enabled
         ? (currentMask | (1 << index))
         : (currentMask & ~(1 << index));
+    if (targetMask == currentMask) return;
 
-    _busy = true;
+    _requestedMask = targetMask;
+    _pendingCount++;
     _message = null;
     notifyListeners();
 
@@ -67,7 +71,15 @@ class ControlViewModel extends ChangeNotifier {
         _message = '发送失败：$error';
     }
 
-    _busy = false;
+    if (_pendingCount > 0) {
+      _pendingCount--;
+    }
+    if (_pendingCount == 0) {
+      final actualMask = _measurement?.relayDo;
+      if (actualMask == _requestedMask || res is Err<Command>) {
+        _requestedMask = actualMask;
+      }
+    }
     notifyListeners();
   }
 
@@ -79,6 +91,9 @@ class ControlViewModel extends ChangeNotifier {
 
   void _onMeasurement(Measurement measurement) {
     _measurement = measurement;
+    if (_pendingCount == 0 || measurement.relayDo == _requestedMask) {
+      _requestedMask = measurement.relayDo;
+    }
     notifyListeners();
   }
 
@@ -87,9 +102,10 @@ class ControlViewModel extends ChangeNotifier {
       _measurement = _measurements.lastMeasurement;
     } else {
       _measurement = null;
-      _busy = false;
+      _pendingCount = 0;
       _lastCommand = null;
       _message = null;
+      _requestedMask = null;
     }
     notifyListeners();
   }

@@ -26,79 +26,54 @@ class ControlPage extends StatelessWidget {
         }
 
         return ListView(
-          padding: const EdgeInsets.all(16),
+          // 手机竖屏优先保证 16 个按钮一页完整显示，适当收紧四周留白。
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           children: [
-            // 页面顶部只保留一行标题 + 位图，避免卡片里再重复一份。
-            Row(
-              children: [
-                const Text(
-                  '继电器控制',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  '0x${vm.relayMask.toRadixString(16).padLeft(4, '0').toUpperCase()}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final compact = constraints.maxWidth < 600;
-                        final crossAxisCount = compact ? 2 : 4;
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: 16,
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            childAspectRatio: compact ? 2.2 : 2.8,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                          ),
-                          itemBuilder: (context, index) {
-                            final enabled = vm.relayEnabled(index);
-                            return Card(
-                              margin: EdgeInsets.zero,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'CH${index + 1}',
-                                        style: const TextStyle(fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
-                                    Switch(
-                                      value: enabled,
-                                      onChanged: vm.busy
-                                          ? null
-                                          : (value) => vm.setRelay(index, value),
-                                    ),
-                                  ],
-                                ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 600;
+                final crossAxisCount = compact ? 2 : 4;
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: 16,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    // 竖屏时把卡片压扁一些，避免 CH15/CH16 被挤到屏幕外。
+                    childAspectRatio: compact ? 2.9 : 3.2,
+                    mainAxisSpacing: 6,
+                    crossAxisSpacing: 6,
+                  ),
+                  itemBuilder: (context, index) {
+                    final enabled = vm.relayEnabled(index);
+                    return Card(
+                      margin: EdgeInsets.zero,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'CH${index + 1}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    if (vm.busy) ...[
-                      const SizedBox(height: 12),
-                      const LinearProgressIndicator(),
-                    ],
-                  ],
-                ),
-              ),
+                            ),
+                            Switch(
+                              value: enabled,
+                              onChanged: (value) => vm.setRelay(index, value),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
+            if (vm.hasPending) ...[
+              const SizedBox(height: 12),
+              const LinearProgressIndicator(),
+            ],
           ],
         );
       },
