@@ -137,7 +137,8 @@ class WsRealtimeService implements RealtimeService {
         _controller.add(AlarmEvent(Alarm.fromJson({...frame, 'payload': payload})));
       case 'ack':
         _controller.add(AckEvent(
-          cmdSeq: (payload['cmd_seq'] as num?)?.toInt() ?? 0,
+          // 兼容服务端 ack 的下划线/驼峰两种序号字段。
+          cmdSeq: _readAckSeq(payload),
           result: payload['result'] as String? ?? 'unknown',
         ));
     }
@@ -152,7 +153,7 @@ class WsRealtimeService implements RealtimeService {
         _controller.add(AlarmEvent(Alarm.fromJson(frame)));
       case 'ack':
         _controller.add(AckEvent(
-          cmdSeq: (frame['cmd_seq'] as num?)?.toInt() ?? 0,
+          cmdSeq: _readAckSeq(frame),
           result: frame['result'] as String? ?? 'unknown',
         ));
     }
@@ -189,4 +190,11 @@ class WsRealtimeService implements RealtimeService {
     _sub = null;
     _isConnected = false;
   }
+}
+
+int _readAckSeq(Map<String, dynamic> j) {
+  final value = j['cmd_seq'] ?? j['cmdSeq'];
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
 }

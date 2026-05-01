@@ -70,7 +70,7 @@ class Command {
     // 兼容当前服务端与早期草案的不同返回形状：
     // 可能是扁平对象，也可能包在 data / command 里；序号也可能叫 cmd_seq。
     final src = _unwrapCommandJson(j);
-    final seq = _readInt(src, const ['seq', 'cmd_seq', 'command_seq']);
+    final seq = _readInt(src, const ['seq', 'cmd_seq', 'cmdSeq', 'command_seq']);
     if (seq == null) {
       throw StateError('命令响应缺少 seq/cmd_seq 字段: ${src.keys.toList()}');
     }
