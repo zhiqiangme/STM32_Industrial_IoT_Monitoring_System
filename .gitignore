@@ -6,6 +6,9 @@
 !文档/
 !文档/**
 
+# --- Claude Code ---
+.claude/
+
 # --- OS 系统文件 ---
 .DS_Store
 Thumbs.db
