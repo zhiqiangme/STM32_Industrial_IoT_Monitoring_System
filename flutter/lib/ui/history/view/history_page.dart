@@ -163,6 +163,9 @@ class _Chart extends StatelessWidget {
     final maxX = xs.reduce((a, b) => a > b ? a : b);
     final minY = ys.reduce((a, b) => a < b ? a : b);
     final maxY = ys.reduce((a, b) => a > b ? a : b);
+    // 当所有点时间相同或值相同时，给一个最小跨度避免 interval=0 触发断言。
+    final xSpan = maxX - minX < 1.0 ? 60000.0 : maxX - minX;
+    final ySpan = maxY - minY < 0.001 ? 1.0 : maxY - minY;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 4, 16, 12),
@@ -181,8 +184,8 @@ class _Chart extends StatelessWidget {
               minX: minX,
               maxX: maxX,
               // y 轴上下各留 10% 余量，避免曲线贴边。
-              minY: minY - (maxY - minY) * 0.1,
-              maxY: maxY + (maxY - minY) * 0.1,
+              minY: minY - ySpan * 0.1,
+              maxY: maxY + ySpan * 0.1,
               titlesData: FlTitlesData(
                 // 屏蔽顶部 / 右侧坐标轴标题。
                 rightTitles: const AxisTitles(
@@ -196,7 +199,7 @@ class _Chart extends StatelessWidget {
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: xReserved,
-                    interval: (maxX - minX) / xTickCount,
+                    interval: xSpan / xTickCount,
                     getTitlesWidget: (value, meta) {
                       final d = DateTime.fromMillisecondsSinceEpoch(
                         value.toInt(),
