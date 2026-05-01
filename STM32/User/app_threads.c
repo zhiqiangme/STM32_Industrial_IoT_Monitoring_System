@@ -552,6 +552,68 @@ static void App_HandleCloudRelayCommands(const G780sRemoteConfig *runtime_config
     }
 }
 
+static void App_HandleJsonCommands(const G780sRemoteConfig *runtime_config)
+{
+    G780sJsonCommand command;
+
+    if (runtime_config == RT_NULL)
+    {
+        return;
+    }
+
+    while (G780s_ConsumeJsonCommand(&command) != 0u)
+    {
+        switch (command.type)
+        {
+            case G780S_JSON_CMD_RELAY_SET:
+            {
+                uint16_t relay_do_state = 0u;
+                uint16_t relay_di_state = 0u;
+
+                if (App_IsManualMode(runtime_config) == RT_FALSE)
+                {
+                    if (Relay_ReadAllCoils(&relay_do_state) != 0u)
+                    {
+                        relay_do_state = 0u;
+                    }
+                    if (Relay_ReadInputPack(&relay_di_state) != 0u)
+                    {
+                        relay_di_state = 0u;
+                    }
+                    G780s_ReportCommandAck(&command, "auto_mode", relay_do_state, relay_di_state);
+                    break;
+                }
+
+                printf("[JSON] relay_set mask=0x%04X\r\n", command.relay_mask);
+                (void)Relay_SetOutputMask(command.relay_mask);
+                (void)rt_thread_mdelay(20);
+                (void)Relay_ReadAllCoils(&relay_do_state);
+                (void)Relay_ReadInputPack(&relay_di_state);
+                G780s_ReportCommandAck(&command, "ok", relay_do_state, relay_di_state);
+                break;
+            }
+
+            case G780S_JSON_CMD_OTA_PREPARE:
+                printf("[JSON] ota_prepare seq=%lu\r\n", (unsigned long)command.cmd_seq);
+                if (Upgrade_RequestBootMode(UPGRADE_REQUEST_SOURCE_REMOTE, 0u) == 0u)
+                {
+                    G780s_ReportCommandAck(&command, "ok", 0u, 0u);
+                    (void)LogService_SubmitFlush();
+                    (void)rt_thread_mdelay(50);
+                    HAL_NVIC_SystemReset();
+                }
+                else
+                {
+                    G780s_ReportCommandAck(&command, "upgrade_request_failed", 0u, 0u);
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
 static void App_MaintThreadEntry(void *parameter)
 {
     AppKeyState key_state = {0};
@@ -580,6 +642,7 @@ static void App_MaintThreadEntry(void *parameter)
         App_HandleKeys(&runtime_config, &key_state);
         App_HandleCloudRelayCommands(&runtime_config, &last_relay_ctrl, &last_relay_bits);
         G780s_Process();
+        App_HandleJsonCommands(&runtime_config);
         App_HandlePendingUpgrade();
 
         /* sensor 线程只上报健康结果，确认运行槽位由 maint 线程集中判定。 */

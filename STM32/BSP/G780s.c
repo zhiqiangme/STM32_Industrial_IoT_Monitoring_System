@@ -2,6 +2,7 @@
 #include "Modbus_Slave.h"
 #include "Upgrade.h"
 #include <stddef.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -24,6 +25,17 @@ static uint16_t g_last_upgrade_request_source = UPGRADE_REQUEST_SOURCE_NONE;
 static uint16_t g_last_upgrade_state = UPGRADE_STATE_IDLE;
 static uint16_t g_last_upgrade_error = 0u;
 static uint8_t g_boot_upgrade_pending = 0;
+static uint32_t g_telemetry_heart_count = 0u;
+static uint32_t g_telemetry_pending_seq = 0u;
+static uint8_t g_telemetry_pending_ready = 0u;
+static uint8_t g_telemetry_waiting_ack = 0u;
+static uint32_t g_telemetry_last_send_tick = 0u;
+static G780sJsonCommand g_pending_json_command = {0};
+static uint8_t g_json_command_pending = 0u;
+static uint8_t g_json_rx_active = 0u;
+static uint16_t g_json_rx_length = 0u;
+static char g_json_rx_buffer[256];
+static char g_telemetry_tx_buffer[320];
 
 #define G780S_DIAG_FLASH_PAGE_ADDR  0x0807F000UL
 #define G780S_CFG_FLASH_PAGE_ADDR   0x0807F800UL
@@ -31,6 +43,8 @@ static uint8_t g_boot_upgrade_pending = 0;
 #define G780S_CFG_MAGIC             0x47584346UL  /* GXCF */
 #define G780S_DIAG_MAGIC            0x47584449UL  /* GXDI */
 #define G780S_DIAG_VERSION          0x0002u
+#define G780S_JSON_DEVICE_ID        "FM001"
+#define G780S_JSON_ACK_TIMEOUT_MS   5000UL
 
 typedef struct
 {
@@ -216,6 +230,284 @@ static uint16_t G780s_CRC16(const uint8_t *buf, uint16_t len)
     }
 
     return crc;
+}
+
+/**
+ * @brief 从 JSON 文本中提取某个字符串字段。
+ * @param json: JSON 文本
+ * @param key: 键名，不带引号
+ * @param out: 输出缓冲区
+ * @param out_size: 输出缓冲区大小
+ * @retval 1 表示找到并成功提取，0 表示失败
+ */
+static uint8_t G780s_JsonExtractString(const char *json,
+                                       const char *key,
+                                       char *out,
+                                       size_t out_size)
+{
+    char pattern[32];
+    const char *start;
+    const char *end;
+    size_t len;
+
+    if (json == NULL || key == NULL || out == NULL || out_size < 2u)
+    {
+        return 0u;
+    }
+
+    (void)snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    start = strstr(json, pattern);
+    if (start == NULL)
+    {
+        return 0u;
+    }
+
+    start = strchr(start + strlen(pattern), ':');
+    if (start == NULL)
+    {
+        return 0u;
+    }
+
+    start = strchr(start, '"');
+    if (start == NULL)
+    {
+        return 0u;
+    }
+    start++;
+
+    end = strchr(start, '"');
+    if (end == NULL || end <= start)
+    {
+        return 0u;
+    }
+
+    len = (size_t)(end - start);
+    if (len >= out_size)
+    {
+        len = out_size - 1u;
+    }
+
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 1u;
+}
+
+/**
+ * @brief 从 JSON 文本中提取某个无符号整数字段。
+ * @param json: JSON 文本
+ * @param key: 键名，不带引号
+ * @param out_value: 输出数值
+ * @retval 1 表示找到并成功解析，0 表示失败
+ */
+static uint8_t G780s_JsonExtractUint32(const char *json,
+                                       const char *key,
+                                       uint32_t *out_value)
+{
+    char pattern[32];
+    const char *cursor;
+    char *endptr;
+    unsigned long value;
+
+    if (json == NULL || key == NULL || out_value == NULL)
+    {
+        return 0u;
+    }
+
+    (void)snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    cursor = strstr(json, pattern);
+    if (cursor == NULL)
+    {
+        return 0u;
+    }
+
+    cursor = strchr(cursor + strlen(pattern), ':');
+    if (cursor == NULL)
+    {
+        return 0u;
+    }
+    cursor++;
+
+    while (*cursor == ' ' || *cursor == '\t')
+    {
+        cursor++;
+    }
+
+    value = strtoul(cursor, &endptr, 10);
+    if (endptr == cursor)
+    {
+        return 0u;
+    }
+
+    *out_value = (uint32_t)value;
+    return 1u;
+}
+
+/**
+ * @brief 把当前业务快照编码成上行 tele JSON。
+ * @param data: 最新寄存器镜像快照
+ * @retval 无
+ */
+static void G780s_PrepareTelemetryFrame(const G780sSlaveData *data)
+{
+    char local_buffer[sizeof(g_telemetry_tx_buffer)];
+    float temp_ch4;
+    float flow_rate_lpm;
+    float flow_total_l;
+    int length;
+    uint32_t timestamp_s;
+    uint16_t valid_mask = 0u;
+
+    if (data == NULL)
+    {
+        return;
+    }
+
+    if ((data->status & 0x01u) != 0u)
+    {
+        valid_mask |= 0x01u;
+    }
+    if ((data->status & 0x02u) != 0u)
+    {
+        valid_mask |= 0x02u;
+    }
+    if ((data->status & 0x04u) != 0u)
+    {
+        valid_mask |= 0x04u;
+    }
+
+    temp_ch4 = (float)data->pt100_ch[3] / 10.0f;
+    flow_rate_lpm = (float)data->flow_rate / 100.0f;
+    flow_total_l = (float)data->flow_total / 1000.0f;
+    timestamp_s = HAL_GetTick() / 1000u;
+
+    length = snprintf(
+        local_buffer,
+        sizeof(local_buffer),
+        "{\"t\":\"tele\",\"dev\":\"%s\",\"ts\":%lu,\"seq\":%u,"
+        "\"temp\":[null,null,null,%.1f],\"weight\":%ld,"
+        "\"flow\":%.2f,\"total\":%.3f,\"relay_do\":%u,\"relay_di\":%u,"
+        "\"heart_count\":%lu,\"valid\":%u,\"status\":%u}\n",
+        G780S_JSON_DEVICE_ID,
+        (unsigned long)timestamp_s,
+        (unsigned int)data->push_seq,
+        temp_ch4,
+        (long)data->weight_ch[2],
+        flow_rate_lpm,
+        flow_total_l,
+        (unsigned int)data->relay_do,
+        (unsigned int)data->relay_di,
+        (unsigned long)g_telemetry_heart_count,
+        (unsigned int)valid_mask,
+        (unsigned int)data->status);
+
+    if (length <= 0 || (size_t)length >= sizeof(local_buffer))
+    {
+        g_telemetry_pending_ready = 0u;
+        return;
+    }
+
+    __disable_irq();
+    memcpy(g_telemetry_tx_buffer, local_buffer, (size_t)length + 1u);
+    g_telemetry_pending_seq = data->push_seq;
+    g_telemetry_pending_ready = 1u;
+    __enable_irq();
+}
+
+/**
+ * @brief 解析一条完整的 JSON 文本并更新 ACK/命令队列状态。
+ * @param json_text: 已按行收齐的 JSON 文本
+ * @retval 无
+ */
+static void G780s_HandleJsonFrame(const char *json_text)
+{
+    char type[24];
+    uint32_t value = 0u;
+
+    if (json_text == NULL)
+    {
+        return;
+    }
+
+    if (G780s_JsonExtractString(json_text, "t", type, sizeof(type)) != 0u &&
+        strcmp(type, "cloud_ack") == 0)
+    {
+        if (G780s_JsonExtractUint32(json_text, "ack_seq", &value) != 0u &&
+            value == g_telemetry_pending_seq)
+        {
+            g_telemetry_waiting_ack = 0u;
+        }
+        return;
+    }
+
+    if (G780s_JsonExtractString(json_text, "cmd", type, sizeof(type)) == 0u)
+    {
+        return;
+    }
+    if (G780s_JsonExtractUint32(json_text, "cmd_seq", &value) == 0u)
+    {
+        return;
+    }
+
+    if (strcmp(type, "relay_set") == 0)
+    {
+        uint32_t relay_mask = 0u;
+
+        if (G780s_JsonExtractUint32(json_text, "mask", &relay_mask) == 0u)
+        {
+            return;
+        }
+
+        g_pending_json_command.type = G780S_JSON_CMD_RELAY_SET;
+        g_pending_json_command.cmd_seq = value;
+        g_pending_json_command.relay_mask = (uint16_t)(relay_mask & 0xFFFFu);
+        g_json_command_pending = 1u;
+    }
+    else if (strcmp(type, "ota_prepare") == 0)
+    {
+        g_pending_json_command.type = G780S_JSON_CMD_OTA_PREPARE;
+        g_pending_json_command.cmd_seq = value;
+        g_pending_json_command.relay_mask = 0u;
+        g_json_command_pending = 1u;
+    }
+}
+
+/**
+ * @brief 尝试把当前待发送的 telemetry 送到透明链路。
+ * @param force_resend: 1 表示忽略 ACK 状态立即重发，0 表示按正常节奏发送
+ * @retval 无
+ */
+static void G780s_TrySendTelemetry(uint8_t force_resend)
+{
+    UART_HandleTypeDef *huart;
+    char local_buffer[sizeof(g_telemetry_tx_buffer)];
+    size_t frame_length;
+
+    if (g_telemetry_pending_ready == 0u)
+    {
+        return;
+    }
+    if (force_resend == 0u && g_telemetry_waiting_ack != 0u)
+    {
+        return;
+    }
+
+    __disable_irq();
+    frame_length = strlen(g_telemetry_tx_buffer);
+    memcpy(local_buffer, g_telemetry_tx_buffer, frame_length + 1u);
+    __enable_irq();
+
+    huart = Modbus_Slave_GetHandle();
+    if (huart == NULL)
+    {
+        return;
+    }
+
+    (void)HAL_UART_Transmit(huart,
+                            (uint8_t *)local_buffer,
+                            (uint16_t)frame_length,
+                            300u);
+    g_telemetry_waiting_ack = 1u;
+    g_telemetry_last_send_tick = HAL_GetTick();
 }
 
 /**
@@ -1259,6 +1551,17 @@ void G780s_Init(void)
     uint8_t load_err;
 
     memset(g_registers, 0, sizeof(g_registers));
+    memset(&g_pending_json_command, 0, sizeof(g_pending_json_command));
+    memset(g_json_rx_buffer, 0, sizeof(g_json_rx_buffer));
+    memset(g_telemetry_tx_buffer, 0, sizeof(g_telemetry_tx_buffer));
+    g_telemetry_heart_count = 0u;
+    g_telemetry_pending_seq = 0u;
+    g_telemetry_pending_ready = 0u;
+    g_telemetry_waiting_ack = 0u;
+    g_telemetry_last_send_tick = 0u;
+    g_json_command_pending = 0u;
+    g_json_rx_active = 0u;
+    g_json_rx_length = 0u;
     Modbus_Slave_Init(&config);
     g_reset_reason = G780s_DetectResetReason();
     __HAL_RCC_CLEAR_RESET_FLAGS();
@@ -1298,6 +1601,8 @@ void G780s_Init(void)
  */
 void G780s_Process(void)
 {
+    uint32_t now;
+
     /* 维护解锁窗口超时后自动重新上锁，避免设备长期暴露在可写状态。 */
     if (((g_maint_status & G780S_STATUS_UNLOCKED) != 0u) &&
         (HAL_GetTick() >= g_unlock_deadline))
@@ -1307,6 +1612,17 @@ void G780s_Process(void)
 
     G780s_UpdateMaintenanceRegisters();
     Modbus_Slave_Process();
+
+    now = HAL_GetTick();
+    if (g_telemetry_pending_ready != 0u && g_telemetry_waiting_ack == 0u)
+    {
+        G780s_TrySendTelemetry(0u);
+    }
+    else if (g_telemetry_waiting_ack != 0u &&
+             (now - g_telemetry_last_send_tick) >= G780S_JSON_ACK_TIMEOUT_MS)
+    {
+        G780s_TrySendTelemetry(1u);
+    }
 }
 
 /**
@@ -1316,6 +1632,41 @@ void G780s_Process(void)
  */
 void G780s_RxCallback(uint8_t byte)
 {
+    if (g_json_rx_active != 0u || byte == '{')
+    {
+        if (byte == '{' && g_json_rx_active == 0u)
+        {
+            g_json_rx_active = 1u;
+            g_json_rx_length = 0u;
+        }
+
+        if (g_json_rx_active != 0u)
+        {
+            if (byte == '\r' || byte == '\n')
+            {
+                if (g_json_rx_length > 0u)
+                {
+                    g_json_rx_buffer[g_json_rx_length] = '\0';
+                    G780s_HandleJsonFrame(g_json_rx_buffer);
+                }
+                g_json_rx_active = 0u;
+                g_json_rx_length = 0u;
+                return;
+            }
+
+            if (g_json_rx_length < (sizeof(g_json_rx_buffer) - 1u))
+            {
+                g_json_rx_buffer[g_json_rx_length++] = (char)byte;
+            }
+            else
+            {
+                g_json_rx_active = 0u;
+                g_json_rx_length = 0u;
+            }
+            return;
+        }
+    }
+
     Modbus_Slave_RxCallback(byte);
 }
 
@@ -1326,10 +1677,14 @@ void G780s_RxCallback(uint8_t byte)
  */
 void G780s_UpdateData(const G780sSlaveData *data)
 {
+    G780sSlaveData snapshot;
+
     if (data == NULL)
     {
         return;
     }
+
+    snapshot = *data;
 
     __disable_irq();
 
@@ -1359,7 +1714,11 @@ void G780s_UpdateData(const G780sSlaveData *data)
     g_registers[REG_RELAY_BITS] = data->relay_do;
     g_registers[REG_SYSTEM_STATUS] = data->status;
 
+    g_telemetry_heart_count++;
+
     __enable_irq();
+
+    G780s_PrepareTelemetryFrame(&snapshot);
 }
 
 /**
@@ -1429,4 +1788,82 @@ uint8_t G780s_ConsumeBootUpgradeRequest(void)
     __enable_irq();
 
     return pending;
+}
+
+uint8_t G780s_ConsumeJsonCommand(G780sJsonCommand *out_command)
+{
+    uint8_t pending;
+
+    if (out_command == NULL)
+    {
+        return 0u;
+    }
+
+    __disable_irq();
+    pending = g_json_command_pending;
+    if (pending != 0u)
+    {
+        *out_command = g_pending_json_command;
+        memset(&g_pending_json_command, 0, sizeof(g_pending_json_command));
+        g_json_command_pending = 0u;
+    }
+    __enable_irq();
+
+    return pending;
+}
+
+void G780s_ReportCommandAck(const G780sJsonCommand *command,
+                            const char *result,
+                            uint16_t relay_do,
+                            uint16_t relay_di)
+{
+    UART_HandleTypeDef *huart;
+    const char *cmd_name = "unknown";
+    char buffer[224];
+    int length;
+
+    if (command == NULL || result == NULL)
+    {
+        return;
+    }
+
+    switch (command->type)
+    {
+        case G780S_JSON_CMD_RELAY_SET:
+            cmd_name = "relay_set";
+            break;
+
+        case G780S_JSON_CMD_OTA_PREPARE:
+            cmd_name = "ota_prepare";
+            break;
+
+        default:
+            break;
+    }
+
+    length = snprintf(buffer,
+                      sizeof(buffer),
+                      "{\"t\":\"ack\",\"dev\":\"%s\",\"ts\":%lu,\"seq\":%u,"
+                      "\"cmd_seq\":%lu,\"cmd\":\"%s\",\"result\":\"%s\","
+                      "\"relay_do\":%u,\"relay_di\":%u}\n",
+                      G780S_JSON_DEVICE_ID,
+                      (unsigned long)(HAL_GetTick() / 1000u),
+                      (unsigned int)g_registers[REG_PUSH_SEQ],
+                      (unsigned long)command->cmd_seq,
+                      cmd_name,
+                      result,
+                      (unsigned int)relay_do,
+                      (unsigned int)relay_di);
+    if (length <= 0 || (size_t)length >= sizeof(buffer))
+    {
+        return;
+    }
+
+    huart = Modbus_Slave_GetHandle();
+    if (huart == NULL)
+    {
+        return;
+    }
+
+    (void)HAL_UART_Transmit(huart, (uint8_t *)buffer, (uint16_t)length, 300u);
 }

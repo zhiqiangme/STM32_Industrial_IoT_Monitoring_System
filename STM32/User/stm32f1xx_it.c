@@ -143,21 +143,21 @@ void SysTick_Handler(void)
 {
 }*/
 
-#include "Modbus_Slave.h"
+#include "G780s.h"
 
 /**
   * @brief  USART3 interrupt handler (Modbus slave, reserved)
   */
 void USART3_IRQHandler(void)
 {
-    UART_HandleTypeDef *huart = Modbus_Slave_GetHandle();
+    UART_HandleTypeDef *huart = G780s_GetHandle();
     uint8_t uart_error = 0;
     
     /* 检查接收中断 */
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_RXNE) != RESET)
     {
         uint8_t byte = (uint8_t)(huart->Instance->DR & 0xFF);  /* 读DR清RXNE */
-        Modbus_Slave_RxCallback(byte);
+        G780s_RxCallback(byte);
     }
     
     /* 清除错误标志 */
