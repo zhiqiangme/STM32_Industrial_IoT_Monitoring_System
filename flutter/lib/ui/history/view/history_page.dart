@@ -182,7 +182,7 @@ class _ChartState extends State<_Chart> {
     final ySpan = maxY - minY < 0.001 ? 1.0 : maxY - minY;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 16, 12),
+      padding: const EdgeInsets.fromLTRB(0, 4, 4, 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
           // 外框尺寸固定，图内时间窗通过拖动平移；这里只按视口宽度调节字号和留白。
@@ -190,7 +190,7 @@ class _ChartState extends State<_Chart> {
           final xFontSize = narrow ? 9.0 : 10.0;
           final xReserved = narrow ? 28.0 : 32.0;
           final yFontSize = narrow ? 9.0 : 11.0;
-          final yReserved = narrow ? 48.0 : 44.0;
+          final yReserved = narrow ? 42.0 : 40.0;
           final xLabelFormat = _xAxisFormat(vm.from, vm.to);
           final xAxis = _buildXAxisSpec(
             from: vm.from,
@@ -250,6 +250,7 @@ class _ChartState extends State<_Chart> {
                   LineChartData(
                     minX: visibleMinX,
                     maxX: visibleMaxX,
+                    clipData: const FlClipData.all(),
                     // y 轴上下各留 10% 余量，避免曲线贴边。
                     minY: minY - ySpan * 0.1,
                     maxY: maxY + ySpan * 0.1,
@@ -303,7 +304,7 @@ class _ChartState extends State<_Chart> {
                             return Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Text(
-                                meta.formattedValue,
+                                _formatYAxisValue(vm.field, value, meta),
                                 style: TextStyle(fontSize: yFontSize),
                               ),
                             );
@@ -514,6 +515,20 @@ DateTime _ceilToMinuteBoundary(DateTime value, int intervalMinutes) {
     return value;
   }
   return floored.add(Duration(minutes: intervalMinutes));
+}
+
+String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {
+  switch (field) {
+    case HistoryField.t1:
+    case HistoryField.t2:
+    case HistoryField.t3:
+    case HistoryField.t4:
+      return value.toStringAsFixed(1);
+    case HistoryField.flow:
+    case HistoryField.total:
+    case HistoryField.weight:
+      return meta.formattedValue;
+  }
 }
 
 /// `fl_chart 0.68` 没有 `minIncluded/maxIncluded`，这里手动隐藏边界标签，避免和内部刻度重叠。
