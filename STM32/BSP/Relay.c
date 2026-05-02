@@ -33,26 +33,23 @@ static uint16_t Relay_CalcCrc(const uint8_t *buf, uint16_t len)
 }
 
 /**
- * @brief 写单个继电器线圈，控制指定通道吸合或断开。
+ * @brief 写单线圈核心实现，调用方需自行持有 BusService 互斥体。
  * @param channel: 继电器通道号，范围 1-16
  * @param on: 目标状态，1 为开，0 为关
  * @retval uint8_t: 0 成功，1 失败
  */
-uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on)
+static uint8_t Relay_WriteCoil_Unlocked(uint8_t channel, uint8_t on)
 {
     uint8_t tx_buf[8];
     uint8_t rx_buf[8];
     uint16_t crc;
+    uint16_t coil_addr;
+    uint16_t coil_value;
 
-    /* 通道范围 1-16，写单个线圈 FC05 */
     if (channel < 1 || channel > 16) return 1;
-    /* 继电器写单线圈期间独占主站总线。 */
-    if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
-    {
-        return 1;
-    }
-    uint16_t coil_addr = (uint16_t)(channel - 1);
-    uint16_t coil_value = on ? RELAY_COIL_ON : RELAY_COIL_OFF;
+
+    coil_addr = (uint16_t)(channel - 1);
+    coil_value = on ? RELAY_COIL_ON : RELAY_COIL_OFF;
 
     tx_buf[0] = RELAY_SLAVE_ID;
     tx_buf[1] = RELAY_FC_WRITE_COIL;
@@ -69,40 +66,56 @@ uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on)
 
     if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
     {
-        BusService_Unlock();
         return 1;
     }
 
     if (rx_buf[0] != RELAY_SLAVE_ID || rx_buf[1] != RELAY_FC_WRITE_COIL)
     {
-        BusService_Unlock();
         return 1;
     }
 
-    BusService_Unlock();
     return 0;
 }
 
 /**
- * @brief 读取单个继电器线圈当前状态。
+ * @brief 写单个继电器线圈，控制指定通道吸合或断开。
  * @param channel: 继电器通道号，范围 1-16
- * @param state: 输出状态指针，1 为开，0 为关
+ * @param on: 目标状态，1 为开，0 为关
  * @retval uint8_t: 0 成功，1 失败
  */
-uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
+uint8_t Relay_WriteCoil(uint8_t channel, uint8_t on)
 {
-    uint8_t tx_buf[8];
-    uint8_t rx_buf[8];
-    uint16_t crc;
+    uint8_t status;
 
-    /* 读单个线圈 FC01，返回 bit0 状态 */
     if (channel < 1 || channel > 16) return 1;
-    /* 读单线圈用于按键/云端翻转前的状态确认。 */
+    /* 继电器写单线圈期间独占主站总线。 */
     if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
     {
         return 1;
     }
-    uint16_t coil_addr = (uint16_t)(channel - 1);
+
+    status = Relay_WriteCoil_Unlocked(channel, on);
+
+    BusService_Unlock();
+    return status;
+}
+
+/**
+ * @brief 读单线圈核心实现，调用方需自行持有 BusService 互斥体。
+ * @param channel: 继电器通道号，范围 1-16
+ * @param state: 输出状态指针，1 为开，0 为关
+ * @retval uint8_t: 0 成功，1 失败
+ */
+static uint8_t Relay_ReadCoil_Unlocked(uint8_t channel, uint8_t *state)
+{
+    uint8_t tx_buf[8];
+    uint8_t rx_buf[8];
+    uint16_t crc;
+    uint16_t coil_addr;
+
+    if (channel < 1 || channel > 16) return 1;
+
+    coil_addr = (uint16_t)(channel - 1);
 
     tx_buf[0] = RELAY_SLAVE_ID;
     tx_buf[1] = RELAY_FC_READ_COILS;
@@ -119,20 +132,17 @@ uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
 
     if (Modbus_MasterReceive(rx_buf, 6, 500) != HAL_OK)
     {
-        BusService_Unlock();
         return 1;
     }
 
     if (rx_buf[0] != RELAY_SLAVE_ID || rx_buf[1] != RELAY_FC_READ_COILS)
     {
-        BusService_Unlock();
         return 1;
     }
 
     crc = Relay_CalcCrc(rx_buf, 4);
     if ((crc & 0xFF) != rx_buf[4] || ((crc >> 8) & 0xFF) != rx_buf[5])
     {
-        BusService_Unlock();
         return 1;
     }
 
@@ -141,8 +151,30 @@ uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
         *state = (rx_buf[3] & 0x01) ? 1 : 0;
     }
 
-    BusService_Unlock();
     return 0;
+}
+
+/**
+ * @brief 读取单个继电器线圈当前状态。
+ * @param channel: 继电器通道号，范围 1-16
+ * @param state: 输出状态指针，1 为开，0 为关
+ * @retval uint8_t: 0 成功，1 失败
+ */
+uint8_t Relay_ReadCoil(uint8_t channel, uint8_t *state)
+{
+    uint8_t status;
+
+    if (channel < 1 || channel > 16) return 1;
+    /* 读单线圈用于按键/云端翻转前的状态确认。 */
+    if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
+    {
+        return 1;
+    }
+
+    status = Relay_ReadCoil_Unlocked(channel, state);
+
+    BusService_Unlock();
+    return status;
 }
 
 /**
@@ -356,19 +388,22 @@ uint8_t Relay_ToggleOutput(uint8_t channel)
     uint8_t current_state = 0;
     uint8_t status;
 
-    /* 翻转动作需要把“读当前状态 + 写新状态”包成一个原子事务。 */
+    /* 翻转动作需要把“读当前状态 + 写新状态”包成一个原子事务。
+     * 这里只持锁一次，中间走 _Unlocked 版本，确保两步之间不会被
+     * 其他线程的总线请求插入，否则按键和云端在同一时刻翻转同一通道时，
+     * 读到的旧状态可能已经被另一路写过，最终结果与预期相反。 */
     if (BusService_Lock(rt_tick_from_millisecond(1000)) != RT_EOK)
     {
         return 1;
     }
 
-    if (Relay_ReadCoil(channel, &current_state) != 0)
+    if (Relay_ReadCoil_Unlocked(channel, &current_state) != 0)
     {
         BusService_Unlock();
         return 1;
     }
 
-    status = Relay_WriteCoil(channel, current_state ? 0u : 1u);
+    status = Relay_WriteCoil_Unlocked(channel, current_state ? 0u : 1u);
     BusService_Unlock();
     return status;
 }

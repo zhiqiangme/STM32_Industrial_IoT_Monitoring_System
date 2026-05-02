@@ -26,9 +26,11 @@ static uint16_t g_last_upgrade_state = UPGRADE_STATE_IDLE;
 static uint16_t g_last_upgrade_error = 0u;
 static uint8_t g_boot_upgrade_pending = 0;
 static uint32_t g_telemetry_heart_count = 0u;
-static uint32_t g_telemetry_pending_seq = 0u;
-static uint8_t g_telemetry_pending_ready = 0u;
-static uint8_t g_telemetry_waiting_ack = 0u;
+/* 这几个标志/序号会在不同线程之间通过 __disable_irq 临界区交接，
+ * 必须用 volatile 阻止编译器把它们缓存到寄存器中重用。 */
+static volatile uint32_t g_telemetry_pending_seq = 0u;
+static volatile uint8_t g_telemetry_pending_ready = 0u;
+static volatile uint8_t g_telemetry_waiting_ack = 0u;
 static uint32_t g_telemetry_last_send_tick = 0u;
 static G780sJsonCommand g_pending_json_command = {0};
 static uint8_t g_json_command_pending = 0u;
@@ -406,11 +408,18 @@ static void G780s_PrepareTelemetryFrame(const G780sSlaveData *data)
         return;
     }
 
-    __disable_irq();
-    memcpy(g_telemetry_tx_buffer, local_buffer, (size_t)length + 1u);
-    g_telemetry_pending_seq = data->push_seq;
-    g_telemetry_pending_ready = 1u;
-    __enable_irq();
+    /* 这里 length 已经保证 < sizeof(local_buffer) == sizeof(g_telemetry_tx_buffer)，
+     * 拷贝 length 字节内容后再单独写 '\0'，避免“length + 1”算到边界外。 */
+    {
+        size_t copy_len = (size_t)length;
+
+        __disable_irq();
+        memcpy(g_telemetry_tx_buffer, local_buffer, copy_len);
+        g_telemetry_tx_buffer[copy_len] = '\0';
+        g_telemetry_pending_seq = data->push_seq;
+        g_telemetry_pending_ready = 1u;
+        __enable_irq();
+    }
 }
 
 /**
@@ -494,8 +503,15 @@ static void G780s_TrySendTelemetry(uint8_t force_resend)
     }
 
     __disable_irq();
-    frame_length = strlen(g_telemetry_tx_buffer);
-    memcpy(local_buffer, g_telemetry_tx_buffer, frame_length + 1u);
+    /* 用 memchr 限定查找范围，防御缓冲区里万一没有终止符的情况，避免 strlen 越界读。 */
+    {
+        const char *eos = (const char *)memchr(g_telemetry_tx_buffer, '\0',
+                                               sizeof(g_telemetry_tx_buffer));
+        frame_length = (eos != NULL) ? (size_t)(eos - g_telemetry_tx_buffer)
+                                     : (sizeof(g_telemetry_tx_buffer) - 1u);
+    }
+    memcpy(local_buffer, g_telemetry_tx_buffer, frame_length);
+    local_buffer[frame_length] = '\0';
     __enable_irq();
 
     if (frame_length == 0u)
