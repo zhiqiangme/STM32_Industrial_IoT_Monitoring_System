@@ -596,9 +596,22 @@ void BootMain_Run(void)
 
     if (BootMain_ShouldStayInLoader() == 0u)
     {
+        uint32_t flush_start;
+
         printf("[BOOT] valid slot %s found, jump now\r\n",
                BootMain_SlotName(g_boot_runtime.boot_slot));
-        HAL_Delay(10);
+
+        /* HAL_Delay 不能保证日志串口（USART1）TX 真正完成，等 TC 置位再跳，
+         * 否则 Upgrade_JumpToApplication 内的 HAL_DeInit 会截断最后一行 banner。 */
+        flush_start = HAL_GetTick();
+        while ((USART1->SR & USART_SR_TC) == 0u)
+        {
+            if ((HAL_GetTick() - flush_start) > 50u)
+            {
+                break;
+            }
+        }
+
         Upgrade_JumpToSlot(g_boot_runtime.boot_slot);
     }
 

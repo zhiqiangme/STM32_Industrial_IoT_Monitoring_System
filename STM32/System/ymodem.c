@@ -167,6 +167,7 @@ static uint8_t Ymodem_ParseHeader(YmodemReceiveResult *result, const uint8_t *pa
   memset(result, 0, sizeof(*result));
 
   while ((file_name_len < FILE_NAME_LENGTH) &&
+         ((PACKET_DATA_INDEX + file_name_len) < YMODEM_PACKET_BUFFER_SIZE) &&
          (packet[PACKET_DATA_INDEX + file_name_len] != '\0'))
   {
     result->file_name[file_name_len] = (char)packet[PACKET_DATA_INDEX + file_name_len];
@@ -181,12 +182,20 @@ static uint8_t Ymodem_ParseHeader(YmodemReceiveResult *result, const uint8_t *pa
 
   /* 文件信息区格式当前约定为：
    * "<size> 0x<crc32> <target_fw_version> <sha256_hex>"
-   * 仍然保持“字段追加”的兼容风格，不重做整个 YMODEM 头包协议。 */
-  while ((file_info_len < FILE_INFO_LENGTH) &&
-         (packet[PACKET_DATA_INDEX + file_name_len + 1u + file_info_len] != '\0'))
+   * 仍然保持“字段追加”的兼容风格，不重做整个 YMODEM 头包协议。
+   * 解析路径会回写 g_packet_data，所以读侧索引也要显式拦截在缓冲区内，
+   * 避免上层若改大 FILE_NAME_LENGTH/FILE_INFO_LENGTH 时悄悄越界。 */
   {
-    g_packet_data[file_info_len] = packet[PACKET_DATA_INDEX + file_name_len + 1u + file_info_len];
-    file_info_len++;
+    uint32_t info_base = PACKET_DATA_INDEX + file_name_len + 1u;
+
+    while ((file_info_len < FILE_INFO_LENGTH) &&
+           ((info_base + file_info_len) < YMODEM_PACKET_BUFFER_SIZE) &&
+           (file_info_len < (YMODEM_PACKET_BUFFER_SIZE - 1u)) &&
+           (packet[info_base + file_info_len] != '\0'))
+    {
+      g_packet_data[file_info_len] = packet[info_base + file_info_len];
+      file_info_len++;
+    }
   }
   g_packet_data[file_info_len] = '\0';
 

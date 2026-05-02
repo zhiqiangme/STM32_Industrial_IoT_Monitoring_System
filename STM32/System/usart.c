@@ -186,10 +186,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
                     g_usart_rx_sta |= 0x4000;
                 else
                 {
-                    g_usart_rx_buf[g_usart_rx_sta & 0X3FFF] = g_rx_buffer[0];
-                    g_usart_rx_sta++;
+                    uint16_t idx = g_usart_rx_sta & 0x3FFF;
 
-                    if (g_usart_rx_sta > (USART_REC_LEN - 1))
+                    if (idx < USART_REC_LEN)
+                    {
+                        g_usart_rx_buf[idx] = g_rx_buffer[0];
+                        g_usart_rx_sta = (g_usart_rx_sta & 0xC000) | (uint16_t)(idx + 1u);
+                    }
+
+                    if ((g_usart_rx_sta & 0x3FFF) >= USART_REC_LEN)
                     {
                         g_usart_rx_sta = 0;             /* 接收数据错误,重新开始接收 */
                     }
