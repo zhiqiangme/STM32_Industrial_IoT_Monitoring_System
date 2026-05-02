@@ -19,7 +19,9 @@ class AuthRepository extends ChangeNotifier {
     required SecureStorageService storage,
   })  : _api = api,
         _realtime = realtime,
-        _storage = storage;
+        _storage = storage {
+    _api.setUnauthorizedHandler(_handleUnauthorized);
+  }
 
   final ApiService _api;
   final RealtimeService _realtime;
@@ -27,6 +29,7 @@ class AuthRepository extends ChangeNotifier {
 
   bool _isLoggedIn = false;
   String? _username;
+  bool _handlingUnauthorized = false;
 
   /// 当前是否处于已登录态。
   bool get isLoggedIn => _isLoggedIn;
@@ -35,7 +38,7 @@ class AuthRepository extends ChangeNotifier {
   String? get currentUsername => _username;
 
   /// App 启动时调用：若安全存储里有 token，就直接进入登录态并打开实时通道。
-  /// 不主动调用接口验证 token；首次拉取数据若 401，由上层调用 [logout] 清理。
+  /// 不主动调用接口验证 token；首次拉取数据若 401，会触发统一会话清理。
   /// 返回值表示本次是否成功恢复会话。
   Future<bool> tryRestoreSession() async {
     try {
@@ -97,5 +100,28 @@ class AuthRepository extends ChangeNotifier {
     _isLoggedIn = false;
     _username = null;
     notifyListeners();
+  }
+
+  /// 任意数据接口返回 401 时统一清理会话，避免 UI 停留在“假登录态”。
+  Future<void> _handleUnauthorized() async {
+    if (_handlingUnauthorized || !_isLoggedIn) return;
+    _handlingUnauthorized = true;
+    try {
+      appLog.w('session expired, logout automatically');
+      await _realtime.disconnect();
+      await _storage.clearToken();
+      _api.setAuthToken(null);
+      _isLoggedIn = false;
+      _username = null;
+      notifyListeners();
+    } finally {
+      _handlingUnauthorized = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _api.setUnauthorizedHandler(null);
+    super.dispose();
   }
 }

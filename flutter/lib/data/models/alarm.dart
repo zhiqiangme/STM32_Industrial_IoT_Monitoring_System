@@ -62,6 +62,7 @@ class Alarm {
   /// - 设备裸载荷 `{dev, t:"alarm", ts, seq, code, val, severity}`。
   ///
   /// `ts` 当前由设备按 Unix 秒上报；这里同时兼容秒 / 毫秒。
+  /// 当设备仍上报开机秒或缺字段时，退回服务端 receivedAt。
   factory Alarm.fromJson(Map<String, dynamic> j) {
     // 如果是服务端封装格式，payload 里才是设备的原始字段。
     // 用 spread 合并：外层字段优先级高于 payload，便于服务端覆盖。
@@ -69,7 +70,10 @@ class Alarm {
     final src = payload is Map<String, dynamic> ? {...payload, ...j} : j;
     return Alarm(
       seq: (src['seq'] as num?)?.toInt() ?? 0,
-      timestamp: _parseAlarmTimestamp(src['ts']),
+      timestamp: _parseAlarmTimestamp(
+        src['ts'],
+        receivedAt: src['receivedAt'],
+      ),
       code: src['code'] as String? ?? 'UNKNOWN',
       value: (src['val'] as num?)?.toDouble(),
       severity: AlarmSeverity.parse(src['severity'] as String?),
@@ -91,9 +95,25 @@ class Alarm {
   };
 }
 
-/// 告警时间戳兼容层：小于 1e12 视为 Unix 秒，否则按毫秒处理。
-DateTime _parseAlarmTimestamp(Object? raw) {
-  final value = (raw as num?)?.toInt() ?? 0;
-  final millis = value.abs() < 1000000000000 ? value * 1000 : value;
+/// 告警时间戳兼容层：优先使用真实 Unix 秒 / 毫秒，否则退回服务端接收时间。
+DateTime _parseAlarmTimestamp(Object? raw, {Object? receivedAt}) {
+  return _parseWallClock(raw) ??
+      _parseWallClock(receivedAt) ??
+      DateTime.now();
+}
+
+DateTime? _parseWallClock(Object? raw) {
+  if (raw == null) return null;
+  if (raw is String) return DateTime.tryParse(raw)?.toLocal();
+  if (raw is! num) return null;
+
+  final value = raw.toInt();
+  if (value == 0) return null;
+
+  final abs = value.abs();
+  final millis = abs >= 1000000000000 ? value : value * 1000;
+  if (millis < 946684800000) {
+    return null;
+  }
   return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toLocal();
 }

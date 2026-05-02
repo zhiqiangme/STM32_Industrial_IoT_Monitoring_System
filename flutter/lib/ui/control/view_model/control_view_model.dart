@@ -29,6 +29,7 @@ class ControlViewModel extends ChangeNotifier {
   final MeasurementRepository _measurements;
   final AuthRepository _auth;
   StreamSubscription<Measurement>? _liveSub;
+  bool _disposed = false;
 
   int _pendingCount = 0;
   Command? _lastCommand;
@@ -58,9 +59,10 @@ class ControlViewModel extends ChangeNotifier {
     _requestedMask = targetMask;
     _pendingCount++;
     _message = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     final res = await _repo.sendRelaySet(targetMask);
+    if (_disposed) return;
     _handleResult(res);
 
     if (_pendingCount > 0) {
@@ -72,7 +74,7 @@ class ControlViewModel extends ChangeNotifier {
         _requestedMask = actualMask;
       }
     }
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 全部开启或全部关闭继电器。
@@ -85,9 +87,10 @@ class ControlViewModel extends ChangeNotifier {
     _requestedMask = targetMask;
     _pendingCount++;
     _message = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     final res = await _repo.sendRelaySet(targetMask);
+    if (_disposed) return;
     _handleResult(res);
 
     if (_pendingCount > 0) {
@@ -99,7 +102,7 @@ class ControlViewModel extends ChangeNotifier {
         _requestedMask = actualMask;
       }
     }
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void _handleResult(Result<Command> res) {
@@ -119,7 +122,7 @@ class ControlViewModel extends ChangeNotifier {
   void clearMessage() {
     if (_message == null) return;
     _message = null;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void _onMeasurement(Measurement measurement) {
@@ -127,7 +130,7 @@ class ControlViewModel extends ChangeNotifier {
     if (_pendingCount == 0 || measurement.relayDo == _requestedMask) {
       _requestedMask = measurement.relayDo;
     }
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void _onAuthChanged() {
@@ -140,11 +143,18 @@ class ControlViewModel extends ChangeNotifier {
       _message = null;
       _requestedMask = null;
     }
-    notifyListeners();
+    _safeNotifyListeners();
+  }
+
+  void _safeNotifyListeners() {
+    if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _auth.removeListener(_onAuthChanged);
     _liveSub?.cancel();
     super.dispose();

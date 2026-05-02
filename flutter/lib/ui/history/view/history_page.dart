@@ -19,6 +19,8 @@ const _rangePresets = <({int minutes, String label})>[
   (minutes: 10080, label: '7天'),
 ];
 
+const double _chartDragSensitivity = 2.5;
+
 /// 历史曲线页：顶部一行选项（字段 + 时间段）+ 下方填满剩余空间的折线图。
 class HistoryPage extends StatelessWidget {
   const HistoryPage({super.key});
@@ -225,7 +227,9 @@ class _ChartState extends State<_Chart> {
             onHorizontalDragUpdate: (details) {
               final plotWidth = math.max(1.0, constraints.maxWidth - yReserved - 24.0);
               final visibleSpan = visibleMaxX - visibleMinX;
-              final shift = -details.delta.dx * (visibleSpan / plotWidth);
+              final shift = -details.delta.dx *
+                  (visibleSpan / plotWidth) *
+                  _chartDragSensitivity;
               if (shift == 0) return;
               final fullSpan = xAxis.maxX - xAxis.minX;
               if (fullSpan <= visibleSpan) return;
@@ -309,7 +313,7 @@ class _ChartState extends State<_Chart> {
                               return const SizedBox.shrink();
                             }
                             return Padding(
-                              padding: const EdgeInsets.only(right: 4),
+                              padding: const EdgeInsets.only(right: 2),
                               child: Text(
                                 _formatYAxisValue(vm.field, value, meta),
                                 style: TextStyle(fontSize: yFontSize),
@@ -362,16 +366,13 @@ class _ChartState extends State<_Chart> {
                   duration: Duration.zero,
                 ),
                 Positioned(
-                  left: 0,
-                  top: 10,
-                  child: RotatedBox(
-                    quarterTurns: 3,
-                    child: Text(
-                      vm.field.unit,
-                      style: TextStyle(
-                        fontSize: narrow ? 11.0 : 12.0,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  left: 2,
+                  top: 4,
+                  child: Text(
+                    vm.field.unit,
+                    style: TextStyle(
+                      fontSize: narrow ? 11.0 : 12.0,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
@@ -554,9 +555,9 @@ String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {
 
 double _yReservedSize(HistoryField field, bool narrow) {
   if (_isTemperatureField(field)) {
-    return narrow ? 30.0 : 28.0;
+    return narrow ? 26.0 : 24.0;
   }
-  return narrow ? 38.0 : 36.0;
+  return narrow ? 34.0 : 32.0;
 }
 
 double? _yAxisInterval({

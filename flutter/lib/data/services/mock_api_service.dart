@@ -39,6 +39,11 @@ class MockApiService implements ApiService {
   }
 
   @override
+  void setUnauthorizedHandler(UnauthorizedHandler? handler) {
+    // Mock 模式没有真实会话失效，保留接口便于真实服务统一处理。
+  }
+
+  @override
   Future<Measurement> getLatest() async {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     // 优先返回实时流里最近一帧；冷启动还没有则当场合成一帧。

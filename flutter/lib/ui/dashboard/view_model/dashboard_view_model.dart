@@ -40,6 +40,7 @@ class DashboardViewModel extends ChangeNotifier {
   bool _wasLoggedIn = false;
   StreamSubscription<Measurement>? _liveSub;
   StreamSubscription<DeviceStatus>? _statusSub;
+  bool _disposed = false;
 
   Measurement? _measurement;
   DeviceStatus _status = DeviceStatus.unknown();
@@ -55,10 +56,11 @@ class DashboardViewModel extends ChangeNotifier {
   /// 首次 / 下拉刷新：主动拉一次最新值。
   Future<void> _loadInitial() async {
     // 已经有缓存值就不再多打一次 REST，直接等实时流推。
-    if (_measurement != null) return;
+    if (_disposed || _measurement != null) return;
     _loading = true;
-    notifyListeners();
+    _safeNotifyListeners();
     final res = await _repo.fetchLatest();
+    if (_disposed) return;
     switch (res) {
       case Ok(:final value):
         _measurement = value;
@@ -69,12 +71,13 @@ class DashboardViewModel extends ChangeNotifier {
         _error = null;
     }
     _loading = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 下拉刷新：同时刷新状态和测量值。
   Future<void> refresh() async {
     await _repo.fetchStatus();
+    if (_disposed) return;
     await _loadInitial();
   }
 
@@ -82,13 +85,13 @@ class DashboardViewModel extends ChangeNotifier {
   void _onMeasurement(Measurement m) {
     _measurement = m;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 状态变化（在线 / 离线 / lastSeen 更新）。
   void _onStatus(DeviceStatus s) {
     _status = s;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 监听登录态切换：登入后强制重拉最新值；登出后清空展示。
@@ -99,7 +102,7 @@ class DashboardViewModel extends ChangeNotifier {
     if (nowLoggedIn) {
       // 登入：清掉之前可能残留的占位值，再拉一次最新。
       _measurement = null;
-      notifyListeners();
+      _safeNotifyListeners();
       _loadInitial();
     } else {
       // 登出：清掉测量值与状态，回到空壳。
@@ -107,12 +110,19 @@ class DashboardViewModel extends ChangeNotifier {
       _status = DeviceStatus.unknown();
       _error = null;
       _loading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _safeNotifyListeners() {
+    if (!_disposed) {
       notifyListeners();
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     // 取消订阅，避免页面销毁后还在更新已 dispose 的 notifier。
     _auth.removeListener(_onAuthChanged);
     _liveSub?.cancel();

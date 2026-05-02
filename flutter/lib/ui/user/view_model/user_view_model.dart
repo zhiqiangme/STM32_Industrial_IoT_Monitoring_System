@@ -20,6 +20,7 @@ class UserViewModel extends ChangeNotifier {
 
   bool _busy = false;
   String? _error;
+  bool _disposed = false;
 
   /// 是否处于已登录态——决定页面渲染登录表单还是设置面板。
   bool get isLoggedIn => _repo.isLoggedIn;
@@ -41,19 +42,20 @@ class UserViewModel extends ChangeNotifier {
     if (_busy) return false;
     _busy = true;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     final res = await _repo.login(username: username, password: password);
+    if (_disposed) return false;
     _busy = false;
     switch (res) {
       case Ok():
         // 这里不再单独 notify：repository 已经 notify 过了，
         // _onAuthChanged 会把变化透传。
-        notifyListeners();
+        _safeNotifyListeners();
         return true;
       case Err(:final error):
         _error = _humanize(error);
-        notifyListeners();
+        _safeNotifyListeners();
         return false;
     }
   }
@@ -63,7 +65,7 @@ class UserViewModel extends ChangeNotifier {
 
   void _onAuthChanged() {
     // repository 状态变化（登录 / 退出 / token 失效）→ 转发通知给 UI。
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 把异常转成用户能看懂的中文提示。
@@ -76,8 +78,15 @@ class UserViewModel extends ChangeNotifier {
     return text;
   }
 
+  void _safeNotifyListeners() {
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
+    _disposed = true;
     _repo.removeListener(_onAuthChanged);
     super.dispose();
   }

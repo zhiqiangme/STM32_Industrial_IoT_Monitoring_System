@@ -51,6 +51,7 @@ class HistoryViewModel extends ChangeNotifier {
   StreamSubscription<Measurement>? _liveSub;
   StreamSubscription<DeviceStatus>? _statusSub;
   Timer? _autoReloadTimer;
+  bool _disposed = false;
 
   HistoryField _field = HistoryField.flow;
   late DateTime _from;
@@ -85,6 +86,7 @@ class HistoryViewModel extends ChangeNotifier {
 
   /// 重新拉取曲线数据。
   Future<void> load() async {
+    if (_disposed) return;
     final loadRevision = ++_loadRevision;
     final field = _field;
     final from = _from;
@@ -92,13 +94,14 @@ class HistoryViewModel extends ChangeNotifier {
     final limit = _historyLimitForRange(from, to);
     _loading = true;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
     final res = await _repo.fetchHistory(
       field: field,
       from: from,
       to: to,
       limit: limit,
     );
+    if (_disposed) return;
     if (loadRevision != _loadRevision) {
       appLog.d(
         'history drop stale response field=${field.id} '
@@ -128,7 +131,7 @@ class HistoryViewModel extends ChangeNotifier {
         );
     }
     _loading = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 监听登录态切换。
@@ -147,7 +150,7 @@ class HistoryViewModel extends ChangeNotifier {
       _error = null;
       _loading = false;
       _lastLoadFailed = false;
-      notifyListeners();
+      _safeNotifyListeners();
     }
   }
 
@@ -175,10 +178,17 @@ class HistoryViewModel extends ChangeNotifier {
     // 补传恢复时可能连续收到多帧，防抖后再查历史，避免打爆 REST 接口。
     _autoReloadTimer?.cancel();
     _autoReloadTimer = Timer(_autoReloadDebounce, () {
+      if (_disposed) return;
       if (_auth.isLoggedIn && !_loading && (isEmpty || _lastLoadFailed)) {
         load();
       }
     });
+  }
+
+  void _safeNotifyListeners() {
+    if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   int _historyLimitForRange(DateTime from, DateTime to) {
@@ -196,6 +206,7 @@ class HistoryViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _autoReloadTimer?.cancel();
     _liveSub?.cancel();
     _statusSub?.cancel();

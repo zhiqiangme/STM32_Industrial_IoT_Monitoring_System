@@ -4,6 +4,9 @@ import '../models/device_status.dart';
 import '../models/history_point.dart';
 import '../models/measurement.dart';
 
+/// 会话失效时由具体网络实现回调上层清理登录态。
+typedef UnauthorizedHandler = Future<void> Function();
+
 /// 所有 REST 调用的契约接口。
 ///
 /// 仓库层只依赖这个抽象，不依赖 Dio 之类的具体实现，
@@ -17,6 +20,9 @@ abstract interface class ApiService {
   /// `AuthRepository` 在登录、恢复会话、退出时调用；
   /// Mock 实现可以直接当作 no-op。
   void setAuthToken(String? token);
+
+  /// 注册 401 会话失效处理器。传 null 表示取消注册。
+  void setUnauthorizedHandler(UnauthorizedHandler? handler);
 
   /// `GET /api/latest?dev=…` —— 拉取最近一帧遥测样本。
   Future<Measurement> getLatest();

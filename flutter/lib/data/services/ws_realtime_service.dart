@@ -46,6 +46,11 @@ class WsRealtimeService implements RealtimeService {
   @override
   Future<void> connect({required String token}) async {
     _shouldReconnect = true;
+    if (_isConnected || _channel != null) {
+      return;
+    }
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _open();
   }
 

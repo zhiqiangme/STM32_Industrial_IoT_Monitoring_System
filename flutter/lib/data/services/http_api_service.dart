@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 
 import '../../config/env.dart';
@@ -34,6 +36,17 @@ class HttpApiService implements ApiService {
           }
           handler.next(options);
         },
+        onError: (error, handler) {
+          if (error.response?.statusCode == 401 &&
+              error.requestOptions.path != '/api/auth/login') {
+            final onUnauthorized = _unauthorizedHandler;
+            if (onUnauthorized != null) {
+              // 401 表示本地 token 已失效，异步通知仓库统一退出登录。
+              unawaited(onUnauthorized());
+            }
+          }
+          handler.next(error);
+        },
       ),
     );
   }
@@ -42,12 +55,18 @@ class HttpApiService implements ApiService {
 
   /// 当前持有的 token。`null` 表示未登录或会话已失效。
   String? _token;
+  UnauthorizedHandler? _unauthorizedHandler;
 
   /// 由 [AuthRepository] 在登录 / 恢复会话 / 退出时调用。
   /// 传 `null` 表示清除 token，后续请求将不再携带 Authorization。
   @override
   void setAuthToken(String? token) {
     _token = token;
+  }
+
+  @override
+  void setUnauthorizedHandler(UnauthorizedHandler? handler) {
+    _unauthorizedHandler = handler;
   }
 
   @override

@@ -20,12 +20,12 @@ class AlarmViewModel extends ChangeNotifier {
     // 监听未读计数变化（顶部底部导航徽标共用）。
     _unreadSub = repository.unreadStream.listen((n) {
       _unread = n;
-      notifyListeners();
+      _safeNotifyListeners();
     });
     // 监听实时告警：把新告警塞到列表头部，最近的排最上面。
     _liveSub = repository.liveStream.listen((a) {
       _items = [a, ..._items];
-      notifyListeners();
+      _safeNotifyListeners();
     });
     _unread = repository.unreadCount;
     _wasLoggedIn = _auth.isLoggedIn;
@@ -38,6 +38,7 @@ class AlarmViewModel extends ChangeNotifier {
   bool _wasLoggedIn = false;
   StreamSubscription<Alarm>? _liveSub;
   StreamSubscription<int>? _unreadSub;
+  bool _disposed = false;
 
   List<Alarm> _items = const [];
   bool _loading = false;
@@ -51,12 +52,14 @@ class AlarmViewModel extends ChangeNotifier {
 
   /// 拉取最近 30 天的历史告警。
   Future<void> load() async {
+    if (_disposed) return;
     _loading = true;
     _error = null;
-    notifyListeners();
+    _safeNotifyListeners();
     final to = DateTime.now();
     final from = to.subtract(const Duration(days: 30));
     final res = await _repo.fetchHistory(from: from, to: to);
+    if (_disposed) return;
     switch (res) {
       case Ok(:final value):
         _items = value;
@@ -66,7 +69,7 @@ class AlarmViewModel extends ChangeNotifier {
         _items = const [];
     }
     _loading = false;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   /// 标记全部为已读，徽标归零。
@@ -83,12 +86,19 @@ class AlarmViewModel extends ChangeNotifier {
       _items = const [];
       _error = null;
       _loading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  void _safeNotifyListeners() {
+    if (!_disposed) {
       notifyListeners();
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _auth.removeListener(_onAuthChanged);
     _liveSub?.cancel();
     _unreadSub?.cancel();
