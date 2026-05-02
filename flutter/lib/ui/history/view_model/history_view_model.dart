@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../data/models/device_status.dart';
@@ -19,6 +20,9 @@ import '../../../utils/result.dart';
 /// 登出 → 清空已加载的曲线），保证两态切换时显示与权限一致。
 class HistoryViewModel extends ChangeNotifier {
   static const Duration _autoReloadDebounce = Duration(seconds: 4);
+  static const Duration _historyAssumedSamplePeriod = Duration(seconds: 30);
+  static const int _historyMinLimit = 600;
+  static const int _historyMaxLimit = 20160;
 
   HistoryViewModel({
     required MeasurementRepository repository,
@@ -85,10 +89,16 @@ class HistoryViewModel extends ChangeNotifier {
     final field = _field;
     final from = _from;
     final to = _to;
+    final limit = _historyLimitForRange(from, to);
     _loading = true;
     _error = null;
     notifyListeners();
-    final res = await _repo.fetchHistory(field: field, from: from, to: to);
+    final res = await _repo.fetchHistory(
+      field: field,
+      from: from,
+      to: to,
+      limit: limit,
+    );
     if (loadRevision != _loadRevision) {
       appLog.d(
         'history drop stale response field=${field.id} '
@@ -102,17 +112,19 @@ class HistoryViewModel extends ChangeNotifier {
         _lastLoadFailed = false;
         appLog.i(
           'history loaded field=${field.id} from=${from.toIso8601String()} '
-          'to=${to.toIso8601String()} count=${value.length}',
+          'to=${to.toIso8601String()} limit=$limit count=${value.length}',
         );
-      case Err():
+      case Err(:final error):
         // 未登录时数据接口会返回 401；这里把错误静默吞掉，
         // 让页面停留在"此时间段内无数据"的空壳状态，
         // 等用户去"用户"Tab 登录后会自动 refresh。
         _points = const [];
         _lastLoadFailed = true;
+        _error = _shouldHideHistoryError(error) ? null : error;
         appLog.w(
           'history load failed field=${field.id} '
-          'from=${from.toIso8601String()} to=${to.toIso8601String()}',
+          'from=${from.toIso8601String()} to=${to.toIso8601String()} '
+          'limit=$limit',
         );
     }
     _loading = false;
@@ -167,6 +179,19 @@ class HistoryViewModel extends ChangeNotifier {
         load();
       }
     });
+  }
+
+  int _historyLimitForRange(DateTime from, DateTime to) {
+    final span = to.difference(from).abs();
+    final estimated = (span.inSeconds / _historyAssumedSamplePeriod.inSeconds)
+        .ceil();
+    // 按 30 秒/点粗估历史密度，长时间范围主动放大 limit，避免 7 天查询只拿到最近 200 条。
+    return estimated.clamp(_historyMinLimit, _historyMaxLimit);
+  }
+
+  bool _shouldHideHistoryError(Object error) {
+    // 仅对未登录/会话过期保留“空态”体验，其他网络或服务端异常直接暴露给页面。
+    return error is DioException && error.response?.statusCode == 401;
   }
 
   @override
