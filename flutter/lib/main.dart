@@ -11,6 +11,7 @@ import 'data/repositories/auth_repository.dart';
 import 'data/repositories/command_repository.dart';
 import 'data/repositories/measurement_repository.dart';
 import 'data/services/api_service.dart';
+import 'data/services/history_cache_service_factory.dart';
 import 'data/services/http_api_service.dart';
 import 'data/services/mock_api_service.dart';
 import 'data/services/mock_realtime_service.dart';
@@ -69,7 +70,12 @@ Future<void> main() async {
     realtime: realtime,
     storage: storage,
   );
-  final measurementRepo = MeasurementRepository(api: api, realtime: realtime);
+  final historyCache = createHistoryCacheService();
+  final measurementRepo = MeasurementRepository(
+    api: api,
+    historyCache: historyCache,
+    realtime: realtime,
+  );
   final alarmRepo = AlarmRepository(api: api, realtime: realtime);
   final commandRepo = CommandRepository(api: api, realtime: realtime);
 

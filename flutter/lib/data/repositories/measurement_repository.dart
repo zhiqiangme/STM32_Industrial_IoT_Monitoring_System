@@ -7,6 +7,7 @@ import '../models/device_status.dart';
 import '../models/history_point.dart';
 import '../models/measurement.dart';
 import '../services/api_service.dart';
+import '../services/history_cache_service.dart';
 import '../services/realtime_service.dart';
 
 /// 测量数据 + 设备状态的仓库层。
@@ -14,18 +15,21 @@ import '../services/realtime_service.dart';
 /// - [liveStream]：实时遥测数据广播流（broadcast）。
 /// - [statusStream]：设备在线 / 最近一次见到的时间。
 ///   在"设备通常处于离线"的部署里，这是一类一等公民状态，**不是错误**。
-/// - 历史数据走普通 REST，目前不缓存（按需后加）。
+/// - 历史数据优先走普通 REST，同时合并本地缓存，支持离线回看。
 class MeasurementRepository {
   MeasurementRepository({
     required ApiService api,
+    required HistoryCacheService historyCache,
     required RealtimeService realtime,
   })  : _api = api,
+        _historyCache = historyCache,
         _realtime = realtime {
     // 一进来就订阅实时事件流，把感兴趣的事件分发到本地状态。
     _sub = _realtime.events.listen(_onEvent);
   }
 
   final ApiService _api;
+  final HistoryCacheService _historyCache;
   final RealtimeService _realtime;
   StreamSubscription<RealtimeEvent>? _sub;
 
@@ -58,6 +62,7 @@ class MeasurementRepository {
         _lastMeasurement = measurement;
         _liveCtrl.add(measurement);
         _markTelemetryOnline(measurement);
+        unawaited(_persistMeasurementToCache(measurement));
       case StatusEvent(:final status):
         _setStatus(_normalizeStatus(status));
       case AlarmEvent():
@@ -73,6 +78,7 @@ class MeasurementRepository {
       final m = await _api.getLatest();
       _lastMeasurement = m;
       _markTelemetryOnline(m);
+      unawaited(_persistMeasurementToCache(m));
       return Ok(m);
     } catch (e, st) {
       appLog.w('fetchLatest failed: $e');
@@ -90,6 +96,12 @@ class MeasurementRepository {
     required DateTime to,
     int limit = 200,
   }) async {
+    var cached = const <HistoryPoint>[];
+    try {
+      cached = await _historyCache.readHistory(field: field, from: from, to: to);
+    } catch (e) {
+      appLog.w('read history cache failed: $e');
+    }
     try {
       final pts = await _api.getHistory(
         field: field,
@@ -97,9 +109,14 @@ class MeasurementRepository {
         to: to,
         limit: limit,
       );
-      return Ok(pts);
+      unawaited(_historyCache.storeHistory(field, pts));
+      return Ok(_mergeHistoryPoints(cached, pts));
     } catch (e, st) {
       appLog.w('fetchHistory failed: $e');
+      if (cached.isNotEmpty) {
+        appLog.i('fetchHistory fallback to local cache count=${cached.length}');
+        return Ok(cached);
+      }
       return Err(e, st);
     }
   }
@@ -119,8 +136,17 @@ class MeasurementRepository {
   Future<void> dispose() async {
     _offlineTimer?.cancel();
     await _sub?.cancel();
+    await _historyCache.dispose();
     await _liveCtrl.close();
     await _statusCtrl.close();
+  }
+
+  Future<void> _persistMeasurementToCache(Measurement measurement) async {
+    try {
+      await _historyCache.storeMeasurement(measurement);
+    } catch (e) {
+      appLog.w('store live history cache failed: $e');
+    }
   }
 
   /// 收到遥测帧后：刷新本地接收时间、把状态拉为"在线"，
@@ -199,5 +225,32 @@ class MeasurementRepository {
   void _setStatus(DeviceStatus status) {
     _status = status;
     _statusCtrl.add(status);
+  }
+
+  List<HistoryPoint> _mergeHistoryPoints(
+    List<HistoryPoint> cached,
+    List<HistoryPoint> remote,
+  ) {
+    if (cached.isEmpty) return remote;
+    if (remote.isEmpty) return cached;
+
+    final merged = <HistoryPoint>[];
+    final seen = <String>{};
+
+    void appendAll(List<HistoryPoint> points) {
+      for (final point in points) {
+        if (!point.value.isFinite) continue;
+        final key =
+            '${point.timestamp.millisecondsSinceEpoch}:${point.value.toStringAsPrecision(12)}';
+        if (seen.add(key)) {
+          merged.add(point);
+        }
+      }
+    }
+
+    appendAll(cached);
+    appendAll(remote);
+    merged.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return merged;
   }
 }
