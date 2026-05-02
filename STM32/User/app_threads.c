@@ -170,7 +170,10 @@ static void App_IwdgKick(void)
 {
     if (s_iwdg_ready != 0u)
     {
-        (void)HAL_IWDG_Refresh(&s_iwdg_handle);
+        if (HAL_IWDG_Refresh(&s_iwdg_handle) != HAL_OK)
+        {
+            printf("[IWDG] refresh failed\r\n");
+        }
     }
 }
 
@@ -518,7 +521,7 @@ static void App_TryConfirmRunningSlot(uint32_t *confirm_start_tick,
     {
         return;
     }
-    if ((int32_t)(now - *confirm_next_retry_tick) < 0)
+    if (now < *confirm_next_retry_tick)
     {
         return;
     }
