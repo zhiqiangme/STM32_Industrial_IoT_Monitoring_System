@@ -61,17 +61,7 @@ class ControlViewModel extends ChangeNotifier {
     notifyListeners();
 
     final res = await _repo.sendRelaySet(targetMask);
-    switch (res) {
-      case Ok(:final value):
-        _lastCommand = value;
-        if (value.result != 'superseded') {
-          _message = value.status == CommandStatus.acked
-              ? '继电器状态已确认 (seq=${value.seq})'
-              : '继电器控制失败：${value.result ?? '未知'}';
-        }
-      case Err(:final error):
-        _message = '发送失败：$error';
-    }
+    _handleResult(res);
 
     if (_pendingCount > 0) {
       _pendingCount--;
@@ -83,6 +73,47 @@ class ControlViewModel extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// 全部开启或全部关闭继电器。
+  Future<void> setAllRelays(bool enabled) async {
+    if (!_auth.isLoggedIn) return;
+
+    final targetMask = enabled ? 0xFFFF : 0x0000;
+    if (targetMask == displayRelayMask) return;
+
+    _requestedMask = targetMask;
+    _pendingCount++;
+    _message = null;
+    notifyListeners();
+
+    final res = await _repo.sendRelaySet(targetMask);
+    _handleResult(res);
+
+    if (_pendingCount > 0) {
+      _pendingCount--;
+    }
+    if (_pendingCount == 0) {
+      final actualMask = _measurement?.relayDo;
+      if (actualMask == _requestedMask || res is Err<Command>) {
+        _requestedMask = actualMask;
+      }
+    }
+    notifyListeners();
+  }
+
+  void _handleResult(Result<Command> res) {
+    switch (res) {
+      case Ok(:final value):
+        _lastCommand = value;
+        if (value.result != 'superseded') {
+          _message = value.status == CommandStatus.acked
+              ? '继电器状态已确认 (seq=${value.seq})'
+              : '继电器控制失败：${value.result ?? '未知'}';
+        }
+      case Err(:final error):
+        _message = '发送失败：$error';
+    }
   }
 
   void clearMessage() {

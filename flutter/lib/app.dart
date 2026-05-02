@@ -23,8 +23,8 @@ import 'ui/user/view_model/user_view_model.dart';
 ///
 /// 路由共有 5 个 Tab：
 /// - `/`        实时数据
-/// - `/control` 继电器控制
 /// - `/history` 历史曲线
+/// - `/control` 继电器控制
 /// - `/alarm`   告警列表
 /// - `/user`    用户（含登录表单与已登录设置面板）
 ///
@@ -93,6 +93,19 @@ class _FlowmeterAppState extends State<FlowmeterApp> {
                 ),
               ),
             ]),
+            // 历史曲线页。
+            StatefulShellBranch(routes: [
+              GoRoute(
+                path: '/history',
+                builder: (context, state) => ChangeNotifierProvider(
+                  create: (c) => HistoryViewModel(
+                    repository: c.read(),
+                    auth: c.read<AuthRepository>(),
+                  ),
+                  child: const HistoryPage(),
+                ),
+              ),
+            ]),
             // 继电器控制页。
             StatefulShellBranch(routes: [
               GoRoute(
@@ -104,19 +117,6 @@ class _FlowmeterAppState extends State<FlowmeterApp> {
                     auth: c.read<AuthRepository>(),
                   ),
                   child: const ControlPage(),
-                ),
-              ),
-            ]),
-            // 历史曲线页。
-            StatefulShellBranch(routes: [
-              GoRoute(
-                path: '/history',
-                builder: (context, state) => ChangeNotifierProvider(
-                  create: (c) => HistoryViewModel(
-                    repository: c.read(),
-                    auth: c.read<AuthRepository>(),
-                  ),
-                  child: const HistoryPage(),
                 ),
               ),
             ]),

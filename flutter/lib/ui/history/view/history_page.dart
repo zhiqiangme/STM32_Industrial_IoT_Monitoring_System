@@ -9,6 +9,7 @@ import '../view_model/history_view_model.dart';
 const _rangePresets = <({int minutes, String label})>[
   (minutes: 5, label: '5分钟'),
   (minutes: 60, label: '1小时'),
+  (minutes: 240, label: '4小时'),
   (minutes: 720, label: '12小时'),
   (minutes: 1440, label: '24小时'),
   (minutes: 4320, label: '3天'),
@@ -174,7 +175,7 @@ class _Chart extends StatelessWidget {
         builder: (context, constraints) {
           // 按可用宽度调节坐标轴密度，避免手机竖屏下 X 轴标签重叠、Y 轴数字被截断换行。
           final narrow = constraints.maxWidth < 480;
-          final xTickCount = narrow ? 2 : 4;
+          final xTickCount = narrow ? 3 : 5;
           final xFontSize = narrow ? 9.0 : 10.0;
           final xReserved = narrow ? 28.0 : 32.0;
           final yFontSize = narrow ? 9.0 : 11.0;
@@ -197,18 +198,26 @@ class _Chart extends StatelessWidget {
                     topTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
-                    // x 轴：宽屏 4 个、窄屏 3 个时间刻度，按 MM-dd \n HH:mm 排版。
+                    // x 轴：边界标签留给图框，内部刻度按宽度控制密度，避免两端文字重叠。
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
                         reservedSize: xReserved,
                         interval: xSpan / xTickCount,
                         getTitlesWidget: (value, meta) {
+                          if (_isAxisEdgeLabel(value, meta)) {
+                            return const SizedBox.shrink();
+                          }
                           final d = DateTime.fromMillisecondsSinceEpoch(
                             value.toInt(),
                           );
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            space: 4,
+                            fitInside: SideTitleFitInsideData.fromTitleMeta(
+                              meta,
+                              distanceFromEdge: 0,
+                            ),
                             child: Text(
                               DateFormat(xLabelFormat).format(d),
                               style: TextStyle(fontSize: xFontSize),
@@ -319,5 +328,6 @@ String _xAxisFormat(DateTime from, DateTime to) {
 /// `fl_chart 0.68` 没有 `minIncluded/maxIncluded`，这里手动隐藏边界标签，避免和内部刻度重叠。
 bool _isAxisEdgeLabel(double value, TitleMeta meta) {
   const epsilon = 0.000001;
-  return (value - meta.min).abs() < epsilon || (value - meta.max).abs() < epsilon;
+  return (value - meta.min).abs() < epsilon ||
+      (value - meta.max).abs() < epsilon;
 }

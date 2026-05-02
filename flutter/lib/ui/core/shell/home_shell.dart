@@ -32,7 +32,10 @@ class HomeShell extends StatelessWidget {
               toolbarHeight: 48,
               title: Text(_titleFor(navigationShell.currentIndex)),
             ),
-      body: navigationShell,
+      body: Provider<int>.value(
+        value: navigationShell.currentIndex,
+        child: navigationShell,
+      ),
       bottomNavigationBar: hideShellChrome
           ? null
           : StreamBuilder<int>(
@@ -45,12 +48,16 @@ class HomeShell extends StatelessWidget {
                   // 减少底部导航固定占高，给实时数据卡片留出完整显示空间。
                   height: 68,
                   selectedIndex: navigationShell.currentIndex,
-                  onDestinationSelected: (i) => navigationShell.goBranch(
-                    i,
-                    // 再次点击当前 Tab 时回到该 Branch 的 initial location，
-                    // 实现"再点回到首页"的常见交互。
-                    initialLocation: i == navigationShell.currentIndex,
-                  ),
+                  onDestinationSelected: (i) {
+                    // 切换 Tab 时清除 SnackBar，避免控制页通知残留在其他页面。
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    navigationShell.goBranch(
+                      i,
+                      // 再次点击当前 Tab 时回到该 Branch 的 initial location，
+                      // 实现"再点回到首页"的常见交互。
+                      initialLocation: i == navigationShell.currentIndex,
+                    );
+                  },
                   destinations: [
                     const NavigationDestination(
                       icon: Icon(Icons.dashboard_outlined),
@@ -58,14 +65,14 @@ class HomeShell extends StatelessWidget {
                       label: '实时',
                     ),
                     const NavigationDestination(
-                      icon: Icon(Icons.tune_outlined),
-                      selectedIcon: Icon(Icons.tune),
-                      label: '控制',
-                    ),
-                    const NavigationDestination(
                       icon: Icon(Icons.show_chart),
                       selectedIcon: Icon(Icons.show_chart),
                       label: '历史',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Icons.tune_outlined),
+                      selectedIcon: Icon(Icons.tune),
+                      label: '控制',
                     ),
                     // 报警 Tab：未读数大于 0 时显示数字徽标。
                     NavigationDestination(
@@ -97,8 +104,8 @@ class HomeShell extends StatelessWidget {
   /// 根据当前 Tab 下标决定 AppBar 标题。
   String _titleFor(int index) => switch (index) {
     0 => '实时数据',
-    1 => '继电器控制',
-    2 => '历史曲线',
+    1 => '历史曲线',
+    2 => '继电器控制',
     3 => '报警',
     4 => '用户',
     _ => '磨坊系统',

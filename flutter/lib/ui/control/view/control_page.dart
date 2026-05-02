@@ -7,17 +7,51 @@ import '../view_model/control_view_model.dart';
 class ControlPage extends StatelessWidget {
   const ControlPage({super.key});
 
+  /// 弹出二次确认对话框，确认后执行全部开启或全部关闭。
+  Future<void> _confirmSetAll(
+      BuildContext context, ControlViewModel vm, bool enabled) async {
+    final action = enabled ? '开启' : '关闭';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('确认全部$action'),
+        content: Text('确定要将所有 16 路继电器全部$action吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      vm.setAllRelays(enabled);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ControlViewModel>(
       builder: (context, vm, _) {
-        // ViewModel 里有一次性消息时弹 SnackBar；
-        // 用 post-frame callback 避免在 build 阶段直接调度。
+        // 只在控制页面处于活跃状态时显示 SnackBar，
+        // 避免切换到其他页面后仍弹出通知。
+        final isActive = context.watch<int>() == 2;
         final msg = vm.message;
-        if (msg != null) {
+        if (msg != null && isActive) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
             ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(msg)));
+            vm.clearMessage();
+          });
+        } else if (msg != null && !isActive) {
+          // 页面不活跃时静默清除消息，防止切换回来后重复弹出。
+          WidgetsBinding.instance.addPostFrameCallback((_) {
             vm.clearMessage();
           });
         }
@@ -29,6 +63,29 @@ class ControlPage extends StatelessWidget {
           // 手机竖屏优先保证 16 个按钮一页完整显示，适当收紧四周留白。
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           children: [
+            // 全部开启 / 全部关闭 按钮
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _confirmSetAll(context, vm, true),
+                      icon: const Icon(Icons.power_settings_new),
+                      label: const Text('全部开启'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _confirmSetAll(context, vm, false),
+                      icon: const Icon(Icons.power_off),
+                      label: const Text('全部关闭'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 600;

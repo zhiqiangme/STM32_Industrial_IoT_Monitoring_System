@@ -25,9 +25,9 @@ class HistoryViewModel extends ChangeNotifier {
     required AuthRepository auth,
   })  : _repo = repository,
         _auth = auth {
-    // 默认显示最近 7 天，进入页面立刻发起一次拉取。
+    // 默认显示最近 4 小时，进入页面立刻发起一次拉取。
     _to = DateTime.now();
-    _from = _to.subtract(const Duration(days: 7));
+    _from = _to.subtract(const Duration(hours: 4));
     _wasLoggedIn = _auth.isLoggedIn;
     _lastStatusOnline = _repo.status.online;
     _lastStatusSeen = _repo.status.lastSeen;
