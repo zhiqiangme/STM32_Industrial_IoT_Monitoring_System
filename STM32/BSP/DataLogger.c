@@ -320,14 +320,21 @@ int DataLogger_LogError(const char *fmt, ...)
     /* 格式化用户消息 (追加到时间戳后面) */
     va_list ap;
     va_start(ap, fmt);
-    int body = vsnprintf(&line[head], sizeof(line) - head - 2, fmt, ap);
+    int body_avail = (int)sizeof(line) - head - 2;
+    int body = vsnprintf(&line[head], (size_t)body_avail, fmt, ap);
     va_end(ap);
 
     if (body < 0) return -4;
 
-    /* 计算总长度并添加 \r\n 行尾 */
+    /* vsnprintf 在截断时返回“理论应有长度”，但实际只写了 body_avail-1 字节，
+     * 后面的位置仍是未初始化栈垃圾，必须以 body_avail-1 为上限钳位，
+     * 否则 \r\n 之间会写入随机字节。 */
+    if (body >= body_avail)
+    {
+        body = body_avail - 1;
+    }
+
     int total = head + body;
-    if (total > (int)sizeof(line) - 2) total = sizeof(line) - 2;
     line[total++] = '\r';
     line[total++] = '\n';
 

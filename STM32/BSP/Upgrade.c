@@ -701,6 +701,12 @@ uint8_t Upgrade_ProgramBytes(uint32_t address, const uint8_t *data, uint32_t len
     {
         return 1u;
     }
+    /* STM32F1 Flash 只支持半字（16 位）编程，写入起始地址必须 2 字节对齐。
+     * 上层若传入奇地址会让 HAL_FLASH_Program 行为未定义，提前拦下。 */
+    if ((address & 0x1u) != 0u)
+    {
+        return 2u;
+    }
     slot = Upgrade_ResolveSlotFromAddress(address);
     slot_base_addr = Upgrade_GetSlotBaseAddress(slot);
     if (slot_base_addr == 0u || len > UPGRADE_SLOT_MAX_SIZE ||
@@ -753,6 +759,12 @@ uint8_t Upgrade_ProgramSlotBytes(uint16_t slot, uint32_t offset, const uint8_t *
         return 2u;
     }
     if (len > (UPGRADE_SLOT_MAX_SIZE - offset))
+    {
+        return 2u;
+    }
+    /* offset 必须半字对齐：YMODEM 包是 128/1024 字节，正常情况下天然偶数；
+     * 但如果 file_size 是奇数导致中途出现奇数 offset，会让后续写入地址错位。 */
+    if ((offset & 0x1u) != 0u)
     {
         return 2u;
     }

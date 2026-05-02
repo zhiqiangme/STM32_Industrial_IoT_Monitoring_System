@@ -4,6 +4,7 @@
 #include "boot_config.h"
 #include "boot_flash.h"
 #include "boot_sha256.h"
+#include "delay.h"
 #include "ymodem.h"
 
 #include <stdio.h>
@@ -49,18 +50,14 @@ static void BootProtocol_SendRaw(BootloaderRuntime *runtime, const uint8_t *data
     }
 
     BootProtocol_TxEnable();
-    for (volatile uint32_t i = 0; i < BOOT_RS485_TX_SETTLE_DELAY; i++)
-    {
-    }
+    delay_us(BOOT_RS485_TX_SETTLE_US);
 
     (void)HAL_UART_Transmit(&runtime->uart, (uint8_t *)data, len, 200);
     while (__HAL_UART_GET_FLAG(&runtime->uart, UART_FLAG_TC) == RESET)
     {
     }
 
-    for (volatile uint32_t i = 0; i < BOOT_RS485_RX_SETTLE_DELAY; i++)
-    {
-    }
+    delay_us(BOOT_RS485_RX_SETTLE_US);
     BootProtocol_RxEnable();
 }
 

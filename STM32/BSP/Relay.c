@@ -334,6 +334,21 @@ uint8_t Relay_BatchControl(uint8_t all_on)
         return 1;
     }
 
+    /* 标准 FC06 响应是镜像请求的 8 字节，必须校验地址/功能码/CRC，
+     * 否则总线噪声或异机串扰可能让我们把废响应当成成功。 */
+    if (rx_buf[0] != RELAY_SLAVE_ID || rx_buf[1] != RELAY_FC_WRITE_REGISTER)
+    {
+        BusService_Unlock();
+        return 1;
+    }
+
+    crc = Relay_CalcCrc(rx_buf, 6);
+    if ((crc & 0xFF) != rx_buf[6] || ((crc >> 8) & 0xFF) != rx_buf[7])
+    {
+        BusService_Unlock();
+        return 1;
+    }
+
     BusService_Unlock();
     return 0;
 }
@@ -369,6 +384,19 @@ uint8_t Relay_SetOutputMask(uint16_t mask)
     Modbus_MasterSend(tx_buf, sizeof(tx_buf));
 
     if (Modbus_MasterReceive(rx_buf, 8, 500) != HAL_OK)
+    {
+        BusService_Unlock();
+        return 1;
+    }
+
+    if (rx_buf[0] != RELAY_SLAVE_ID || rx_buf[1] != RELAY_FC_WRITE_REGISTER)
+    {
+        BusService_Unlock();
+        return 1;
+    }
+
+    crc = Relay_CalcCrc(rx_buf, 6);
+    if ((crc & 0xFF) != rx_buf[6] || ((crc >> 8) & 0xFF) != rx_buf[7])
     {
         BusService_Unlock();
         return 1;

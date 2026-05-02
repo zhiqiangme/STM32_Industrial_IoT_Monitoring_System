@@ -19,6 +19,9 @@ static uint8_t g_rx_buf[MODBUS_SLAVE_RX_BUFFER_SIZE];
 static volatile uint16_t g_rx_len = 0;
 static volatile uint32_t g_last_rx_tick = 0;
 static volatile uint8_t g_frame_ready = 0;
+/* 中断里发现溢出/异常时把当前帧标记为污染，主循环静默超时后整帧丢弃，
+ * 防止把溢出后接上的字节误解释成新帧帧头并 CRC 巧合通过。 */
+static volatile uint8_t g_rx_corrupted = 0;
 
 /* 发送缓冲由协议层临时组织响应帧，末尾再统一补 CRC。 */
 static uint8_t g_tx_buf[MODBUS_SLAVE_TX_BUFFER_SIZE];
@@ -385,6 +388,7 @@ void Modbus_Slave_Init(const ModbusSlaveConfig *config)
     g_rx_len = 0;
     g_last_rx_tick = 0;
     g_frame_ready = 0;
+    g_rx_corrupted = 0u;
     memset(g_rx_buf, 0, sizeof(g_rx_buf));
     memset(g_tx_buf, 0, sizeof(g_tx_buf));
     g_crc_error_count = 0;
@@ -414,9 +418,13 @@ void Modbus_Slave_Process(void)
 
     if (g_frame_ready)
     {
-        Modbus_Slave_ProcessFrame();
+        if (g_rx_corrupted == 0u)
+        {
+            Modbus_Slave_ProcessFrame();
+        }
         g_rx_len = 0;
         g_frame_ready = 0;
+        g_rx_corrupted = 0u;
     }
 }
 
@@ -434,8 +442,10 @@ void Modbus_Slave_RxCallback(uint8_t byte)
     }
     else
     {
+        /* 缓冲区溢出：保留 g_rx_len 让超时仍能判帧结束，
+         * 但置脏标志，主循环静默后整帧丢弃，避免把后续字节误当下一帧帧头。 */
         g_rx_overflow_count++;
-        g_rx_len = 0;
+        g_rx_corrupted = 1u;
     }
 
     g_last_rx_tick = HAL_GetTick();
@@ -487,18 +497,21 @@ void Modbus_Slave_NotifyUartOverrun(void)
 {
     g_uart_ore_count++;
     g_uart_error_count++;
+    g_rx_corrupted = 1u;
 }
 
 void Modbus_Slave_NotifyUartFrameError(void)
 {
     g_uart_fe_count++;
     g_uart_error_count++;
+    g_rx_corrupted = 1u;
 }
 
 void Modbus_Slave_NotifyUartNoiseError(void)
 {
     g_uart_ne_count++;
     g_uart_error_count++;
+    g_rx_corrupted = 1u;
 }
 
 /**

@@ -33,8 +33,10 @@
 #define BOOT_UART_RX_PORT                 GPIOB
 #define BOOT_UART_RX_PIN                  GPIO_PIN_11
 
-#define BOOT_RS485_TX_SETTLE_DELAY        500u
-#define BOOT_RS485_RX_SETTLE_DELAY        200u
+/* RS485 驱动方向切换稳定时间，单位 us。
+ * 用 SysTick 精确延时替代旧的 for(volatile) 忙等，避免随编译器优化等级漂移。 */
+#define BOOT_RS485_TX_SETTLE_US           50u
+#define BOOT_RS485_RX_SETTLE_US           20u
 #define BOOT_LED_TOGGLE_INTERVAL_MS       200u
 #define BOOT_UART_READ_POLL_MS            20u
 
