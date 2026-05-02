@@ -161,12 +161,10 @@ class _Chart extends StatelessWidget {
     }
     final xs = rawSpots.map((s) => s.x);
     final ys = rawSpots.map((s) => s.y);
-    final minX = xs.reduce((a, b) => a < b ? a : b);
-    final maxX = xs.reduce((a, b) => a > b ? a : b);
+    final rawMinX = xs.reduce((a, b) => a < b ? a : b);
+    final rawMaxX = xs.reduce((a, b) => a > b ? a : b);
     final minY = ys.reduce((a, b) => a < b ? a : b);
     final maxY = ys.reduce((a, b) => a > b ? a : b);
-    // 当所有点时间相同或值相同时，给一个最小跨度避免 interval=0 触发断言。
-    final xSpan = maxX - minX < 1.0 ? 60000.0 : maxX - minX;
     final ySpan = maxY - minY < 0.001 ? 1.0 : maxY - minY;
 
     return Padding(
@@ -175,18 +173,24 @@ class _Chart extends StatelessWidget {
         builder: (context, constraints) {
           // 按可用宽度调节坐标轴密度，避免手机竖屏下 X 轴标签重叠、Y 轴数字被截断换行。
           final narrow = constraints.maxWidth < 480;
-          final xTickCount = narrow ? 3 : 5;
           final xFontSize = narrow ? 9.0 : 10.0;
           final xReserved = narrow ? 28.0 : 32.0;
           final yFontSize = narrow ? 9.0 : 11.0;
           final yReserved = narrow ? 48.0 : 44.0;
           final xLabelFormat = _xAxisFormat(vm.from, vm.to);
+          final xAxis = _buildXAxisSpec(
+            from: vm.from,
+            to: vm.to,
+            narrow: narrow,
+            rawMinX: rawMinX,
+            rawMaxX: rawMaxX,
+          );
           return Stack(
             children: [
               LineChart(
                 LineChartData(
-                  minX: minX,
-                  maxX: maxX,
+                  minX: xAxis.minX,
+                  maxX: xAxis.maxX,
                   // y 轴上下各留 10% 余量，避免曲线贴边。
                   minY: minY - ySpan * 0.1,
                   maxY: maxY + ySpan * 0.1,
@@ -203,7 +207,7 @@ class _Chart extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         reservedSize: xReserved,
-                        interval: xSpan / xTickCount,
+                        interval: xAxis.interval,
                         getTitlesWidget: (value, meta) {
                           if (_isAxisEdgeLabel(value, meta)) {
                             return const SizedBox.shrink();
@@ -316,6 +320,18 @@ class _Chart extends StatelessWidget {
   }
 }
 
+class _XAxisSpec {
+  final double minX;
+  final double maxX;
+  final double interval;
+
+  const _XAxisSpec({
+    required this.minX,
+    required this.maxX,
+    required this.interval,
+  });
+}
+
 /// 短区间只显示时分；跨天后再带日期，避免手机窄屏下横轴标签互相压住。
 String _xAxisFormat(DateTime from, DateTime to) {
   final span = to.difference(from);
@@ -323,6 +339,74 @@ String _xAxisFormat(DateTime from, DateTime to) {
     return 'HH:mm';
   }
   return 'MM-dd\nHH:mm';
+}
+
+_XAxisSpec _buildXAxisSpec({
+  required DateTime from,
+  required DateTime to,
+  required bool narrow,
+  required double rawMinX,
+  required double rawMaxX,
+}) {
+  final span = to.difference(from).abs();
+  final tickCount = narrow ? 3 : 5;
+
+  // 5 分钟档保持当前自由刻度，避免过密时整点对齐把标签挤没。
+  if (span < const Duration(hours: 1)) {
+    final minX = rawMinX;
+    final maxX = rawMaxX;
+    final xSpan = maxX - minX < 1.0 ? 60000.0 : maxX - minX;
+    return _XAxisSpec(
+      minX: minX,
+      maxX: maxX,
+      interval: xSpan / tickCount,
+    );
+  }
+
+  final intervalMinutes = _niceMinuteInterval(span, tickCount);
+  final alignedFrom = _floorToMinuteBoundary(from, intervalMinutes);
+  final alignedTo = _ceilToMinuteBoundary(to, intervalMinutes);
+  final safeTo = alignedTo.isAfter(alignedFrom)
+      ? alignedTo
+      : alignedFrom.add(Duration(minutes: intervalMinutes));
+
+  return _XAxisSpec(
+    minX: alignedFrom.millisecondsSinceEpoch.toDouble(),
+    maxX: safeTo.millisecondsSinceEpoch.toDouble(),
+    interval: Duration(minutes: intervalMinutes).inMilliseconds.toDouble(),
+  );
+}
+
+int _niceMinuteInterval(Duration span, int tickCount) {
+  const candidates = <int>[5, 10, 15, 20, 30, 60, 120, 180, 240, 360, 720, 1440];
+  final targetMinutes = span.inMinutes / tickCount;
+  var best = candidates.first;
+  for (final candidate in candidates) {
+    if (candidate <= targetMinutes) {
+      best = candidate;
+      continue;
+    }
+    break;
+  }
+  return best;
+}
+
+DateTime _floorToMinuteBoundary(DateTime value, int intervalMinutes) {
+  final minuteOfDay = value.hour * 60 + value.minute;
+  final flooredMinuteOfDay = (minuteOfDay ~/ intervalMinutes) * intervalMinutes;
+  return DateTime(
+    value.year,
+    value.month,
+    value.day,
+  ).add(Duration(minutes: flooredMinuteOfDay));
+}
+
+DateTime _ceilToMinuteBoundary(DateTime value, int intervalMinutes) {
+  final floored = _floorToMinuteBoundary(value, intervalMinutes);
+  if (floored.isAtSameMomentAs(value)) {
+    return value;
+  }
+  return floored.add(Duration(minutes: intervalMinutes));
 }
 
 /// `fl_chart 0.68` 没有 `minIncluded/maxIncluded`，这里手动隐藏边界标签，避免和内部刻度重叠。
