@@ -190,8 +190,15 @@ class _ChartState extends State<_Chart> {
           final xFontSize = narrow ? 9.0 : 10.0;
           final xReserved = narrow ? 28.0 : 32.0;
           final yFontSize = narrow ? 9.0 : 11.0;
-          final yReserved = narrow ? 42.0 : 40.0;
+          final yReserved = _yReservedSize(vm.field, narrow);
           final xLabelFormat = _xAxisFormat(vm.from, vm.to);
+          final chartMinY = minY - ySpan * 0.1;
+          final chartMaxY = maxY + ySpan * 0.1;
+          final yAxisInterval = _yAxisInterval(
+            field: vm.field,
+            minY: chartMinY,
+            maxY: chartMaxY,
+          );
           final xAxis = _buildXAxisSpec(
             from: vm.from,
             to: vm.to,
@@ -252,8 +259,8 @@ class _ChartState extends State<_Chart> {
                     maxX: visibleMaxX,
                     clipData: const FlClipData.all(),
                     // y 轴上下各留 10% 余量，避免曲线贴边。
-                    minY: minY - ySpan * 0.1,
-                    maxY: maxY + ySpan * 0.1,
+                    minY: chartMinY,
+                    maxY: chartMaxY,
                     titlesData: FlTitlesData(
                       // 屏蔽顶部 / 右侧坐标轴标题。
                       rightTitles: const AxisTitles(
@@ -293,10 +300,10 @@ class _ChartState extends State<_Chart> {
                       ),
                       // y 轴：把单位（如 L/min）作为坐标轴名展示，刻度字号随宽度调节。
                       leftTitles: AxisTitles(
-                        axisNameWidget: Text(vm.field.unit),
                         sideTitles: SideTitles(
                           showTitles: true,
                           reservedSize: yReserved,
+                          interval: yAxisInterval,
                           getTitlesWidget: (value, meta) {
                             if (_isAxisEdgeLabel(value, meta)) {
                               return const SizedBox.shrink();
@@ -353,6 +360,20 @@ class _ChartState extends State<_Chart> {
                     ],
                   ),
                   duration: Duration.zero,
+                ),
+                Positioned(
+                  left: 0,
+                  top: 10,
+                  child: RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
+                      vm.field.unit,
+                      style: TextStyle(
+                        fontSize: narrow ? 11.0 : 12.0,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 ),
                 if (hasSinglePoint)
                   const Positioned(
@@ -528,6 +549,47 @@ String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {
     case HistoryField.total:
     case HistoryField.weight:
       return meta.formattedValue;
+  }
+}
+
+double _yReservedSize(HistoryField field, bool narrow) {
+  if (_isTemperatureField(field)) {
+    return narrow ? 30.0 : 28.0;
+  }
+  return narrow ? 38.0 : 36.0;
+}
+
+double? _yAxisInterval({
+  required HistoryField field,
+  required double minY,
+  required double maxY,
+}) {
+  final span = (maxY - minY).abs();
+  if (span <= 0) return null;
+
+  if (_isTemperatureField(field)) {
+    const candidates = <double>[0.1, 0.2, 0.5, 1.0, 2.0, 5.0];
+    final target = span / 6.0;
+    for (final candidate in candidates) {
+      if (candidate >= target) return candidate;
+    }
+    return candidates.last;
+  }
+
+  return null;
+}
+
+bool _isTemperatureField(HistoryField field) {
+  switch (field) {
+    case HistoryField.t1:
+    case HistoryField.t2:
+    case HistoryField.t3:
+    case HistoryField.t4:
+      return true;
+    case HistoryField.flow:
+    case HistoryField.total:
+    case HistoryField.weight:
+      return false;
   }
 }
 
