@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +10,7 @@ import '../view_model/history_view_model.dart';
 
 const _rangePresets = <({int minutes, String label})>[
   (minutes: 5, label: '5分钟'),
+  (minutes: 30, label: '30分钟'),
   (minutes: 60, label: '1小时'),
   (minutes: 240, label: '4小时'),
   (minutes: 720, label: '12小时'),
@@ -124,12 +127,28 @@ class _Controls extends StatelessWidget {
 }
 
 /// 折线图主体（fl_chart）。
-class _Chart extends StatelessWidget {
+class _Chart extends StatefulWidget {
   const _Chart({required this.vm});
   final HistoryViewModel vm;
 
   @override
+  State<_Chart> createState() => _ChartState();
+}
+
+class _ChartState extends State<_Chart> {
+  final ScrollController _scrollController = ScrollController();
+  String? _lastScrollSignature;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final vm = widget.vm;
+
     // 三种空 / 错状态分支：loading / error / 空数据。
     if (vm.loading && vm.points.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -171,7 +190,7 @@ class _Chart extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 4, 16, 12),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 按可用宽度调节坐标轴密度，避免手机竖屏下 X 轴标签重叠、Y 轴数字被截断换行。
+          // 视口宽度只用于决定字号；实际图表宽度会放大，允许所有时间档位横向滚动查看。
           final narrow = constraints.maxWidth < 480;
           final xFontSize = narrow ? 9.0 : 10.0;
           final xReserved = narrow ? 28.0 : 32.0;
@@ -185,138 +204,166 @@ class _Chart extends StatelessWidget {
             rawMinX: rawMinX,
             rawMaxX: rawMaxX,
           );
-          return Stack(
-            children: [
-              LineChart(
-                LineChartData(
-                  minX: xAxis.minX,
-                  maxX: xAxis.maxX,
-                  // y 轴上下各留 10% 余量，避免曲线贴边。
-                  minY: minY - ySpan * 0.1,
-                  maxY: maxY + ySpan * 0.1,
-                  titlesData: FlTitlesData(
-                    // 屏蔽顶部 / 右侧坐标轴标题。
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    // x 轴：边界标签留给图框，内部刻度按宽度控制密度，避免两端文字重叠。
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: xReserved,
-                        interval: xAxis.interval,
-                        getTitlesWidget: (value, meta) {
-                          if (_isAxisEdgeLabel(value, meta)) {
-                            return const SizedBox.shrink();
-                          }
-                          final d = DateTime.fromMillisecondsSinceEpoch(
-                            value.toInt(),
-                          );
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            space: 4,
-                            fitInside: SideTitleFitInsideData.fromTitleMeta(
-                              meta,
-                              distanceFromEdge: 0,
-                            ),
-                            child: Text(
-                              DateFormat(xLabelFormat).format(d),
-                              style: TextStyle(fontSize: xFontSize),
-                              textAlign: TextAlign.center,
-                            ),
-                          );
-                        },
+          final chartWidth = _chartWidthForAxis(
+            viewportWidth: constraints.maxWidth,
+            xAxis: xAxis,
+            narrow: narrow,
+          );
+          _scheduleScrollToLatest(
+            '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}:${chartWidth.round()}',
+          );
+
+          return SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: chartWidth,
+              child: Stack(
+                children: [
+                  LineChart(
+                    LineChartData(
+                      minX: xAxis.minX,
+                      maxX: xAxis.maxX,
+                      // y 轴上下各留 10% 余量，避免曲线贴边。
+                      minY: minY - ySpan * 0.1,
+                      maxY: maxY + ySpan * 0.1,
+                      titlesData: FlTitlesData(
+                        // 屏蔽顶部 / 右侧坐标轴标题。
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        // 横轴使用整分钟/整小时刻度，图宽放大后允许左右滑动查看完整时间范围。
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: xReserved,
+                            interval: xAxis.interval,
+                            getTitlesWidget: (value, meta) {
+                              if (_isAxisEdgeLabel(value, meta)) {
+                                return const SizedBox.shrink();
+                              }
+                              final d = DateTime.fromMillisecondsSinceEpoch(
+                                value.toInt(),
+                              );
+                              return SideTitleWidget(
+                                axisSide: meta.axisSide,
+                                space: 4,
+                                fitInside: SideTitleFitInsideData.fromTitleMeta(
+                                  meta,
+                                  distanceFromEdge: 0,
+                                ),
+                                child: Text(
+                                  DateFormat(xLabelFormat).format(d),
+                                  style: TextStyle(fontSize: xFontSize),
+                                  textAlign: TextAlign.center,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        // y 轴：把单位（如 L/min）作为坐标轴名展示，刻度字号随宽度调节。
+                        leftTitles: AxisTitles(
+                          axisNameWidget: Text(vm.field.unit),
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: yReserved,
+                            getTitlesWidget: (value, meta) {
+                              if (_isAxisEdgeLabel(value, meta)) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Text(
+                                  meta.formattedValue,
+                                  style: TextStyle(fontSize: yFontSize),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                    // y 轴：把单位（如 L/min）作为坐标轴名展示，刻度字号随宽度调节。
-                    leftTitles: AxisTitles(
-                      axisNameWidget: Text(vm.field.unit),
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: yReserved,
-                        getTitlesWidget: (value, meta) {
-                          if (_isAxisEdgeLabel(value, meta)) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Text(
-                              meta.formattedValue,
-                              style: TextStyle(fontSize: yFontSize),
-                            ),
-                          );
-                        },
+                      gridData: const FlGridData(show: true),
+                      borderData: FlBorderData(show: true),
+                      // 触摸 tooltip：只显示数值，省略时间（x 轴本身已经标了）。
+                      lineTouchData: LineTouchData(
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipItems: (touchedSpots) {
+                            return touchedSpots.map((spot) {
+                              return LineTooltipItem(
+                                spot.y.toStringAsFixed(1),
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              );
+                            }).toList();
+                          },
+                        ),
                       ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: spots,
+                          isCurved: true,
+                          barWidth: 2,
+                          color: Theme.of(context).colorScheme.primary,
+                          // 只有一个点时显式画圆点，否则折线会看起来像空白图。
+                          dotData: FlDotData(
+                            show: hasSinglePoint,
+                            getDotPainter: (spot, percent, bar, index) {
+                              return FlDotCirclePainter(
+                                radius: 4,
+                                color: Theme.of(context).colorScheme.primary,
+                                strokeWidth: 1.5,
+                                strokeColor: Colors.white,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
+                    duration: Duration.zero,
                   ),
-                  gridData: const FlGridData(show: true),
-                  borderData: FlBorderData(show: true),
-                  // 触摸 tooltip：只显示数值，省略时间（x 轴本身已经标了）。
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (touchedSpots) {
-                        return touchedSpots.map((spot) {
-                          return LineTooltipItem(
-                            spot.y.toStringAsFixed(1),
-                            const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          );
-                        }).toList();
-                      },
-                    ),
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: true,
-                      barWidth: 2,
-                      color: Theme.of(context).colorScheme.primary,
-                      // 只有一个点时显式画圆点，否则折线会看起来像空白图。
-                      dotData: FlDotData(
-                        show: hasSinglePoint,
-                        getDotPainter: (spot, percent, bar, index) {
-                          return FlDotCirclePainter(
-                            radius: 4,
-                            color: Theme.of(context).colorScheme.primary,
-                            strokeWidth: 1.5,
-                            strokeColor: Colors.white,
-                          );
-                        },
+                  if (hasSinglePoint)
+                    const Positioned(
+                      top: 8,
+                      right: 8,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Color(0xCCFFFFFF),
+                          borderRadius: BorderRadius.all(Radius.circular(8)),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            '当前时间段仅 1 个点',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
                       ),
                     ),
-                  ],
-                ),
-                duration: Duration.zero,
+                ],
               ),
-              if (hasSinglePoint)
-                const Positioned(
-                  top: 8,
-                  right: 8,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Color(0xCCFFFFFF),
-                      borderRadius: BorderRadius.all(Radius.circular(8)),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Text(
-                        '当前时间段仅 1 个点',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            ),
           );
         },
       ),
     );
+  }
+
+  void _scheduleScrollToLatest(String signature) {
+    if (_lastScrollSignature == signature) return;
+    _lastScrollSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
   }
 }
 
@@ -353,6 +400,20 @@ _XAxisSpec _buildXAxisSpec({
 
   // 5 分钟档保持当前自由刻度，避免过密时整点对齐把标签挤没。
   if (span < const Duration(hours: 1)) {
+    // 30 分钟档固定 5 分钟刻度，其它小于 1 小时的范围保留原本的自由分布。
+    if (span >= const Duration(minutes: 30)) {
+      final intervalMinutes = 5;
+      final alignedFrom = _floorToMinuteBoundary(from, intervalMinutes);
+      final alignedTo = _ceilToMinuteBoundary(to, intervalMinutes);
+      final safeTo = alignedTo.isAfter(alignedFrom)
+          ? alignedTo
+          : alignedFrom.add(const Duration(minutes: 5));
+      return _XAxisSpec(
+        minX: alignedFrom.millisecondsSinceEpoch.toDouble(),
+        maxX: safeTo.millisecondsSinceEpoch.toDouble(),
+        interval: const Duration(minutes: 5).inMilliseconds.toDouble(),
+      );
+    }
     final minX = rawMinX;
     final maxX = rawMaxX;
     final xSpan = maxX - minX < 1.0 ? 60000.0 : maxX - minX;
@@ -363,7 +424,7 @@ _XAxisSpec _buildXAxisSpec({
     );
   }
 
-  final intervalMinutes = _niceMinuteInterval(span, tickCount);
+  final intervalMinutes = _preferredMinuteInterval(span);
   final alignedFrom = _floorToMinuteBoundary(from, intervalMinutes);
   final alignedTo = _ceilToMinuteBoundary(to, intervalMinutes);
   final safeTo = alignedTo.isAfter(alignedFrom)
@@ -377,18 +438,27 @@ _XAxisSpec _buildXAxisSpec({
   );
 }
 
-int _niceMinuteInterval(Duration span, int tickCount) {
-  const candidates = <int>[5, 10, 15, 20, 30, 60, 120, 180, 240, 360, 720, 1440];
-  final targetMinutes = span.inMinutes / tickCount;
-  var best = candidates.first;
-  for (final candidate in candidates) {
-    if (candidate <= targetMinutes) {
-      best = candidate;
-      continue;
-    }
-    break;
-  }
-  return best;
+double _chartWidthForAxis({
+  required double viewportWidth,
+  required _XAxisSpec xAxis,
+  required bool narrow,
+}) {
+  final intervalCount = ((xAxis.maxX - xAxis.minX) / xAxis.interval)
+      .ceil()
+      .clamp(1, 10000);
+  final intervalSpacing = narrow ? 96.0 : 104.0;
+  // 让每个时间档位都能横向滚动查看，初始视口只展示靠右的最新一段。
+  final desiredWidth = intervalCount * intervalSpacing + 120.0;
+  return math.max(viewportWidth + 120.0, desiredWidth);
+}
+
+int _preferredMinuteInterval(Duration span) {
+  if (span <= const Duration(hours: 1)) return 10;
+  if (span <= const Duration(hours: 4)) return 30;
+  if (span <= const Duration(hours: 12)) return 60;
+  if (span <= const Duration(hours: 24)) return 120;
+  if (span <= const Duration(days: 3)) return 360;
+  return 720;
 }
 
 DateTime _floorToMinuteBoundary(DateTime value, int intervalMinutes) {
