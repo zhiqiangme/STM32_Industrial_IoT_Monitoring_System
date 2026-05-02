@@ -10,8 +10,8 @@ import 'api_service.dart';
 
 /// 真实环境下的 [ApiService]，底层使用 Dio。
 ///
-/// 与 `D:\Project\HTML\server\services\pipe-monitor-api` 中
-/// `pipe-monitor-api` 服务的接口字段对齐：
+/// 与 `D:\Project\HTML\server\services\stm32-mill-api` 中
+/// `stm32-mill-api` 服务的接口字段对齐：
 /// - `POST /api/auth/login`     → `{token, expiresIn, user}`
 /// - `/api/latest?dev=…`        → `{device, topic, payload, receivedAt}`
 /// - `/api/history?dev=…`       → `{data: [row, …]}`
