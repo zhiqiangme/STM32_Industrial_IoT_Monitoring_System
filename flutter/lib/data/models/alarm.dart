@@ -58,6 +58,17 @@ class Alarm {
         acknowledged: acknowledged ?? this.acknowledged,
       );
 
+  /// 序列化为 JSON Map，用于本地持久化。
+  /// 字段名与 [fromJson] 保持一致。
+  Map<String, dynamic> toJson() => {
+        'seq': seq,
+        'ts': timestamp.millisecondsSinceEpoch,
+        'code': code,
+        'val': value,
+        'severity': severity.name,
+        'acked': acknowledged,
+      };
+
   /// 同时兼容两种入参格式：
   /// - 服务端封装（`/api/alarms` 列表行 / WS `{event:"message", kind:"alarm"}`）：
   ///   `{device, topic, ts, seq, code, val, severity, payload, receivedAt}`；

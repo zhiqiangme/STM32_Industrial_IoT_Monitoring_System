@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../utils/app_logger.dart';
 import '../../utils/result.dart';
@@ -9,15 +12,19 @@ import 'measurement_repository.dart';
 
 /// 告警仓库：聚合实时告警 + 历史告警 + 未读计数。
 ///
-/// 未读徽标当前由内存状态驱动（[markAllRead] 后重置为 0）。
-/// 后续可考虑把"上次已读 seq"持久化，让 App 重启后仍记得。
+/// 未读计数会持久化到 SharedPreferences，App 重启后仍能保留角标状态。
 class AlarmRepository {
   AlarmRepository({
     required ApiService api,
     required RealtimeService realtime,
+    required SharedPreferences preferences,
     MeasurementRepository? measurementRepo,
   })  : _api = api,
-        _realtime = realtime {
+        _realtime = realtime,
+        _preferences = preferences {
+    // 从持久化存储恢复未读计数和本地告警列表。
+    _unread = preferences.getInt(_unreadKey) ?? 0;
+    _loadLocalAlarms();
     // 只关心告警事件，其它事件忽略。
     _sub = _realtime.events.listen((evt) {
       if (evt is AlarmEvent) _onAlarm(evt.alarm);
@@ -28,7 +35,17 @@ class AlarmRepository {
 
   final ApiService _api;
   final RealtimeService _realtime;
+  final SharedPreferences _preferences;
   StreamSubscription<RealtimeEvent>? _sub;
+
+  /// 未读计数的持久化 key。
+  static const _unreadKey = 'alarm_unread_count';
+
+  /// 本地告警列表的持久化 key。
+  static const _localAlarmsKey = 'alarm_local_list';
+
+  /// 本地告警最大保留数量，避免数据膨胀。
+  static const _maxLocalAlarms = 50;
 
   // broadcast：允许多页面（如告警列表 + 顶栏徽标）同时订阅。
   final _liveCtrl = StreamController<Alarm>.broadcast();
@@ -49,6 +66,8 @@ class AlarmRepository {
     _liveCtrl.add(a);
     _unread++;
     _unreadCtrl.add(_unread);
+    _persistUnread();
+    _persistLocalAlarms();
   }
 
   /// 拉取一段时间范围内的历史告警。
@@ -82,6 +101,45 @@ class AlarmRepository {
   void markAllRead() {
     _unread = 0;
     _unreadCtrl.add(0);
+    _persistUnread();
+  }
+
+  /// 持久化未读计数到 SharedPreferences。
+  void _persistUnread() {
+    _preferences.setInt(_unreadKey, _unread);
+  }
+
+  /// 从 SharedPreferences 加载本地告警列表。
+  void _loadLocalAlarms() {
+    try {
+      final jsonStr = _preferences.getString(_localAlarmsKey);
+      if (jsonStr == null || jsonStr.isEmpty) return;
+      final List<dynamic> jsonList = jsonDecode(jsonStr);
+      _localAlarms.clear();
+      for (final item in jsonList) {
+        if (item is Map<String, dynamic>) {
+          _localAlarms.add(Alarm.fromJson(item));
+        }
+      }
+    } catch (e) {
+      appLog.w('loadLocalAlarms failed: $e');
+      _localAlarms.clear();
+    }
+  }
+
+  /// 持久化本地告警列表到 SharedPreferences。
+  /// 只保留最近 [_maxLocalAlarms] 条，避免数据膨胀。
+  void _persistLocalAlarms() {
+    try {
+      // 只保留最近的 N 条。
+      final toSave = _localAlarms.length > _maxLocalAlarms
+          ? _localAlarms.sublist(_localAlarms.length - _maxLocalAlarms)
+          : _localAlarms;
+      final jsonStr = jsonEncode(toSave.map((a) => a.toJson()).toList());
+      _preferences.setString(_localAlarmsKey, jsonStr);
+    } catch (e) {
+      appLog.w('persistLocalAlarms failed: $e');
+    }
   }
 
   Future<void> dispose() async {

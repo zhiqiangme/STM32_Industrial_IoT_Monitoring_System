@@ -79,6 +79,7 @@ Future<void> main() async {
   final alarmRepo = AlarmRepository(
     api: api,
     realtime: realtime,
+    preferences: preferences,
     measurementRepo: measurementRepo,
   );
   final commandRepo = CommandRepository(api: api, realtime: realtime);
