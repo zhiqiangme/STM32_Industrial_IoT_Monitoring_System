@@ -173,7 +173,7 @@ class MeasurementRepository {
   /// 即使 `mqttConnected=true`，如果最近一次设备数据距今太久，
   /// 也认为设备离线，避免出现"链路在线但数据陈旧"的迷惑提示。
   DeviceStatus _normalizeStatus(DeviceStatus status) {
-    final lastSeen = status.lastSeen ?? _lastMeasurement?.timestamp;
+    final lastSeen = status.lastSeen;
     final online = status.online && _isFresh(lastSeen);
     final normalized = DeviceStatus(
       online: online,
