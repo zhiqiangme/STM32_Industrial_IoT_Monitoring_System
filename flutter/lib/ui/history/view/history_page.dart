@@ -123,6 +123,7 @@ class _Chart extends StatefulWidget {
 
 class _ChartState extends State<_Chart> {
   String? _lastViewportSignature;
+  String? _lastRangeSignature;
   double? _viewportMinX;
   double? _viewportMaxX;
 
@@ -197,10 +198,13 @@ class _ChartState extends State<_Chart> {
             xAxis: xAxis,
             narrow: narrow,
           );
-          // 签名只包含时间范围，不包含分度值——切换分度值时视口位置保持不变。
+          // rangeSignature 仅含时间范围；fullSignature 还包含分度值。
+          // 切换分度值时以视口中心为锚点缩放；时间范围变化时重置到最右端。
+          final rangeSignature =
+              '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}';
           _ensureViewport(
-            signature:
-                '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}',
+            rangeSignature: rangeSignature,
+            fullSignature: '$rangeSignature:${vm.intervalMinutes}',
             fullAxis: xAxis,
             viewportSpan: viewportSpan,
           );
@@ -377,20 +381,34 @@ class _ChartState extends State<_Chart> {
   }
 
   void _ensureViewport({
-    required String signature,
+    required String rangeSignature,
+    required String fullSignature,
     required _XAxisSpec fullAxis,
     required double viewportSpan,
   }) {
-    // 签名未变（时间范围不变）且视口已初始化 → 保持当前视口位置和跨度。
-    // 这样切换分度值时视口不会跳动。
-    if (_lastViewportSignature == signature &&
+    // 完全未变（含拖动后的状态）→ 保持当前视口。
+    if (_lastViewportSignature == fullSignature &&
         _viewportMinX != null &&
         _viewportMaxX != null) {
       return;
     }
-    _lastViewportSignature = signature;
-    _viewportMaxX = fullAxis.maxX;
-    _viewportMinX = math.max(fullAxis.minX, fullAxis.maxX - viewportSpan);
+    _lastViewportSignature = fullSignature;
+
+    final rangeChanged = _lastRangeSignature != rangeSignature;
+    _lastRangeSignature = rangeSignature;
+
+    if (rangeChanged || _viewportMinX == null || _viewportMaxX == null) {
+      // 时间范围变化或首次加载 → 重置到最右端。
+      _viewportMaxX = fullAxis.maxX;
+      _viewportMinX = math.max(fullAxis.minX, fullAxis.maxX - viewportSpan);
+    } else {
+      // 仅分度值变化 → 以当前视口中心为锚点缩放。
+      final center = (_viewportMinX! + _viewportMaxX!) / 2;
+      final halfSpan = viewportSpan / 2;
+      _viewportMinX =
+          (center - halfSpan).clamp(fullAxis.minX, fullAxis.maxX - viewportSpan);
+      _viewportMaxX = _viewportMinX! + viewportSpan;
+    }
   }
 }
 
