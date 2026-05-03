@@ -83,7 +83,6 @@ class MockApiService implements ApiService {
     int limit = 200,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    // 两条样例告警：一条已确认、一条未确认。
     return [
       Alarm(
         seq: 1001,
@@ -99,6 +98,29 @@ class MockApiService implements ApiService {
         code: 'SENSOR_OFFLINE',
         value: null,
         severity: AlarmSeverity.critical,
+        acknowledged: true,
+      ),
+      Alarm(
+        seq: 999,
+        timestamp: DateTime.now().subtract(const Duration(days: 2, hours: 3)),
+        code: 'MCU_RESTART',
+        severity: AlarmSeverity.critical,
+        acknowledged: true,
+      ),
+      Alarm(
+        seq: 998,
+        timestamp: DateTime.now().subtract(const Duration(days: 3)),
+        code: 'GATEWAY_OFFLINE',
+        severity: AlarmSeverity.critical,
+        acknowledged: true,
+      ),
+      Alarm(
+        seq: 997,
+        timestamp: DateTime.now()
+            .subtract(const Duration(days: 3))
+            .add(const Duration(minutes: 5)),
+        code: 'GATEWAY_ONLINE',
+        severity: AlarmSeverity.info,
         acknowledged: true,
       ),
     ];

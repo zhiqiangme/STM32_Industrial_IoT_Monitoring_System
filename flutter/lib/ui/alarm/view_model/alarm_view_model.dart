@@ -23,10 +23,7 @@ class AlarmViewModel extends ChangeNotifier {
       _safeNotifyListeners();
     });
     // 监听实时告警：把新告警塞到列表头部，最近的排最上面。
-    _liveSub = repository.liveStream.listen((a) {
-      _items = [a, ..._items];
-      _safeNotifyListeners();
-    });
+    _liveSub = repository.liveStream.listen(_onLiveAlarm);
     _unread = repository.unreadCount;
     _wasLoggedIn = _auth.isLoggedIn;
     _auth.addListener(_onAuthChanged);
@@ -45,10 +42,53 @@ class AlarmViewModel extends ChangeNotifier {
   Object? _error;
   int _unread = 0;
 
-  List<Alarm> get items => _items;
+  /// 客户端生成的告警（DEVICE_OFFLINE/ONLINE），不会出现在服务端历史中。
+  final List<Alarm> _clientAlarms = [];
+
+  /// 当前筛选的严重等级，null 表示全部。
+  AlarmSeverity? _filter;
+
+  /// 已展开详情的告警 seq 集合。
+  final Set<int> _expandedSeqs = {};
+
+  /// 根据筛选条件过滤后的告警列表。
+  List<Alarm> get items {
+    if (_filter == null) return _items;
+    return _items.where((a) => a.severity == _filter).toList();
+  }
+
   bool get loading => _loading;
   Object? get error => _error;
   int get unread => _unread;
+  AlarmSeverity? get filter => _filter;
+
+  /// 判断指定 seq 的告警是否已展开详情。
+  bool isExpanded(int seq) => _expandedSeqs.contains(seq);
+
+  /// 切换告警详情的展开/收起状态。
+  void toggleExpanded(int seq) {
+    if (!_expandedSeqs.remove(seq)) {
+      _expandedSeqs.add(seq);
+    }
+    _safeNotifyListeners();
+  }
+
+  /// 设置严重等级筛选。
+  void setFilter(AlarmSeverity? severity) {
+    _filter = severity;
+    _safeNotifyListeners();
+  }
+
+  /// 实时告警到达：加入列表并保留客户端告警。
+  void _onLiveAlarm(Alarm a) {
+    _items = [a, ..._items];
+    // 客户端生成的告警（seq 为毫秒时间戳，>= 10^12）单独保留，
+    // 避免下拉刷新时被服务端历史覆盖。
+    if (a.seq >= 1000000000000) {
+      _clientAlarms.add(a);
+    }
+    _safeNotifyListeners();
+  }
 
   /// 拉取最近 30 天的历史告警。
   Future<void> load() async {
@@ -62,7 +102,11 @@ class AlarmViewModel extends ChangeNotifier {
     if (_disposed) return;
     switch (res) {
       case Ok(:final value):
-        _items = value;
+        // 合并服务端历史与客户端告警，客户端告警排在前面。
+        final serverSeqs = value.map((a) => a.seq).toSet();
+        final preserved =
+            _clientAlarms.where((a) => !serverSeqs.contains(a.seq)).toList();
+        _items = [...preserved, ...value];
       case Err():
         // 未登录时接口返回 401；保持列表为空、不展示错误，
         // 让页面在登录前一直保持"暂无报警"空壳状态。
@@ -84,6 +128,8 @@ class AlarmViewModel extends ChangeNotifier {
       load();
     } else {
       _items = const [];
+      _clientAlarms.clear();
+      _expandedSeqs.clear();
       _error = null;
       _loading = false;
       _safeNotifyListeners();

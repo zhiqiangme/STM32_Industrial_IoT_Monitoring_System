@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../utils/app_logger.dart';
 import '../../utils/result.dart';
 import '../../config/env.dart';
+import '../models/alarm.dart';
 import '../models/device_status.dart';
 import '../models/history_point.dart';
 import '../models/measurement.dart';
@@ -48,6 +49,10 @@ class MeasurementRepository {
   /// 离线判定的延时定时器。每次收到新帧后会重置。
   Timer? _offlineTimer;
 
+  /// 设备状态变化时触发的回调，用于生成客户端告警。
+  /// 由 [AlarmRepository] 注入。
+  void Function(Alarm alarm)? onStatusAlarm;
+
   Stream<Measurement> get liveStream => _liveCtrl.stream;
   Stream<DeviceStatus> get statusStream => _statusCtrl.stream;
 
@@ -77,7 +82,8 @@ class MeasurementRepository {
     try {
       final m = await _api.getLatest();
       _lastMeasurement = m;
-      _markTelemetryOnline(m);
+      // 不在这里标记在线——存储的测量值不代表设备此刻在线，
+      // 设备状态由 fetchStatus() 或实时遥测帧负责更新。
       unawaited(_persistMeasurementToCache(m));
       return Ok(m);
     } catch (e, st) {
@@ -223,8 +229,25 @@ class MeasurementRepository {
 
   /// 更新内部状态并广播。
   void _setStatus(DeviceStatus status) {
+    final wasOnline = _status.online;
     _status = status;
     _statusCtrl.add(status);
+    // 检测在线/离线状态变化，生成客户端告警。
+    if (wasOnline && !status.online) {
+      onStatusAlarm?.call(Alarm(
+        seq: DateTime.now().millisecondsSinceEpoch,
+        timestamp: DateTime.now(),
+        code: 'DEVICE_OFFLINE',
+        severity: AlarmSeverity.warn,
+      ));
+    } else if (!wasOnline && status.online) {
+      onStatusAlarm?.call(Alarm(
+        seq: DateTime.now().millisecondsSinceEpoch,
+        timestamp: DateTime.now(),
+        code: 'DEVICE_ONLINE',
+        severity: AlarmSeverity.info,
+      ));
+    }
   }
 
   List<HistoryPoint> _mergeHistoryPoints(

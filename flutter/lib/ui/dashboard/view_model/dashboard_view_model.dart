@@ -53,8 +53,10 @@ class DashboardViewModel extends ChangeNotifier {
   Object? get error => _error;
   bool get isLoggedIn => _auth.isLoggedIn;
 
-  /// 首次 / 下拉刷新：主动拉一次最新值。
+  /// 首次 / 下拉刷新：主动拉一次最新值和设备状态。
   Future<void> _loadInitial() async {
+    // 进入页面时先查一次真实状态，避免默认显示"在线"。
+    await _repo.fetchStatus();
     // 已经有缓存值就不再多打一次 REST，直接等实时流推。
     if (_disposed || _measurement != null) return;
     _loading = true;

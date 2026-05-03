@@ -16,9 +16,8 @@ class MockRealtimeService implements RealtimeService {
   final StreamController<RealtimeEvent> _controller =
       StreamController<RealtimeEvent>.broadcast();
 
-  // 三个内部定时器：遥测 / 告警 / 状态切换。
+  // 内部定时器：遥测 / 状态切换。
   Timer? _teleTimer;
-  Timer? _alarmTimer;
   Timer? _statusTimer;
   bool _connected = false;
   int _seq = 0;
@@ -44,8 +43,8 @@ class MockRealtimeService implements RealtimeService {
     // 3 秒一帧遥测。
     _teleTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _emitTelemetry());
-    // 25 秒后丢一条告警，触发告警 UI。
-    _alarmTimer = Timer(const Duration(seconds: 25), _emitAlarm);
+    // 按时间序列模拟不同类型的告警。
+    _scheduleAlarmSequence();
     // 每 2 分钟切换一次在线 / 离线，方便测试离线 UI。
     _statusTimer = Timer.periodic(const Duration(minutes: 2), (_) {
       isOnline = !isOnline;
@@ -60,10 +59,8 @@ class MockRealtimeService implements RealtimeService {
   @override
   Future<void> disconnect() async {
     _teleTimer?.cancel();
-    _alarmTimer?.cancel();
     _statusTimer?.cancel();
     _teleTimer = null;
-    _alarmTimer = null;
     _statusTimer = null;
     _connected = false;
   }
@@ -122,14 +119,44 @@ class MockRealtimeService implements RealtimeService {
     _controller.add(TelemetryEvent(m));
   }
 
-  void _emitAlarm() {
-    _controller.add(AlarmEvent(Alarm(
-      seq: 5000 + _rng.nextInt(100),
-      timestamp: DateTime.now(),
-      code: 'OVER_FLOW',
-      value: 155.0,
-      severity: AlarmSeverity.warn,
-    )));
+  void _scheduleAlarmSequence() {
+    // 25s: 单片机重启。
+    Timer(const Duration(seconds: 25), () {
+      _controller.add(AlarmEvent(Alarm(
+        seq: 5000 + _rng.nextInt(100),
+        timestamp: DateTime.now(),
+        code: 'MCU_RESTART',
+        severity: AlarmSeverity.critical,
+      )));
+    });
+    // 55s: 网关掉线。
+    Timer(const Duration(seconds: 55), () {
+      _controller.add(AlarmEvent(Alarm(
+        seq: 6000 + _rng.nextInt(100),
+        timestamp: DateTime.now(),
+        code: 'GATEWAY_OFFLINE',
+        severity: AlarmSeverity.critical,
+      )));
+    });
+    // 85s: 网关恢复在线。
+    Timer(const Duration(seconds: 85), () {
+      _controller.add(AlarmEvent(Alarm(
+        seq: 7000 + _rng.nextInt(100),
+        timestamp: DateTime.now(),
+        code: 'GATEWAY_ONLINE',
+        severity: AlarmSeverity.info,
+      )));
+    });
+    // 115s: 流量超限。
+    Timer(const Duration(seconds: 115), () {
+      _controller.add(AlarmEvent(Alarm(
+        seq: 8000 + _rng.nextInt(100),
+        timestamp: DateTime.now(),
+        code: 'OVER_FLOW',
+        value: 155.0,
+        severity: AlarmSeverity.warn,
+      )));
+    });
   }
 
   /// 在 [-amp/2, +amp/2] 区间生成抖动量。

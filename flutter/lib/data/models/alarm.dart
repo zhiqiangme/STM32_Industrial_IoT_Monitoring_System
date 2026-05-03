@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// 告警严重等级。
 enum AlarmSeverity {
   /// 提示信息。
@@ -91,7 +93,21 @@ class Alarm {
     'MCU_RESTART' => '单片机已重启',
     'GATEWAY_OFFLINE' => '网关掉线',
     'GATEWAY_ONLINE' => '网关恢复在线',
+    'DEVICE_OFFLINE' => '设备离线',
+    'DEVICE_ONLINE' => '设备恢复在线',
     _ => code,
+  };
+
+  /// 根据告警码返回对应图标。
+  IconData get displayIcon => switch (code) {
+    'OVER_FLOW' || 'UNDER_FLOW' => Icons.water_drop_outlined,
+    'OVER_PRESSURE' => Icons.compress,
+    'OVER_TEMP' => Icons.thermostat,
+    'SENSOR_FAULT' => Icons.sensors_off,
+    'MCU_RESTART' => Icons.power_settings_new,
+    'GATEWAY_OFFLINE' || 'GATEWAY_ONLINE' => Icons.router,
+    'DEVICE_OFFLINE' || 'DEVICE_ONLINE' => Icons.cloud_off,
+    _ => Icons.warning_amber_rounded,
   };
 }
 

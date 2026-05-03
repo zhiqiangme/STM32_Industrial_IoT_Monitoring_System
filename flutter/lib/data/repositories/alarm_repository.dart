@@ -5,6 +5,7 @@ import '../../utils/result.dart';
 import '../models/alarm.dart';
 import '../services/api_service.dart';
 import '../services/realtime_service.dart';
+import 'measurement_repository.dart';
 
 /// 告警仓库：聚合实时告警 + 历史告警 + 未读计数。
 ///
@@ -14,12 +15,15 @@ class AlarmRepository {
   AlarmRepository({
     required ApiService api,
     required RealtimeService realtime,
+    MeasurementRepository? measurementRepo,
   })  : _api = api,
         _realtime = realtime {
     // 只关心告警事件，其它事件忽略。
     _sub = _realtime.events.listen((evt) {
       if (evt is AlarmEvent) _onAlarm(evt.alarm);
     });
+    // 接收 MeasurementRepository 的客户端告警（设备离线/恢复在线）。
+    measurementRepo?.onStatusAlarm = _onAlarm;
   }
 
   final ApiService _api;

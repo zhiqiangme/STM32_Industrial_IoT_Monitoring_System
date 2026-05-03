@@ -76,7 +76,11 @@ Future<void> main() async {
     historyCache: historyCache,
     realtime: realtime,
   );
-  final alarmRepo = AlarmRepository(api: api, realtime: realtime);
+  final alarmRepo = AlarmRepository(
+    api: api,
+    realtime: realtime,
+    measurementRepo: measurementRepo,
+  );
   final commandRepo = CommandRepository(api: api, realtime: realtime);
 
   // 启动时尝试用持久化的 token 直接恢复会话；
