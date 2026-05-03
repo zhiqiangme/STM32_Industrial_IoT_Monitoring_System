@@ -157,8 +157,16 @@ class MeasurementRepository {
 
   /// 收到遥测帧后：刷新本地接收时间、把状态拉为"在线"，
   /// 并安排下一次离线检测。
+  ///
+  /// 只有当数据时间戳足够新（在离线阈值内）时才标记为在线，
+  /// 避免 hello 帧中的旧数据导致误判。
   void _markTelemetryOnline(Measurement measurement) {
     _lastTelemetryReceivedAt = DateTime.now();
+    // 检查数据时间戳是否足够新，避免旧数据导致误判。
+    if (!_isFresh(measurement.timestamp)) {
+      // 数据太旧，不更新在线状态，只刷新本地接收时间。
+      return;
+    }
     _setStatus(
       DeviceStatus(
         online: true,
