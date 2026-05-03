@@ -197,9 +197,10 @@ class _ChartState extends State<_Chart> {
             xAxis: xAxis,
             narrow: narrow,
           );
+          // 签名只包含时间范围，不包含分度值——切换分度值时视口位置保持不变。
           _ensureViewport(
             signature:
-                '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}:${xAxis.interval.round()}',
+                '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}',
             fullAxis: xAxis,
             viewportSpan: viewportSpan,
           );
@@ -380,6 +381,8 @@ class _ChartState extends State<_Chart> {
     required _XAxisSpec fullAxis,
     required double viewportSpan,
   }) {
+    // 签名未变（时间范围不变）且视口已初始化 → 保持当前视口位置和跨度。
+    // 这样切换分度值时视口不会跳动。
     if (_lastViewportSignature == signature &&
         _viewportMinX != null &&
         _viewportMaxX != null) {
