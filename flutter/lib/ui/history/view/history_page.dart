@@ -531,6 +531,12 @@ String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {
     case HistoryField.t3:
     case HistoryField.t4:
       return value.toStringAsFixed(1);
+    case HistoryField.relayDo:
+    case HistoryField.relayDi:
+      return '0x${value.toInt().toRadixString(16).padLeft(4, '0').toUpperCase()}';
+    case HistoryField.heartCount:
+    case HistoryField.statusBits:
+      return value.toStringAsFixed(0);
     case HistoryField.flow:
     case HistoryField.total:
     case HistoryField.weight:
@@ -541,6 +547,10 @@ String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {
 double _yReservedSize(HistoryField field, bool narrow) {
   if (_isTemperatureField(field)) {
     return narrow ? 26.0 : 24.0;
+  }
+  // relayDo/relayDi 十六进制显示（如 0x0003）需要更多宽度。
+  if (field == HistoryField.relayDo || field == HistoryField.relayDi) {
+    return narrow ? 40.0 : 38.0;
   }
   return narrow ? 34.0 : 32.0;
 }
@@ -575,6 +585,10 @@ bool _isTemperatureField(HistoryField field) {
     case HistoryField.flow:
     case HistoryField.total:
     case HistoryField.weight:
+    case HistoryField.relayDo:
+    case HistoryField.relayDi:
+    case HistoryField.heartCount:
+    case HistoryField.statusBits:
       return false;
   }
 }

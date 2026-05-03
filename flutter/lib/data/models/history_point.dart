@@ -24,6 +24,10 @@ class HistoryPoint {
       case HistoryField.flow:
       case HistoryField.total:
       case HistoryField.weight:
+      case HistoryField.relayDo:
+      case HistoryField.relayDi:
+      case HistoryField.heartCount:
+      case HistoryField.statusBits:
         raw = j[field.id] as num?;
       // 温度通道：到 temp[] 数组里取。
       case HistoryField.t1:
@@ -52,7 +56,11 @@ enum HistoryField {
   t1('t1', 'T1 温度', '°C', 0),
   t2('t2', 'T2 温度', '°C', 1),
   t3('t3', 'T3 温度', '°C', 2),
-  t4('t4', 'T4 温度', '°C', 3);
+  t4('t4', 'T4 温度', '°C', 3),
+  relayDo('relay_do', '继电器输出', '', -1),
+  relayDi('relay_di', '继电器输入', '', -1),
+  heartCount('heart_count', '心跳计数', '', -1),
+  statusBits('status', '控制模式', '', -1);
 
   /// 服务端字段名 / `temp[]` 之外的顶层 key。
   final String id;
