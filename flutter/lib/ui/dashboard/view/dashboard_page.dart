@@ -6,16 +6,13 @@ import '../../core/widgets/status_banner.dart';
 import '../../core/widgets/value_tile.dart';
 import '../view_model/dashboard_view_model.dart';
 
-/// 实时数据页：顶部状态横幅 + 主指标卡 + 温度/继电器状态卡。
+/// 实时数据页：顶部状态横幅 + 所有指标统一大小卡片，按顺序排列。
 class DashboardPage extends StatelessWidget {
   /// 卡片间距。
   static const double _gridSpacing = 6;
 
-  /// 宽屏下主指标卡片的最大宽度。
-  static const double _mainTileWideMaxExtent = 320;
-
-  /// 宽屏下温度卡片的最大宽度。
-  static const double _temperatureTileWideMaxExtent = 230;
+  /// 宽屏下卡片的最大宽度。
+  static const double _tileWideMaxExtent = 230;
 
   const DashboardPage({super.key});
 
@@ -46,7 +43,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  /// 把测量数据拆分成主指标 + 温度/状态两组卡片。
+  /// 把测量数据拆分成所有卡片，按顺序排列。
   Widget _tiles(BuildContext context, Measurement? m) {
     // 缺测时显示 "--"，不显示 "NaN"。
     String fmt(double? v, [int digits = 2]) =>
@@ -54,8 +51,9 @@ class DashboardPage extends StatelessWidget {
     String fmtMask(int? mask) =>
         mask == null ? '--' : '0x${mask.toRadixString(16).padLeft(4, '0').toUpperCase()}';
 
-    // 4 张主指标。
-    final metricTiles = [
+    // 所有卡片按顺序排列：流量 → 重量 → 温度 → 状态
+    final allTiles = [
+      // 流量通道（预留4个，当前只接1个）
       ValueTile(
         label: '瞬时流量',
         value: fmt(m?.flow),
@@ -68,51 +66,77 @@ class DashboardPage extends StatelessWidget {
         unit: 'L',
         valid: m?.totalValid ?? true,
       ),
+      const ValueTile(
+        label: '流量CH3',
+        value: '--',
+        unit: 'L/min',
+        valid: false,
+      ),
+      const ValueTile(
+        label: '流量CH4',
+        value: '--',
+        unit: 'L/min',
+        valid: false,
+      ),
+      // 重量通道（预留4个，当前只接CH3）
       ValueTile(
-        label: '重量',
+        label: '重量CH1',
+        value: '--',
+        unit: 'g',
+        valid: false,
+      ),
+      ValueTile(
+        label: '重量CH2',
+        value: '--',
+        unit: 'g',
+        valid: false,
+      ),
+      ValueTile(
+        label: '重量CH3',
         value: fmt(m?.weight, 0),
         unit: 'g',
         valid: m?.weightValid ?? true,
       ),
+      ValueTile(
+        label: '重量CH4',
+        value: '--',
+        unit: 'g',
+        valid: false,
+      ),
+      // 4 路 PT100 温度槽位（T1-T4）。
+      ...List.generate(4, (i) {
+        return ValueTile(
+          label: 'T${i + 1}',
+          value: fmt(m == null ? null : m.temperatures[i], 1),
+          unit: '°C',
+          valid: m?.temperatureValid(i) ?? true,
+        );
+      }),
+      // 状态
       ValueTile(
         label: '控制模式',
         value: m == null ? '--' : (m.autoMode ? '自动' : '手动'),
         unit: '',
         valid: true,
       ),
-    ];
-    // 4 路 PT100 温度槽位（T1-T4）。
-    final temperatureTiles = List.generate(4, (i) {
-      return ValueTile(
-        label: 'T${i + 1}',
-        value: fmt(m == null ? null : m.temperatures[i], 1),
-        unit: '°C',
-        valid: m?.temperatureValid(i) ?? true,
-      );
-    });
-    final heartTile = ValueTile(
-      label: '心跳计数',
-      value: m?.heartCount?.toString() ?? '--',
-      unit: '',
-      valid: true,
-    );
-    final relayOutTile = ValueTile(
-      label: '继电器输出',
-      value: fmtMask(m?.relayDo),
-      unit: '',
-      valid: true,
-    );
-    final relayInTile = ValueTile(
-      label: '继电器输入',
-      value: fmtMask(m?.relayDi),
-      unit: '',
-      valid: true,
-    );
-    final temperatureAndHeartTiles = [
-      ...temperatureTiles,
-      relayOutTile,
-      relayInTile,
-      heartTile,
+      ValueTile(
+        label: '继电器输出',
+        value: fmtMask(m?.relayDo),
+        unit: '',
+        valid: true,
+      ),
+      ValueTile(
+        label: '继电器输入',
+        value: fmtMask(m?.relayDi),
+        unit: '',
+        valid: true,
+      ),
+      ValueTile(
+        label: '心跳计数',
+        value: m?.heartCount?.toString() ?? '--',
+        unit: '',
+        valid: true,
+      ),
     ];
 
     return LayoutBuilder(
@@ -124,49 +148,21 @@ class DashboardPage extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 主指标网格：紧凑模式下强制 2 列；宽屏下按最大宽度自适应列数。
+            // 所有卡片统一大小，紧凑模式下强制 3 列；宽屏下按最大宽度自适应。
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: metricTiles.length,
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: compactWidth
-                    ? _maxExtentForColumns(width, 2)
-                    : _mainTileWideMaxExtent,
-                // 主指标只保留必要留白，避免首页必须滚动两屏才能看完。
-                mainAxisExtent: compactWidth ? 112 : 156,
-                mainAxisSpacing: _gridSpacing,
-                crossAxisSpacing: _gridSpacing,
-              ),
-              itemBuilder: (context, index) => metricTiles[index],
-            ),
-            const SizedBox(height: 10),
-            // 温度和继电器状态分区标题。
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Text(
-                '温度 / 状态',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-            const SizedBox(height: 4),
-            // 温度网格：紧凑模式下强制 3 列；宽屏下按最大宽度自适应。
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: temperatureAndHeartTiles.length,
+              itemCount: allTiles.length,
               gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: compactWidth
                     ? _maxExtentForColumns(width, 3)
-                    : _temperatureTileWideMaxExtent,
-                // 手机竖屏下压缩卡片高度，保证 4 路温度尽量同屏展示。
+                    : _tileWideMaxExtent,
+                // 统一卡片高度
                 mainAxisExtent: compactWidth ? 94 : 128,
                 mainAxisSpacing: _gridSpacing,
                 crossAxisSpacing: _gridSpacing,
               ),
-              itemBuilder: (context, index) => temperatureAndHeartTiles[index],
+              itemBuilder: (context, index) => allTiles[index],
             ),
           ],
         );
