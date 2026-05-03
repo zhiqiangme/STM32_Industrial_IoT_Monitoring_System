@@ -53,29 +53,43 @@ class DashboardPage extends StatelessWidget {
 
     // 所有卡片按顺序排列：流量 → 重量 → 温度 → 状态
     final allTiles = [
-      // 流量通道（预留4个，当前只接1个）
+      // 流量计1（当前接入）
       ValueTile(
-        label: '瞬时流量',
+        label: '流量1瞬时',
         value: fmt(m?.flow),
         unit: 'L/min',
         valid: m?.flowValid ?? true,
       ),
       ValueTile(
-        label: '累计量',
+        label: '流量1累积',
         value: fmt(m?.total),
         unit: 'L',
         valid: m?.totalValid ?? true,
       ),
+      // 流量计2（未接入）
       const ValueTile(
-        label: '流量CH3',
+        label: '流量2瞬时',
         value: '--',
         unit: 'L/min',
         valid: false,
       ),
       const ValueTile(
-        label: '流量CH4',
+        label: '流量2累积',
+        value: '--',
+        unit: 'L',
+        valid: false,
+      ),
+      // 流量计3（未接入）
+      const ValueTile(
+        label: '流量3瞬时',
         value: '--',
         unit: 'L/min',
+        valid: false,
+      ),
+      const ValueTile(
+        label: '流量3累积',
+        value: '--',
+        unit: 'L',
         valid: false,
       ),
       // 重量通道（预留4个，当前只接CH3）
