@@ -197,10 +197,9 @@ class _ChartState extends State<_Chart> {
             xAxis: xAxis,
             narrow: narrow,
           );
-          // 签名只包含时间范围，不包含分度值——切换分度值时视口位置保持不变。
           _ensureViewport(
             signature:
-                '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}',
+                '${vm.from.millisecondsSinceEpoch}:${vm.to.millisecondsSinceEpoch}:${xAxis.interval.round()}',
             fullAxis: xAxis,
             viewportSpan: viewportSpan,
           );
