@@ -325,23 +325,8 @@ class _ChartState extends State<_Chart> {
                     ),
                     gridData: const FlGridData(show: true),
                     borderData: FlBorderData(show: true),
-                    // 触摸 tooltip：只显示数值，省略时间（x 轴本身已经标了）。
-                    lineTouchData: LineTouchData(
-                      touchTooltipData: LineTouchTooltipData(
-                        getTooltipItems: (touchedSpots) {
-                          return touchedSpots.map((spot) {
-                            return LineTooltipItem(
-                              spot.y.toStringAsFixed(1),
-                              const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            );
-                          }).toList();
-                        },
-                      ),
-                    ),
+                    // 历史页手势只保留左右拖动，不再点按弹出当前时刻数据提示。
+                    lineTouchData: const LineTouchData(enabled: false),
                     lineBarsData: [
                       LineChartBarData(
                         spots: spots,
