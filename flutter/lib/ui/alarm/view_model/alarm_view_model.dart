@@ -42,8 +42,10 @@ class AlarmViewModel extends ChangeNotifier {
   Object? _error;
   int _unread = 0;
 
-  /// 客户端生成的告警（DEVICE_OFFLINE/ONLINE），不会出现在服务端历史中。
-  final List<Alarm> _clientAlarms = [];
+  /// 实时到达但尚未被服务端历史覆盖的告警。
+  /// 包括客户端生成的（DEVICE_OFFLINE/ONLINE）和服务端推送的实时告警。
+  /// load() 完成后会将这些与服务端历史合并，避免丢失。
+  final List<Alarm> _liveAlarms = [];
 
   /// 当前筛选的严重等级，null 表示全部。
   AlarmSeverity? _filter;
@@ -79,14 +81,10 @@ class AlarmViewModel extends ChangeNotifier {
     _safeNotifyListeners();
   }
 
-  /// 实时告警到达：加入列表并保留客户端告警。
+  /// 实时告警到达：加入列表并保留到 _liveAlarms，避免被 load() 覆盖。
   void _onLiveAlarm(Alarm a) {
     _items = [a, ..._items];
-    // 客户端生成的告警（seq 为毫秒时间戳，>= 10^12）单独保留，
-    // 避免下拉刷新时被服务端历史覆盖。
-    if (a.seq >= 1000000000000) {
-      _clientAlarms.add(a);
-    }
+    _liveAlarms.add(a);
     _safeNotifyListeners();
   }
 
@@ -102,10 +100,10 @@ class AlarmViewModel extends ChangeNotifier {
     if (_disposed) return;
     switch (res) {
       case Ok(:final value):
-        // 合并服务端历史与客户端告警，客户端告警排在前面。
+        // 合并服务端历史与实时告警，实时告警排在前面。
         final serverSeqs = value.map((a) => a.seq).toSet();
         final preserved =
-            _clientAlarms.where((a) => !serverSeqs.contains(a.seq)).toList();
+            _liveAlarms.where((a) => !serverSeqs.contains(a.seq)).toList();
         _items = [...preserved, ...value];
       case Err():
         // 未登录时接口返回 401；保持列表为空、不展示错误，
@@ -128,7 +126,7 @@ class AlarmViewModel extends ChangeNotifier {
       load();
     } else {
       _items = const [];
-      _clientAlarms.clear();
+      _liveAlarms.clear();
       _expandedSeqs.clear();
       _error = null;
       _loading = false;
