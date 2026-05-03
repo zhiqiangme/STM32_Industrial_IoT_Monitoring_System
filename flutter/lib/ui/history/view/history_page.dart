@@ -8,15 +8,16 @@ import 'package:provider/provider.dart';
 import '../../../data/models/history_point.dart';
 import '../view_model/history_view_model.dart';
 
-const _rangePresets = <({int minutes, String label})>[
-  (minutes: 5, label: '5分钟'),
-  (minutes: 30, label: '30分钟'),
-  (minutes: 60, label: '1小时'),
-  (minutes: 240, label: '4小时'),
-  (minutes: 720, label: '12小时'),
-  (minutes: 1440, label: '24小时'),
-  (minutes: 4320, label: '3天'),
-  (minutes: 10080, label: '7天'),
+/// X 轴分度值预设：一个大格代表多少分钟。
+const _intervalPresets = <({int minutes, String label})>[
+  (minutes: 5, label: '5min'),
+  (minutes: 10, label: '10min'),
+  (minutes: 30, label: '30min'),
+  (minutes: 60, label: '1h'),
+  (minutes: 120, label: '2h'),
+  (minutes: 360, label: '6h'),
+  (minutes: 720, label: '12h'),
+  (minutes: 1440, label: '24h'),
 ];
 
 const double _chartDragSensitivity = 2.5;
@@ -40,7 +41,7 @@ class HistoryPage extends StatelessWidget {
   }
 }
 
-/// 顶部控制条：字段下拉 + 时间区段单选。
+/// 顶部控制条：字段下拉 + X 轴分度值单选。
 class _Controls extends StatelessWidget {
   const _Controls({required this.vm});
   final HistoryViewModel vm;
@@ -69,18 +70,16 @@ class _Controls extends StatelessWidget {
           );
           final segmented = SegmentedButton<int>(
             segments: [
-              for (final preset in _rangePresets)
+              for (final preset in _intervalPresets)
                 ButtonSegment(
                   value: preset.minutes,
                   label: Text(preset.label),
                 ),
             ],
-            selected: {_rangeMinutes(vm)},
+            selected: {vm.intervalMinutes},
             showSelectedIcon: false,
             onSelectionChanged: (s) {
-              final minutes = s.first;
-              final to = DateTime.now();
-              vm.setRange(to.subtract(Duration(minutes: minutes)), to);
+              vm.setIntervalMinutes(s.first);
             },
           );
           final scrollableSegmented = SingleChildScrollView(
@@ -110,21 +109,6 @@ class _Controls extends StatelessWidget {
         },
       ),
     );
-  }
-
-  /// 把 [HistoryViewModel.from..to] 折算成最近的一档分钟区间。
-  int _rangeMinutes(HistoryViewModel vm) {
-    final target = vm.to.difference(vm.from).inMinutes;
-    var best = _rangePresets.first.minutes;
-    var bestDiff = (target - best).abs();
-    for (final preset in _rangePresets.skip(1)) {
-      final diff = (target - preset.minutes).abs();
-      if (diff < bestDiff) {
-        best = preset.minutes;
-        bestDiff = diff;
-      }
-    }
-    return best;
   }
 }
 
@@ -207,6 +191,7 @@ class _ChartState extends State<_Chart> {
             narrow: narrow,
             rawMinX: rawMinX,
             rawMaxX: rawMaxX,
+            intervalMinutes: vm.intervalMinutes,
           );
           final viewportSpan = _viewportSpanForAxis(
             xAxis: xAxis,
@@ -433,37 +418,9 @@ _XAxisSpec _buildXAxisSpec({
   required bool narrow,
   required double rawMinX,
   required double rawMaxX,
+  required int intervalMinutes,
 }) {
-  final span = to.difference(from).abs();
-  final tickCount = narrow ? 3 : 5;
-
-  // 5 分钟档保持当前自由刻度，避免过密时整点对齐把标签挤没。
-  if (span < const Duration(hours: 1)) {
-    // 30 分钟档固定 5 分钟刻度，其它小于 1 小时的范围保留原本的自由分布。
-    if (span >= const Duration(minutes: 30)) {
-      final intervalMinutes = 5;
-      final alignedFrom = _floorToMinuteBoundary(from, intervalMinutes);
-      final alignedTo = _ceilToMinuteBoundary(to, intervalMinutes);
-      final safeTo = alignedTo.isAfter(alignedFrom)
-          ? alignedTo
-          : alignedFrom.add(const Duration(minutes: 5));
-      return _XAxisSpec(
-        minX: alignedFrom.millisecondsSinceEpoch.toDouble(),
-        maxX: safeTo.millisecondsSinceEpoch.toDouble(),
-        interval: const Duration(minutes: 5).inMilliseconds.toDouble(),
-      );
-    }
-    final minX = rawMinX;
-    final maxX = rawMaxX;
-    final xSpan = maxX - minX < 1.0 ? 60000.0 : maxX - minX;
-    return _XAxisSpec(
-      minX: minX,
-      maxX: maxX,
-      interval: xSpan / tickCount,
-    );
-  }
-
-  final intervalMinutes = _preferredMinuteInterval(span);
+  final intervalMs = Duration(minutes: intervalMinutes).inMilliseconds.toDouble();
   final alignedFrom = _floorToMinuteBoundary(from, intervalMinutes);
   final alignedTo = _ceilToMinuteBoundary(to, intervalMinutes);
   final safeTo = alignedTo.isAfter(alignedFrom)
@@ -473,7 +430,7 @@ _XAxisSpec _buildXAxisSpec({
   return _XAxisSpec(
     minX: alignedFrom.millisecondsSinceEpoch.toDouble(),
     maxX: safeTo.millisecondsSinceEpoch.toDouble(),
-    interval: Duration(minutes: intervalMinutes).inMilliseconds.toDouble(),
+    interval: intervalMs,
   );
 }
 
@@ -495,15 +452,6 @@ double _viewportSpanForAxis({
 
   final minViewportSpan = math.min(fullSpan, xAxis.interval * 1.5);
   return viewportSpan.clamp(minViewportSpan, fullSpan).toDouble();
-}
-
-int _preferredMinuteInterval(Duration span) {
-  if (span <= const Duration(hours: 1)) return 10;
-  if (span <= const Duration(hours: 4)) return 30;
-  if (span <= const Duration(hours: 12)) return 60;
-  if (span <= const Duration(hours: 24)) return 120;
-  if (span <= const Duration(days: 3)) return 360;
-  return 720;
 }
 
 DateTime _floorToMinuteBoundary(DateTime value, int intervalMinutes) {

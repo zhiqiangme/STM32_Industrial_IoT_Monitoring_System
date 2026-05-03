@@ -13,8 +13,11 @@ import '../../../utils/result.dart';
 
 /// 历史曲线页面的 ViewModel。
 ///
-/// 持有：当前选中的字段、时间区间、已加载的点、loading / error。
-/// View 只读取这些状态并调用 [setField] / [setRange] / [load]。
+/// 持有：当前选中的字段、X 轴分度值、已加载的点、loading / error。
+/// View 只读取这些状态并调用 [setField] / [setIntervalMinutes] / [load]。
+///
+/// 时间范围固定为最近 7 天，X 轴分度值决定一个大格代表多少分钟。
+/// 用户通过拖动查看历史数据。
 ///
 /// 同时监听 [AuthRepository]：登录态切换时自动刷新（登入 → 重新拉一次；
 /// 登出 → 清空已加载的曲线），保证两态切换时显示与权限一致。
@@ -29,9 +32,11 @@ class HistoryViewModel extends ChangeNotifier {
     required AuthRepository auth,
   })  : _repo = repository,
         _auth = auth {
-    // 默认显示最近 4 小时，进入页面立刻发起一次拉取。
+    // 默认显示最近 7 天，进入页面立刻发起一次拉取。
     _to = DateTime.now();
-    _from = _to.subtract(const Duration(hours: 4));
+    _from = _to.subtract(const Duration(days: 7));
+    // 默认分度值 10 分钟：X 轴一个大格代表 10 分钟。
+    _intervalMinutes = 10;
     _wasLoggedIn = _auth.isLoggedIn;
     _lastStatusOnline = _repo.status.online;
     _lastStatusSeen = _repo.status.lastSeen;
@@ -56,6 +61,7 @@ class HistoryViewModel extends ChangeNotifier {
   HistoryField _field = HistoryField.flow;
   late DateTime _from;
   late DateTime _to;
+  late int _intervalMinutes;
   List<HistoryPoint> _points = const [];
   bool _loading = false;
   Object? _error;
@@ -63,6 +69,10 @@ class HistoryViewModel extends ChangeNotifier {
   HistoryField get field => _field;
   DateTime get from => _from;
   DateTime get to => _to;
+
+  /// X 轴一个大格代表的分钟数。
+  int get intervalMinutes => _intervalMinutes;
+
   List<HistoryPoint> get points => _points;
   bool get loading => _loading;
   Object? get error => _error;
@@ -75,6 +85,13 @@ class HistoryViewModel extends ChangeNotifier {
     if (_field == f) return;
     _field = f;
     load();
+  }
+
+  /// 切换 X 轴分度值（一个大格代表多少分钟）。
+  void setIntervalMinutes(int minutes) {
+    if (_intervalMinutes == minutes) return;
+    _intervalMinutes = minutes;
+    notifyListeners();
   }
 
   /// 切换时间区间。
