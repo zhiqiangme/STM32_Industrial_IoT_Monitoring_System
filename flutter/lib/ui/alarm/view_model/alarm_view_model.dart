@@ -111,6 +111,11 @@ class AlarmViewModel extends ChangeNotifier {
         _items = const [];
     }
     _loading = false;
+    // 列表为空时自动清零未读计数，避免角标与列表不同步。
+    if (_items.isEmpty && _unread > 0) {
+      _unread = 0;
+      _repo.markAllRead();
+    }
     _safeNotifyListeners();
   }
 

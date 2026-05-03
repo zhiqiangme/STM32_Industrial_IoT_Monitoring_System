@@ -52,8 +52,8 @@ class AlarmPage extends StatelessWidget {
                         ],
                       ),
           ),
-          // 有未读时悬浮按钮：一键全部已读。
-          floatingActionButton: vm.unread > 0
+          // 有未读且列表非空时悬浮按钮：一键全部已读。
+          floatingActionButton: vm.unread > 0 && vm.items.isNotEmpty
               ? FloatingActionButton.extended(
                   onPressed: vm.markAllRead,
                   icon: const Icon(Icons.done_all),
