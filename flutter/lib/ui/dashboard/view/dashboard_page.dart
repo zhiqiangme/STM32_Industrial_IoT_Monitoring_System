@@ -120,7 +120,7 @@ class DashboardPage extends StatelessWidget {
       // 4 路 PT100 温度槽位（T1-T4）。
       ...List.generate(4, (i) {
         return ValueTile(
-          label: 'T${i + 1}',
+          label: '温度T${i + 1}',
           value: fmt(m == null ? null : m.temperatures[i], 1),
           unit: '°C',
           valid: m?.temperatureValid(i) ?? true,
