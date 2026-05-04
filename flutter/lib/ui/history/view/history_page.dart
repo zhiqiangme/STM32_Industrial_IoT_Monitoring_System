@@ -8,17 +8,25 @@ import 'package:provider/provider.dart';
 import '../../../data/models/history_point.dart';
 import '../view_model/history_view_model.dart';
 
-/// X 轴分度值预设：一个大格代表多少分钟。
-const _intervalPresets = <({int minutes, String label})>[
-  (minutes: 5, label: '5min'),
-  (minutes: 10, label: '10min'),
-  (minutes: 30, label: '30min'),
-  (minutes: 60, label: '1h'),
-  (minutes: 120, label: '2h'),
-  (minutes: 360, label: '6h'),
-  (minutes: 720, label: '12h'),
-  (minutes: 1440, label: '24h'),
+/// X 轴分度值预设：一个大格代表多少分钟，以及切到该档时一屏显示几个大格。
+/// 可见格数随分度值单调递增；24h 档目标 8 d 会被钳到 fullSpan，铺满整段 7 天。
+const _intervalPresets = <({int minutes, int visibleIntervals, String label})>[
+  (minutes: 5,    visibleIntervals: 6,  label: '5min'),
+  (minutes: 10,   visibleIntervals: 6,  label: '10min'),
+  (minutes: 30,   visibleIntervals: 8,  label: '30min'),
+  (minutes: 60,   visibleIntervals: 8,  label: '1h'),
+  (minutes: 120,  visibleIntervals: 8,  label: '2h'),
+  (minutes: 360,  visibleIntervals: 8,  label: '6h'),
+  (minutes: 720,  visibleIntervals: 10, label: '12h'),
+  (minutes: 1440, visibleIntervals: 8,  label: '24h'),
 ];
+
+int _visibleIntervalsFor(int intervalMinutes) {
+  for (final preset in _intervalPresets) {
+    if (preset.minutes == intervalMinutes) return preset.visibleIntervals;
+  }
+  return 6;
+}
 
 const double _chartDragSensitivity = 2.5;
 
@@ -196,7 +204,7 @@ class _ChartState extends State<_Chart> {
           );
           final viewportSpan = _viewportSpanForAxis(
             xAxis: xAxis,
-            narrow: narrow,
+            visibleIntervals: _visibleIntervalsFor(vm.intervalMinutes),
           );
           // rangeSignature 仅含时间范围；fullSignature 还包含分度值。
           // 切换分度值时以视口中心为锚点缩放；时间范围变化时重置到最右端。
@@ -313,7 +321,13 @@ class _ChartState extends State<_Chart> {
                         ),
                       ),
                     ),
-                    gridData: const FlGridData(show: true),
+                    gridData: FlGridData(
+                      show: true,
+                      drawHorizontalLine: true,
+                      drawVerticalLine: true,
+                      verticalInterval: xAxis.interval,
+                      horizontalInterval: yAxisInterval,
+                    ),
                     borderData: FlBorderData(show: true),
                     // 历史页手势只保留左右拖动，不再点按弹出当前时刻数据提示。
                     lineTouchData: const LineTouchData(enabled: false),
@@ -457,22 +471,17 @@ _XAxisSpec _buildXAxisSpec({
 
 double _viewportSpanForAxis({
   required _XAxisSpec xAxis,
-  required bool narrow,
+  required int visibleIntervals,
 }) {
   final fullSpan = xAxis.maxX - xAxis.minX;
   if (fullSpan <= 0) return xAxis.interval;
 
-  // 大部分档位默认只看右侧最新的 4~5 个刻度跨度，剩余内容通过拖动查看。
-  final visibleIntervals = narrow ? 4 : 5;
-  var viewportSpan = xAxis.interval * visibleIntervals;
-
-  // 5 分钟档本身时间窗很短，缩成 80% 左右，保证也能左右拖动。
-  if (viewportSpan >= fullSpan) {
-    viewportSpan = fullSpan * 0.8;
-  }
-
-  final minViewportSpan = math.min(fullSpan, xAxis.interval * 1.5);
-  return viewportSpan.clamp(minViewportSpan, fullSpan).toDouble();
+  final desired = xAxis.interval * visibleIntervals;
+  // 目标跨度 ≥ 全部数据 → 铺满，整段一屏可见，拖动自然失效。
+  if (desired >= fullSpan) return fullSpan;
+  // 至少留 1.5 个分度，避免极端情况下视口塌缩到看不清。
+  final minSpan = math.min(fullSpan, xAxis.interval * 1.5);
+  return desired.clamp(minSpan, fullSpan).toDouble();
 }
 
 DateTime _floorToMinuteBoundary(DateTime value, int intervalMinutes) {
