@@ -4,6 +4,7 @@ import 'dart:math';
 import '../models/alarm.dart';
 import '../models/device_status.dart';
 import '../models/measurement.dart';
+import 'api_service.dart';
 import 'realtime_service.dart';
 
 /// 假的 [RealtimeService]：每 3 秒合成一帧遥测，偶尔丢一条告警，
@@ -35,6 +36,11 @@ class MockRealtimeService implements RealtimeService {
 
   @override
   bool get isConnected => _connected;
+
+  @override
+  void setUnauthorizedHandler(UnauthorizedHandler? handler) {
+    // Mock 模式下不走真实 WS，无需处理鉴权失败。
+  }
 
   @override
   Future<void> connect({required String token}) async {

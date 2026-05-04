@@ -9,6 +9,7 @@ import '../../utils/app_logger.dart';
 import '../models/alarm.dart';
 import '../models/device_status.dart';
 import '../models/measurement.dart';
+import 'api_service.dart';
 import 'realtime_service.dart';
 
 /// 基于 WebSocket Secure 的 [RealtimeService] 真实实现。
@@ -19,8 +20,8 @@ import 'realtime_service.dart';
 /// - 普通消息帧：`{event:"message", kind:"tele"|"alarm"|"ack",
 ///   device, topic, payload:{…}, receivedAt}`
 ///
-/// 服务端目前 `/ws/live` 没有鉴权 —— [token] 仅为接口对齐保留，
-/// 不会附加到 URL。
+/// 连接时将 JWT token 作为 query 参数拼接到 URL（`?token=<JWT>`），
+/// 服务端据此校验身份，缺失或无效时握手返回 401。
 class WsRealtimeService implements RealtimeService {
   WsRealtimeService();
 
@@ -29,6 +30,15 @@ class WsRealtimeService implements RealtimeService {
   final StreamController<RealtimeEvent> _controller =
       StreamController<RealtimeEvent>.broadcast();
   bool _isConnected = false;
+
+  /// 当前连接使用的 JWT token，由 [connect] 传入。
+  String? _token;
+
+  /// 连接是否曾成功接收过至少一帧。用于区分握手拒绝（401）与正常断线。
+  bool _everConnected = false;
+
+  /// 握手阶段鉴权失败时的回调（由 [AuthRepository] 注册）。
+  UnauthorizedHandler? _onUnauthorized;
 
   /// 重连退避：失败一次翻倍，封顶 [Env.wsReconnectMaxBackoff]。
   Duration _backoff = const Duration(seconds: 1);
@@ -44,9 +54,19 @@ class WsRealtimeService implements RealtimeService {
   bool get isConnected => _isConnected;
 
   @override
+  void setUnauthorizedHandler(UnauthorizedHandler? handler) {
+    _onUnauthorized = handler;
+  }
+
+  @override
   Future<void> connect({required String token}) async {
     _shouldReconnect = true;
+    _token = token;
     if (_isConnected || _channel != null) {
+      return;
+    }
+    if (token.isEmpty) {
+      appLog.w('WS connect skipped: empty token');
       return;
     }
     _reconnectTimer?.cancel();
@@ -56,8 +76,9 @@ class WsRealtimeService implements RealtimeService {
 
   /// 实际建立 WS 连接。失败会进入指数退避重连。
   Future<void> _open() async {
-    final uri = Uri.parse(Env.wsUrl);
+    final uri = Uri.parse('${Env.wsUrl}?token=$_token');
     try {
+      _everConnected = false;
       _channel = WebSocketChannel.connect(uri);
       _sub = _channel!.stream.listen(
         _onMessage,
@@ -80,6 +101,7 @@ class WsRealtimeService implements RealtimeService {
 
   /// 接收一帧原始数据并尝试解析为 JSON。
   void _onMessage(dynamic data) {
+    _everConnected = true;
     try {
       // 服务端可能发字符串，也可能发二进制帧；都按 UTF-8 处理。
       final text = data is String ? data : utf8.decode(data as List<int>);
@@ -169,11 +191,19 @@ class WsRealtimeService implements RealtimeService {
   }
 
   /// 通道关闭：清理订阅并尝试重连。
+  ///
+  /// 如果连接从未成功接收过数据就关闭了（通常是握手阶段 401 拒绝），
+  /// 通知上层鉴权失败并停止重连，避免用过期 token 无限重试。
   void _onClosed() {
     _isConnected = false;
     _sub?.cancel();
     _sub = null;
     _channel = null;
+    if (!_everConnected && _shouldReconnect) {
+      appLog.w('WS closed before receiving any data — likely auth failure');
+      _onUnauthorized?.call();
+      return;
+    }
     if (_shouldReconnect) _scheduleReconnect();
   }
 

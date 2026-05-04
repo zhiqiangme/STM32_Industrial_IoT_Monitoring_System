@@ -2,6 +2,7 @@ import '../models/alarm.dart';
 import '../models/command.dart';
 import '../models/device_status.dart';
 import '../models/measurement.dart';
+import 'api_service.dart';
 
 /// 服务端 WebSocket 推送的事件。
 ///
@@ -51,4 +52,7 @@ abstract interface class RealtimeService {
 
   /// 底层传输报告通道处于 open 状态时为 `true`。
   bool get isConnected;
+
+  /// 注册握手阶段鉴权失败（401）的回调。传 null 取消注册。
+  void setUnauthorizedHandler(UnauthorizedHandler? handler);
 }

@@ -21,11 +21,13 @@ class AuthRepository extends ChangeNotifier {
         _realtime = realtime,
         _storage = storage {
     _api.setUnauthorizedHandler(_handleUnauthorized);
+    _realtime.setUnauthorizedHandler(_handleUnauthorized);
   }
 
   final ApiService _api;
   final RealtimeService _realtime;
   final SecureStorageService _storage;
+
 
   bool _isLoggedIn = false;
   String? _username;
@@ -122,6 +124,7 @@ class AuthRepository extends ChangeNotifier {
   @override
   void dispose() {
     _api.setUnauthorizedHandler(null);
+    _realtime.setUnauthorizedHandler(null);
     super.dispose();
   }
 }
