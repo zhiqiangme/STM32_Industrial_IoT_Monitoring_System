@@ -15,9 +15,7 @@ const _intervalPresets = <({int minutes, int visibleIntervals, String label})>[
   (minutes: 10,   visibleIntervals: 6,  label: '10min'),
   (minutes: 30,   visibleIntervals: 8,  label: '30min'),
   (minutes: 60,   visibleIntervals: 8,  label: '1h'),
-  (minutes: 120,  visibleIntervals: 8,  label: '2h'),
   (minutes: 360,  visibleIntervals: 8,  label: '6h'),
-  (minutes: 720,  visibleIntervals: 10, label: '12h'),
   (minutes: 1440, visibleIntervals: 8,  label: '24h'),
 ];
 
