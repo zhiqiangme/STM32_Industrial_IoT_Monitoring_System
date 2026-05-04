@@ -166,8 +166,6 @@ class MockApiService implements ApiService {
           23.0,
         HistoryField.relayDo => 3.0,
         HistoryField.relayDi => 1.0,
-        HistoryField.heartCount => 500.0,
-        HistoryField.statusBits => 0.0,
       };
 
   /// 各字段的波动幅度。
@@ -177,8 +175,6 @@ class MockApiService implements ApiService {
         HistoryField.weight => 150.0,
         HistoryField.relayDo => 1.0,
         HistoryField.relayDi => 1.0,
-        HistoryField.heartCount => 50.0,
-        HistoryField.statusBits => 0.0,
         _ => 1.0,
       };
 }

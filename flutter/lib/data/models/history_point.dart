@@ -26,8 +26,6 @@ class HistoryPoint {
       case HistoryField.weight:
       case HistoryField.relayDo:
       case HistoryField.relayDi:
-      case HistoryField.heartCount:
-      case HistoryField.statusBits:
         raw = j[field.id] as num?;
       // 温度通道：到 temp[] 数组里取。
       case HistoryField.t1:
@@ -58,9 +56,7 @@ enum HistoryField {
   t3('t3', 'T3 温度', '°C', 2),
   t4('t4', 'T4 温度', '°C', 3),
   relayDo('relay_do', '继电器输出', '', -1),
-  relayDi('relay_di', '继电器输入', '', -1),
-  heartCount('heart_count', '心跳计数', '', -1),
-  statusBits('status', '控制模式', '', -1);
+  relayDi('relay_di', '继电器输入', '', -1);
 
   /// 服务端字段名 / `temp[]` 之外的顶层 key。
   final String id;
@@ -75,6 +71,27 @@ enum HistoryField {
   final int tempIndex;
 
   const HistoryField(this.id, this.label, this.unit, this.tempIndex);
+}
+
+/// 历史页 UI 选项：每个选项要么对应一个 [HistoryField]，要么把若干字段合成一组。
+///
+/// 当 [fields] 长度 > 1 时，UI 会渲染多张共用时间轴的小表（如温度 T1~T4）。
+enum HistoryView {
+  flow('瞬时流量', [HistoryField.flow]),
+  total('累计量', [HistoryField.total]),
+  weight('重量', [HistoryField.weight]),
+  temperature(
+    '温度',
+    [HistoryField.t1, HistoryField.t2, HistoryField.t3, HistoryField.t4],
+  ),
+  relayDo('继电器输出', [HistoryField.relayDo]),
+  relayDi('继电器输入', [HistoryField.relayDi]);
+
+  final String label;
+  final List<HistoryField> fields;
+  const HistoryView(this.label, this.fields);
+
+  bool get isMulti => fields.length > 1;
 }
 
 /// 历史接口时间戳兼容层。

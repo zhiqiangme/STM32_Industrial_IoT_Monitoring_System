@@ -46,6 +46,8 @@ class HistoryViewModel extends ChangeNotifier {
     load();
   }
 
+  static const List<HistoryPoint> _emptyPoints = <HistoryPoint>[];
+
   final MeasurementRepository _repo;
   final AuthRepository _auth;
   bool _wasLoggedIn = false;
@@ -58,32 +60,45 @@ class HistoryViewModel extends ChangeNotifier {
   Timer? _autoReloadTimer;
   bool _disposed = false;
 
-  HistoryField _field = HistoryField.flow;
+  HistoryView _view = HistoryView.flow;
   late DateTime _from;
   late DateTime _to;
   late int _intervalMinutes;
-  List<HistoryPoint> _points = const [];
+  Map<HistoryField, List<HistoryPoint>> _pointsByField = const {};
   bool _loading = false;
   Object? _error;
 
-  HistoryField get field => _field;
+  HistoryView get view => _view;
+
+  /// 当前视图涉及的字段列表（单字段视图为长度 1，温度组为 4）。
+  List<HistoryField> get fields => _view.fields;
   DateTime get from => _from;
   DateTime get to => _to;
 
   /// X 轴一个大格代表的分钟数。
   int get intervalMinutes => _intervalMinutes;
 
-  List<HistoryPoint> get points => _points;
+  /// 取某个字段当前已加载的曲线点；找不到时返回空列表。
+  List<HistoryPoint> pointsOf(HistoryField field) =>
+      _pointsByField[field] ?? _emptyPoints;
+
   bool get loading => _loading;
   Object? get error => _error;
 
-  /// 是否处于"加载完毕但无数据"的空态。
-  bool get isEmpty => !_loading && _points.isEmpty && _error == null;
+  /// 是否处于"加载完毕但无数据"的空态：所有字段都拿不到点。
+  bool get isEmpty {
+    if (_loading || _error != null) return false;
+    for (final f in _view.fields) {
+      if ((_pointsByField[f] ?? _emptyPoints).isNotEmpty) return false;
+    }
+    return true;
+  }
 
-  /// 切换字段（流量 / 压力 / 温度通道等）。
-  void setField(HistoryField f) {
-    if (_field == f) return;
-    _field = f;
+  /// 切换 UI 视图（流量 / 重量 / 温度组 等）。
+  void setView(HistoryView v) {
+    if (_view == v) return;
+    _view = v;
+    _pointsByField = const {};
     load();
   }
 
@@ -101,51 +116,67 @@ class HistoryViewModel extends ChangeNotifier {
     load();
   }
 
-  /// 重新拉取曲线数据。
+  /// 重新拉取曲线数据：当前视图的所有字段并发拉取。
   Future<void> load() async {
     if (_disposed) return;
     final loadRevision = ++_loadRevision;
-    final field = _field;
+    final view = _view;
     final from = _from;
     final to = _to;
     final limit = _historyLimitForRange(from, to);
     _loading = true;
     _error = null;
     _safeNotifyListeners();
-    final res = await _repo.fetchHistory(
-      field: field,
-      from: from,
-      to: to,
-      limit: limit,
-    );
+
+    final results = await Future.wait([
+      for (final f in view.fields)
+        _repo.fetchHistory(field: f, from: from, to: to, limit: limit),
+    ]);
     if (_disposed) return;
     if (loadRevision != _loadRevision) {
       appLog.d(
-        'history drop stale response field=${field.id} '
+        'history drop stale response view=${view.name} '
         'from=${from.toIso8601String()} to=${to.toIso8601String()}',
       );
       return;
     }
-    switch (res) {
-      case Ok(:final value):
-        _points = value;
-        _lastLoadFailed = false;
-        appLog.i(
-          'history loaded field=${field.id} from=${from.toIso8601String()} '
-          'to=${to.toIso8601String()} limit=$limit count=${value.length}',
-        );
-      case Err(:final error):
-        // 未登录时数据接口会返回 401；这里把错误静默吞掉，
-        // 让页面停留在"此时间段内无数据"的空壳状态，
-        // 等用户去"用户"Tab 登录后会自动 refresh。
-        _points = const [];
-        _lastLoadFailed = true;
-        _error = _shouldHideHistoryError(error) ? null : error;
-        appLog.w(
-          'history load failed field=${field.id} '
-          'from=${from.toIso8601String()} to=${to.toIso8601String()} '
-          'limit=$limit',
-        );
+
+    final next = <HistoryField, List<HistoryPoint>>{};
+    Object? firstError;
+    var anySuccess = false;
+    for (var i = 0; i < view.fields.length; i++) {
+      final f = view.fields[i];
+      final res = results[i];
+      switch (res) {
+        case Ok(:final value):
+          next[f] = value;
+          anySuccess = true;
+        case Err(:final error):
+          next[f] = const [];
+          firstError ??= error;
+      }
+    }
+    _pointsByField = next;
+    if (anySuccess) {
+      _lastLoadFailed = false;
+      _error = null;
+      appLog.i(
+        'history loaded view=${view.name} from=${from.toIso8601String()} '
+        'to=${to.toIso8601String()} limit=$limit '
+        'counts={${[
+          for (final f in view.fields) '${f.id}=${next[f]!.length}',
+        ].join(',')}}',
+      );
+    } else {
+      // 全部字段都失败：未登录的 401 静默吞掉，其余暴露给页面。
+      _lastLoadFailed = true;
+      _error =
+          firstError != null && _shouldHideHistoryError(firstError) ? null : firstError;
+      appLog.w(
+        'history load failed view=${view.name} '
+        'from=${from.toIso8601String()} to=${to.toIso8601String()} '
+        'limit=$limit',
+      );
     }
     _loading = false;
     _safeNotifyListeners();
@@ -163,7 +194,7 @@ class HistoryViewModel extends ChangeNotifier {
       // 登出：清空展示数据，回到"暂无数据"空壳。
       _loadRevision++;
       _autoReloadTimer?.cancel();
-      _points = const [];
+      _pointsByField = const {};
       _error = null;
       _loading = false;
       _lastLoadFailed = false;
