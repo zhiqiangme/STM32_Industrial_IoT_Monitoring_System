@@ -84,6 +84,14 @@ class _Controls extends StatelessWidget {
             ],
             selected: {vm.intervalMinutes},
             showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              visualDensity: const VisualDensity(
+                horizontal: -4,
+                vertical: -2,
+              ),
+              shape: const RoundedRectangleBorder(),
+            ),
             onSelectionChanged: (s) {
               vm.setIntervalMinutes(s.first);
             },
