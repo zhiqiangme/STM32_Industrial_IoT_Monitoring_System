@@ -84,6 +84,12 @@ class MeasurementRepository {
       _lastMeasurement = m;
       // 不在这里标记在线——存储的测量值不代表设备此刻在线，
       // 设备状态由 fetchStatus() 或实时遥测帧负责更新。
+      // 但若当前 status 还没拿到 lastSeen（冷启动 + 设备离线），
+      // 重新归一化一次，用 _lastMeasurement 作为 lastSeen 兜底，
+      // 让横幅能显示"最后上报于 …"。
+      if (_status.lastSeen == null) {
+        _setStatus(_normalizeStatus(_status));
+      }
       unawaited(_persistMeasurementToCache(m));
       return Ok(m);
     } catch (e, st) {
@@ -180,8 +186,11 @@ class MeasurementRepository {
   /// 把后端给的状态结合本地最近一次帧时间做"消歧"：
   /// 即使 `mqttConnected=true`，如果最近一次设备数据距今太久，
   /// 也认为设备离线，避免出现"链路在线但数据陈旧"的迷惑提示。
+  ///
+  /// 当后端 `/api/status` 未带 `lastMessageAt` 时，回落到本地缓存的最近一帧
+  /// 时间戳，保证离线横幅能显示"最后上报于 …"。
   DeviceStatus _normalizeStatus(DeviceStatus status) {
-    final lastSeen = status.lastSeen;
+    final lastSeen = status.lastSeen ?? _lastMeasurement?.timestamp;
     final online = status.online && _isFresh(lastSeen);
     final normalized = DeviceStatus(
       online: online,
