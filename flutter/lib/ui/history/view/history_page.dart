@@ -174,12 +174,6 @@ class _ChartState extends State<_Chart> {
       return const Center(child: Text('此时间段内无数据'));
     }
 
-    final rawMinX = nonEmpty
-        .map((s) => s.rawMinX)
-        .reduce((a, b) => a < b ? a : b);
-    final rawMaxX = nonEmpty
-        .map((s) => s.rawMaxX)
-        .reduce((a, b) => a > b ? a : b);
     // 多通道视图里给"无数据"的通道一个公共 Y 范围，让占位小图的纵轴看起来和兄弟一致。
     final globalChartMinY =
         nonEmpty.map((s) => s.chartMinY).reduce((a, b) => a < b ? a : b);
@@ -287,8 +281,6 @@ class _ChartState extends State<_Chart> {
                     xAxis: xAxis,
                     visibleMinX: visibleMinX,
                     visibleMaxX: visibleMaxX,
-                    rawMinX: rawMinX,
-                    rawMaxX: rawMaxX,
                     yInterval: unifiedYInterval,
                     narrow: narrow,
                     xFontSize: xFontSize,
@@ -302,8 +294,6 @@ class _ChartState extends State<_Chart> {
                     xAxis: xAxis,
                     visibleMinX: visibleMinX,
                     visibleMaxX: visibleMaxX,
-                    rawMinX: rawMinX,
-                    rawMaxX: rawMaxX,
                     narrow: narrow,
                     xFontSize: xFontSize,
                     xReserved: xReserved,
@@ -322,8 +312,6 @@ class _ChartState extends State<_Chart> {
     required _XAxisSpec xAxis,
     required double visibleMinX,
     required double visibleMaxX,
-    required double rawMinX,
-    required double rawMaxX,
     required bool narrow,
     required double xFontSize,
     required double xReserved,
@@ -377,8 +365,6 @@ class _ChartState extends State<_Chart> {
     required _XAxisSpec xAxis,
     required double visibleMinX,
     required double visibleMaxX,
-    required double rawMinX,
-    required double rawMaxX,
     required double? yInterval,
     required bool narrow,
     required double xFontSize,
@@ -647,8 +633,6 @@ class _FieldSeries {
     required this.field,
     required this.spots,
     required this.hasSinglePoint,
-    required this.rawMinX,
-    required this.rawMaxX,
     required this.chartMinY,
     required this.chartMaxY,
   });
@@ -656,8 +640,6 @@ class _FieldSeries {
   final HistoryField field;
   final List<FlSpot> spots;
   final bool hasSinglePoint;
-  final double rawMinX;
-  final double rawMaxX;
   final double chartMinY;
   final double chartMaxY;
 
@@ -671,8 +653,6 @@ class _FieldSeries {
         field: field,
         spots: const [],
         hasSinglePoint: false,
-        rawMinX: 0,
-        rawMaxX: 0,
         chartMinY: chartMinY,
         chartMaxY: chartMaxY,
       );
@@ -699,10 +679,7 @@ class _FieldSeries {
       }
     }
 
-    final xs = rawSpots.map((s) => s.x);
     final ys = rawSpots.map((s) => s.y);
-    final rawMinX = xs.reduce((a, b) => a < b ? a : b);
-    final rawMaxX = xs.reduce((a, b) => a > b ? a : b);
     final minY = ys.reduce((a, b) => a < b ? a : b);
     final maxY = ys.reduce((a, b) => a > b ? a : b);
     final ySpan = maxY - minY < 0.001 ? 1.0 : maxY - minY;
@@ -711,8 +688,6 @@ class _FieldSeries {
       field: field,
       spots: spots,
       hasSinglePoint: hasSinglePoint,
-      rawMinX: rawMinX,
-      rawMaxX: rawMaxX,
       chartMinY: minY - ySpan * 0.1,
       chartMaxY: maxY + ySpan * 0.1,
     );
