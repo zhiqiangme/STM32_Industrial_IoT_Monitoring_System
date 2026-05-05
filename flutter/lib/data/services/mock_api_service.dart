@@ -154,11 +154,20 @@ class MockApiService implements ApiService {
     return cmd;
   }
 
-  /// 各字段的基线值（曲线均值）。
+  /// 各字段的基线值（曲线均值）。CH2~CH4 与 CH1 略偏，保证 4 张小图视觉差异。
   double _baseFor(HistoryField f) => switch (f) {
         HistoryField.flow => 12.0,
+        HistoryField.flow2 => 10.0,
+        HistoryField.flow3 => 14.0,
+        HistoryField.flow4 => 8.0,
         HistoryField.total => 1000.0,
+        HistoryField.total2 => 850.0,
+        HistoryField.total3 => 1200.0,
+        HistoryField.total4 => 700.0,
         HistoryField.weight => 1200.0,
+        HistoryField.weight2 => 1100.0,
+        HistoryField.weight3 => 1300.0,
+        HistoryField.weight4 => 1000.0,
         HistoryField.t1 ||
         HistoryField.t2 ||
         HistoryField.t3 ||
@@ -170,9 +179,21 @@ class MockApiService implements ApiService {
 
   /// 各字段的波动幅度。
   double _amplitudeFor(HistoryField f) => switch (f) {
-        HistoryField.flow => 2.0,
-        HistoryField.total => 200.0,
-        HistoryField.weight => 150.0,
+        HistoryField.flow ||
+        HistoryField.flow2 ||
+        HistoryField.flow3 ||
+        HistoryField.flow4 =>
+          2.0,
+        HistoryField.total ||
+        HistoryField.total2 ||
+        HistoryField.total3 ||
+        HistoryField.total4 =>
+          200.0,
+        HistoryField.weight ||
+        HistoryField.weight2 ||
+        HistoryField.weight3 ||
+        HistoryField.weight4 =>
+          150.0,
         HistoryField.relayDo => 1.0,
         HistoryField.relayDi => 1.0,
         _ => 1.0,

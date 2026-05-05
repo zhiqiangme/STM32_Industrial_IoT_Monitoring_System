@@ -161,21 +161,38 @@ class _ChartState extends State<_Chart> {
     }
 
     final fields = vm.fields;
-    final series = <_FieldSeries>[];
+    final nonEmpty = <_FieldSeries>[];
+    final byField = <HistoryField, _FieldSeries>{};
     for (final f in fields) {
       final s = _FieldSeries.from(f, vm.pointsOf(f));
-      if (s != null) series.add(s);
+      if (s != null) {
+        nonEmpty.add(s);
+        byField[f] = s;
+      }
     }
-    if (series.isEmpty) {
+    if (nonEmpty.isEmpty) {
       return const Center(child: Text('此时间段内无数据'));
     }
 
-    final rawMinX = series
+    final rawMinX = nonEmpty
         .map((s) => s.rawMinX)
         .reduce((a, b) => a < b ? a : b);
-    final rawMaxX = series
+    final rawMaxX = nonEmpty
         .map((s) => s.rawMaxX)
         .reduce((a, b) => a > b ? a : b);
+    // 多通道视图里给"无数据"的通道一个公共 Y 范围，让占位小图的纵轴看起来和兄弟一致。
+    final globalChartMinY =
+        nonEmpty.map((s) => s.chartMinY).reduce((a, b) => a < b ? a : b);
+    final globalChartMaxY =
+        nonEmpty.map((s) => s.chartMaxY).reduce((a, b) => a > b ? a : b);
+    // 多通道视图：按 vm.fields 顺序铺满 N 张小图；空通道用占位 series，渲染空图加"无数据"标签。
+    final multiSeries = vm.view.isMulti
+        ? [
+            for (final f in fields)
+              byField[f] ??
+                  _FieldSeries.placeholder(f, globalChartMinY, globalChartMaxY),
+          ]
+        : const <_FieldSeries>[];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 4, 4, 8),
@@ -211,10 +228,10 @@ class _ChartState extends State<_Chart> {
           final visibleMinX = _viewportMinX ?? xAxis.minX;
           final visibleMaxX = _viewportMaxX ?? xAxis.maxX;
 
-          // 多字段（温度组）下，Y 分度值统一为各通道需求的最大值。
+          // 多字段下 Y 分度值统一为各非空通道需求的最大值；空通道沿用这个值即可。
           double? unifiedYInterval;
           if (vm.view.isMulti) {
-            for (final s in series) {
+            for (final s in nonEmpty) {
               final candidate = _yAxisInterval(
                 field: s.field,
                 minY: s.chartMinY,
@@ -227,7 +244,7 @@ class _ChartState extends State<_Chart> {
             }
           }
 
-          final yReserved = _yReservedSize(series.first.field, narrow);
+          final yReserved = _yReservedSize(nonEmpty.first.field, narrow);
 
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -266,7 +283,7 @@ class _ChartState extends State<_Chart> {
             child: vm.view.isMulti
                 ? _buildMultiChannel(
                     context: context,
-                    series: series,
+                    series: multiSeries,
                     xAxis: xAxis,
                     visibleMinX: visibleMinX,
                     visibleMaxX: visibleMaxX,
@@ -281,7 +298,7 @@ class _ChartState extends State<_Chart> {
                   )
                 : _buildSingle(
                     context: context,
-                    s: series.first,
+                    s: nonEmpty.first,
                     xAxis: xAxis,
                     visibleMinX: visibleMinX,
                     visibleMaxX: visibleMaxX,
@@ -417,6 +434,18 @@ class _ChartState extends State<_Chart> {
                     top: 4,
                     right: 24,
                     child: _SinglePointBadge(),
+                  ),
+                if (series[i].spots.isEmpty)
+                  const Positioned.fill(
+                    child: Center(
+                      child: Text(
+                        '无数据',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0x99000000),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -632,6 +661,22 @@ class _FieldSeries {
   final double chartMinY;
   final double chartMaxY;
 
+  /// 占位 series：通道当前无数据时仍占一张小图位置，纵轴跟随兄弟通道的全局范围。
+  factory _FieldSeries.placeholder(
+    HistoryField field,
+    double chartMinY,
+    double chartMaxY,
+  ) =>
+      _FieldSeries._(
+        field: field,
+        spots: const [],
+        hasSinglePoint: false,
+        rawMinX: 0,
+        rawMaxX: 0,
+        chartMinY: chartMinY,
+        chartMaxY: chartMaxY,
+      );
+
   static _FieldSeries? from(HistoryField field, List<HistoryPoint> points) {
     if (points.isEmpty) return null;
 
@@ -758,8 +803,17 @@ String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {
     case HistoryField.relayDi:
       return '0x${value.toInt().toRadixString(16).padLeft(4, '0').toUpperCase()}';
     case HistoryField.flow:
+    case HistoryField.flow2:
+    case HistoryField.flow3:
+    case HistoryField.flow4:
     case HistoryField.total:
+    case HistoryField.total2:
+    case HistoryField.total3:
+    case HistoryField.total4:
     case HistoryField.weight:
+    case HistoryField.weight2:
+    case HistoryField.weight3:
+    case HistoryField.weight4:
       return meta.formattedValue;
   }
 }
@@ -783,16 +837,50 @@ double? _yAxisInterval({
   final span = (maxY - minY).abs();
   if (span <= 0) return null;
 
-  if (_isTemperatureField(field)) {
-    const candidates = <double>[0.1, 0.2, 0.5, 1.0, 2.0, 5.0];
-    final target = span / 6.0;
-    for (final candidate in candidates) {
-      if (candidate >= target) return candidate;
-    }
-    return candidates.last;
+  // 不同字段族用不同候选档位：温度小步长 0.1°C 起，流量 / 累计 / 重量阶梯式扩到 1000 级。
+  final candidates = _yIntervalCandidates(field);
+  final target = span / 6.0;
+  for (final candidate in candidates) {
+    if (candidate >= target) return candidate;
   }
+  return candidates.last;
+}
 
-  return null;
+const List<double> _temperatureIntervals = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0];
+const List<double> _flowIntervals = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
+const List<double> _totalIntervals = [
+  10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0,
+];
+const List<double> _weightIntervals = [
+  10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0,
+];
+
+List<double> _yIntervalCandidates(HistoryField field) {
+  switch (field) {
+    case HistoryField.t1:
+    case HistoryField.t2:
+    case HistoryField.t3:
+    case HistoryField.t4:
+      return _temperatureIntervals;
+    case HistoryField.flow:
+    case HistoryField.flow2:
+    case HistoryField.flow3:
+    case HistoryField.flow4:
+      return _flowIntervals;
+    case HistoryField.total:
+    case HistoryField.total2:
+    case HistoryField.total3:
+    case HistoryField.total4:
+      return _totalIntervals;
+    case HistoryField.weight:
+    case HistoryField.weight2:
+    case HistoryField.weight3:
+    case HistoryField.weight4:
+      return _weightIntervals;
+    case HistoryField.relayDo:
+    case HistoryField.relayDi:
+      return const [1.0];
+  }
 }
 
 bool _isTemperatureField(HistoryField field) {
@@ -803,8 +891,17 @@ bool _isTemperatureField(HistoryField field) {
     case HistoryField.t4:
       return true;
     case HistoryField.flow:
+    case HistoryField.flow2:
+    case HistoryField.flow3:
+    case HistoryField.flow4:
     case HistoryField.total:
+    case HistoryField.total2:
+    case HistoryField.total3:
+    case HistoryField.total4:
     case HistoryField.weight:
+    case HistoryField.weight2:
+    case HistoryField.weight3:
+    case HistoryField.weight4:
     case HistoryField.relayDo:
     case HistoryField.relayDi:
       return false;
@@ -824,6 +921,19 @@ String _channelTag(HistoryField field) {
     case HistoryField.flow:
     case HistoryField.total:
     case HistoryField.weight:
+      return 'CH1';
+    case HistoryField.flow2:
+    case HistoryField.total2:
+    case HistoryField.weight2:
+      return 'CH2';
+    case HistoryField.flow3:
+    case HistoryField.total3:
+    case HistoryField.weight3:
+      return 'CH3';
+    case HistoryField.flow4:
+    case HistoryField.total4:
+    case HistoryField.weight4:
+      return 'CH4';
     case HistoryField.relayDo:
     case HistoryField.relayDi:
       return field.label;

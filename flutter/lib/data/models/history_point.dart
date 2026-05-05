@@ -20,12 +20,24 @@ class HistoryPoint {
     final ts = _parseHistoryTimestamp(j['ts'], receivedAt: j['receivedAt']);
     final num? raw;
     switch (field) {
-      // 顶层数值字段。
+      // 顶层标量字段（含流量 / 累计 / 重量的 CH1，仍保持 'flow'/'total'/'weight' 单值键）。
       case HistoryField.flow:
       case HistoryField.total:
       case HistoryField.weight:
       case HistoryField.relayDo:
       case HistoryField.relayDi:
+        raw = j[field.id] as num?;
+      // CH2~CH4：顶层独立 key（'flow_2' 等）。当前后端没下发就拿到 null → NaN，
+      // 渲染时该通道呈空表，等硬件 / 后端补齐后自动有数据。
+      case HistoryField.flow2:
+      case HistoryField.flow3:
+      case HistoryField.flow4:
+      case HistoryField.total2:
+      case HistoryField.total3:
+      case HistoryField.total4:
+      case HistoryField.weight2:
+      case HistoryField.weight3:
+      case HistoryField.weight4:
         raw = j[field.id] as num?;
       // 温度通道：到 temp[] 数组里取。
       case HistoryField.t1:
@@ -48,9 +60,22 @@ class HistoryPoint {
 /// [id] 与服务端行的顶层 key 对齐；若是温度通道，则使用 [tempIndex]
 /// 索引到 `temp[]` 数组（普通字段为 `-1`）。
 enum HistoryField {
-  flow('flow', '瞬时流量', 'L/min', -1),
-  total('total', '累计量', 'L', -1),
-  weight('weight', '重量', 'g', -1),
+  // 瞬时流量：CH1 沿用 'flow' 单值键以保持后端兼容；CH2~CH4 用 'flow_n'。
+  flow('flow', '瞬时流量 CH1', 'L/min', -1),
+  flow2('flow_2', '瞬时流量 CH2', 'L/min', -1),
+  flow3('flow_3', '瞬时流量 CH3', 'L/min', -1),
+  flow4('flow_4', '瞬时流量 CH4', 'L/min', -1),
+  // 累计量：同上。
+  total('total', '累计量 CH1', 'L', -1),
+  total2('total_2', '累计量 CH2', 'L', -1),
+  total3('total_3', '累计量 CH3', 'L', -1),
+  total4('total_4', '累计量 CH4', 'L', -1),
+  // 重量：同上。
+  weight('weight', '重量 CH1', 'g', -1),
+  weight2('weight_2', '重量 CH2', 'g', -1),
+  weight3('weight_3', '重量 CH3', 'g', -1),
+  weight4('weight_4', '重量 CH4', 'g', -1),
+  // 温度 4 通道：到 temp[] 数组里按下标取。
   t1('t1', 'T1 温度', '°C', 0),
   t2('t2', 'T2 温度', '°C', 1),
   t3('t3', 'T3 温度', '°C', 2),
@@ -77,9 +102,24 @@ enum HistoryField {
 ///
 /// 当 [fields] 长度 > 1 时，UI 会渲染多张共用时间轴的小表（如温度 T1~T4）。
 enum HistoryView {
-  flow('瞬时流量', [HistoryField.flow]),
-  total('累计量', [HistoryField.total]),
-  weight('重量', [HistoryField.weight]),
+  flow('瞬时流量', [
+    HistoryField.flow,
+    HistoryField.flow2,
+    HistoryField.flow3,
+    HistoryField.flow4,
+  ]),
+  total('累计量', [
+    HistoryField.total,
+    HistoryField.total2,
+    HistoryField.total3,
+    HistoryField.total4,
+  ]),
+  weight('重量', [
+    HistoryField.weight,
+    HistoryField.weight2,
+    HistoryField.weight3,
+    HistoryField.weight4,
+  ]),
   temperature(
     '温度',
     [HistoryField.t1, HistoryField.t2, HistoryField.t3, HistoryField.t4],
