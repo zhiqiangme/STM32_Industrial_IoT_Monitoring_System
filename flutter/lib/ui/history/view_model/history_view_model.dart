@@ -60,7 +60,7 @@ class HistoryViewModel extends ChangeNotifier {
   Timer? _autoReloadTimer;
   bool _disposed = false;
 
-  HistoryView _view = HistoryView.flow;
+  HistoryView _view = HistoryView.temperature;
   late DateTime _from;
   late DateTime _to;
   late int _intervalMinutes;
