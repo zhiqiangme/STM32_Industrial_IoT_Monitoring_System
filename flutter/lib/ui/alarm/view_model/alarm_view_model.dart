@@ -82,7 +82,11 @@ class AlarmViewModel extends ChangeNotifier {
   }
 
   /// 实时告警到达：加入列表并保留到 _liveAlarms，避免被 load() 覆盖。
+  /// 同 seq 的重复帧（hello 重放、WS 重连补传）直接丢弃，避免列表叠加。
   void _onLiveAlarm(Alarm a) {
+    if (_items.any((existing) => existing.seq == a.seq)) {
+      return;
+    }
     _items = [a, ..._items];
     _liveAlarms.add(a);
     _safeNotifyListeners();

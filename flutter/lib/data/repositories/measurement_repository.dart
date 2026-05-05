@@ -197,9 +197,11 @@ class MeasurementRepository {
       lastSeen: lastSeen,
       wsClients: status.wsClients,
     );
-    if (online) {
+    if (online && lastSeen != null) {
       // 还在线：根据离线阈值剩余时间安排下次检查。
-      final age = DateTime.now().difference(lastSeen!);
+      // online 为 true 隐含 lastSeen 非 null（_isFresh 对 null 返回 false），
+      // 这里多写一遍空检查只为去掉强解包，避免后续修改 _isFresh 时引入 NPE。
+      final age = DateTime.now().difference(lastSeen);
       final remaining = Env.telemetryOfflineTimeout - age;
       _scheduleOfflineCheck(remaining.isNegative ? Duration.zero : remaining);
     } else {
@@ -275,13 +277,14 @@ class MeasurementRepository {
     if (remote.isEmpty) return cached;
 
     final merged = <HistoryPoint>[];
-    final seen = <String>{};
+    final seen = <int>{};
 
+    // 仅以毫秒级时间戳作为去重 key：同时刻保留先入项（cached 优先，
+    // 这样后续 remote 不会用浮点重建出的近似值覆盖原始缓存）。
     void appendAll(List<HistoryPoint> points) {
       for (final point in points) {
         if (!point.value.isFinite) continue;
-        final key =
-            '${point.timestamp.millisecondsSinceEpoch}:${point.value.toStringAsPrecision(12)}';
+        final key = point.timestamp.millisecondsSinceEpoch;
         if (seen.add(key)) {
           merged.add(point);
         }

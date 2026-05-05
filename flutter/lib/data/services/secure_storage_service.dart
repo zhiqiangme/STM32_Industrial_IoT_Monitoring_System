@@ -13,9 +13,14 @@ class SecureStorageService {
   /// 鉴权 token 的存储 key。集中放在常量便于以后改名。
   static const _kToken = 'auth_token';
 
-  /// 写入鉴权 token。
-  Future<void> writeToken(String token) =>
-      _storage.write(key: _kToken, value: token);
+  /// 写入鉴权 token。空字符串会被拒绝并抛 [ArgumentError]，
+  /// 防止上游 BUG 写入空值后下游静默退化（例如 WS 以 "empty token" 跳过连接）。
+  Future<void> writeToken(String token) {
+    if (token.isEmpty) {
+      throw ArgumentError.value(token, 'token', 'must not be empty');
+    }
+    return _storage.write(key: _kToken, value: token);
+  }
 
   /// 读取已保存的 token，未登录时返回 null。
   Future<String?> readToken() => _storage.read(key: _kToken);

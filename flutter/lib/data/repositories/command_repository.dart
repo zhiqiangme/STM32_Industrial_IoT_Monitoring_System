@@ -45,6 +45,10 @@ class CommandRepository {
   /// 只要位图已经到达目标值，就不再继续把 UI 卡在 timeout。
   final Map<int, int> _expectedRelayMasks = {};
 
+  /// `seq → 等待 ack 的超时定时器`。命令提前完成时按 seq 取消，
+  /// 避免大量空 Timer 留在事件循环里直到 timeout 才触发。
+  final Map<int, Timer> _timeoutTimers = {};
+
   /// 整个位图控制是“后发覆盖前发”语义：
   /// 当用户连续点多个开关时，新的目标位图已经包含了最新意图，
   /// 旧的未确认命令不应再等到 timeout。
@@ -59,6 +63,7 @@ class CommandRepository {
       final completer = _pending.remove(seq);
       final cmd = _inFlight.remove(seq);
       _expectedRelayMasks.remove(seq);
+      _timeoutTimers.remove(seq)?.cancel();
       if (completer == null || cmd == null || completer.isCompleted) {
         continue;
       }
@@ -76,6 +81,7 @@ class CommandRepository {
     final completer = _pending.remove(evt.cmdSeq);
     final cmd = _inFlight.remove(evt.cmdSeq);
     _expectedRelayMasks.remove(evt.cmdSeq);
+    _timeoutTimers.remove(evt.cmdSeq)?.cancel();
     if (completer == null || cmd == null) return;
     final updated = cmd.copyWith(
       ackedAt: DateTime.now(),
@@ -93,26 +99,31 @@ class CommandRepository {
       return;
     }
 
-    final matchedSeq = _expectedRelayMasks.entries
+    // 把所有目标位图与遥测一致的命令一次性确认掉，
+    // 避免用户连点同一开关时只完成最早一条、剩余卡到 timeout。
+    final matchedSeqs = _expectedRelayMasks.entries
         .where((entry) => entry.value == relayDo)
         .map((entry) => entry.key)
-        .fold<int?>(null, (best, seq) => best == null || seq < best ? seq : best);
-    if (matchedSeq == null) {
+        .toList(growable: false);
+    if (matchedSeqs.isEmpty) {
       return;
     }
 
-    final completer = _pending.remove(matchedSeq);
-    final cmd = _inFlight.remove(matchedSeq);
-    _expectedRelayMasks.remove(matchedSeq);
-    if (completer == null || cmd == null || completer.isCompleted) {
-      return;
+    final now = DateTime.now();
+    for (final seq in matchedSeqs) {
+      final completer = _pending.remove(seq);
+      final cmd = _inFlight.remove(seq);
+      _expectedRelayMasks.remove(seq);
+      _timeoutTimers.remove(seq)?.cancel();
+      if (completer == null || cmd == null || completer.isCompleted) {
+        continue;
+      }
+      completer.complete(cmd.copyWith(
+        ackedAt: now,
+        status: CommandStatus.acked,
+        result: cmd.result ?? 'ok',
+      ));
     }
-
-    completer.complete(cmd.copyWith(
-      ackedAt: DateTime.now(),
-      status: CommandStatus.acked,
-      result: cmd.result ?? 'ok',
-    ));
   }
 
   /// 发起一次继电器位图控制命令并等待 ack。
@@ -127,7 +138,9 @@ class CommandRepository {
       _expectedRelayMasks[cmd.seq] = mask;
 
       // 超时兜底：ack 一直没来就把命令置为 failed("timeout")。
-      Timer(Env.commandAckTimeout, () {
+      // Timer 句柄存到 _timeoutTimers，命令提前完成时及时取消。
+      _timeoutTimers[cmd.seq] = Timer(Env.commandAckTimeout, () {
+        _timeoutTimers.remove(cmd.seq);
         if (!completer.isCompleted) {
           _pending.remove(cmd.seq);
           _inFlight.remove(cmd.seq);
@@ -148,6 +161,10 @@ class CommandRepository {
   }
 
   Future<void> dispose() async {
+    for (final t in _timeoutTimers.values) {
+      t.cancel();
+    }
+    _timeoutTimers.clear();
     await _sub?.cancel();
   }
 }

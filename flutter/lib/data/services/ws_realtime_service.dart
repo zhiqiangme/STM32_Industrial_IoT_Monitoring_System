@@ -95,6 +95,12 @@ class WsRealtimeService implements RealtimeService {
       appLog.i('WS connected to $uri');
     } catch (e) {
       appLog.w('WS connect failed: $e');
+      // 异常路径必须把 _channel/_sub/_isConnected 全部归零，
+      // 否则 connect() 早返回守卫 `_channel != null` 会永久阻塞后续手动连接。
+      await _sub?.cancel();
+      _sub = null;
+      _channel = null;
+      _isConnected = false;
       _scheduleReconnect();
     }
   }
@@ -108,7 +114,9 @@ class WsRealtimeService implements RealtimeService {
       final frame = jsonDecode(text) as Map<String, dynamic>;
       _dispatch(frame);
     } catch (e) {
-      appLog.w('WS parse failed: $e / $data');
+      // 不打印原始 data，避免后端未来变更导致敏感字段进日志。
+      final length = data is String ? data.length : (data is List ? data.length : -1);
+      appLog.w('WS parse failed: $e (frame_len=$length)');
     }
   }
 

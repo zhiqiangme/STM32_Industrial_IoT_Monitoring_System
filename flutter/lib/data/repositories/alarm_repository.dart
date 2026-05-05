@@ -60,6 +60,11 @@ class AlarmRepository {
   Stream<int> get unreadStream => _unreadCtrl.stream;
   int get unreadCount => _unread;
 
+  /// 时间范围闭区间过滤：等于 from / to 边界的告警也算命中。
+  bool Function(Alarm) _inRange(DateTime from, DateTime to) {
+    return (a) => !a.timestamp.isBefore(from) && !a.timestamp.isAfter(to);
+  }
+
   /// 收到一条新告警：保存到本地列表、转发到 live 流并增加未读数。
   void _onAlarm(Alarm a) {
     _localAlarms.add(a);
@@ -80,16 +85,14 @@ class AlarmRepository {
     try {
       final serverList = await _api.getAlarms(from: from, to: to, limit: limit);
       // 合并本地客户端告警，按时间倒序排列（最新的在前）。
-      final localInRange = _localAlarms.where((a) =>
-          a.timestamp.isAfter(from) && a.timestamp.isBefore(to));
+      final localInRange = _localAlarms.where(_inRange(from, to));
       final merged = [...localInRange, ...serverList];
       merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       return Ok(merged);
     } catch (e, st) {
       appLog.w('fetchHistory (alarms) failed: $e');
       // 服务端失败时，返回本地保存的客户端告警。
-      final localInRange = _localAlarms.where((a) =>
-          a.timestamp.isAfter(from) && a.timestamp.isBefore(to));
+      final localInRange = _localAlarms.where(_inRange(from, to));
       if (localInRange.isNotEmpty) {
         return Ok(localInRange.toList());
       }

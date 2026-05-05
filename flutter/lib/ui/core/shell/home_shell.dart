@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../data/repositories/alarm_repository.dart';
 
-/// 顶层 Scaffold：承载五个 Tab（实时 / 控制 / 历史 / 报警 / 用户）。
+/// 顶层 Scaffold：承载五个 Tab（实时 / 控制 / 历史 / 警报 / 用户）。
 ///
 /// 使用 go_router 的 [StatefulNavigationShell]，
 /// 切换 Tab 时各自的页面状态（滚动位置、表单值等）会被保留。
@@ -74,7 +74,7 @@ class HomeShell extends StatelessWidget {
                       selectedIcon: Icon(Icons.tune),
                       label: '控制',
                     ),
-                    // 报警 Tab：未读数大于 0 时显示数字徽标。
+                    // 警报 Tab：未读数大于 0 时显示数字徽标。
                     NavigationDestination(
                       icon: Badge(
                         isLabelVisible: unread > 0,
@@ -86,7 +86,7 @@ class HomeShell extends StatelessWidget {
                         label: Text('$unread'),
                         child: const Icon(Icons.notifications),
                       ),
-                      label: '报警',
+                      label: '警报',
                     ),
                     // 用户 Tab：登录入口与账号设置。
                     const NavigationDestination(
@@ -106,7 +106,7 @@ class HomeShell extends StatelessWidget {
     0 => '实时数据',
     1 => '历史曲线',
     2 => '继电器控制',
-    3 => '报警',
+    3 => '警报',
     4 => '用户',
     _ => '磨坊系统',
   };
