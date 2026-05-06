@@ -34,6 +34,7 @@ class AuthRepository extends ChangeNotifier {
 
   bool _isLoggedIn = false;
   String? _username;
+  String? _activeToken;
   bool _handlingUnauthorized = false;
 
   /// 当前是否处于已登录态。
@@ -57,6 +58,7 @@ class AuthRepository extends ChangeNotifier {
         return false;
       }
       _username = null; // 暂未持久化用户名，留空；下次登录会填上。
+      _activeToken = token;
       _isLoggedIn = true;
       _api.setAuthToken(token);
       await _connectRealtimeBestEffort(
@@ -73,6 +75,7 @@ class AuthRepository extends ChangeNotifier {
       await _measurements.stopSessionSync();
       await _storage.clearToken();
       _api.setAuthToken(null);
+      _activeToken = null;
       _isLoggedIn = false;
       _username = null;
       // 这里不通知监听者，因为 App 还没渲染过登录态，状态本来就是未登录。
@@ -90,6 +93,7 @@ class AuthRepository extends ChangeNotifier {
       // 先确保 token 能持久化，再切到已登录态，避免写存储失败时留下半登录状态。
       await _storage.writeToken(token);
       _api.setAuthToken(token);
+      _activeToken = token;
       _username = username;
       _isLoggedIn = true;
       await _connectRealtimeBestEffort(
@@ -112,9 +116,23 @@ class AuthRepository extends ChangeNotifier {
     await _measurements.stopSessionSync();
     await _storage.clearToken();
     _api.setAuthToken(null);
+    _activeToken = null;
     _isLoggedIn = false;
     _username = null;
     notifyListeners();
+  }
+
+  /// App 回到前台时主动重建实时链路并立即同步一次状态。
+  Future<void> refreshRealtimeSession() async {
+    if (!_isLoggedIn) return;
+    final token = _activeToken;
+    if (token == null || token.isEmpty) return;
+    await _realtime.disconnect();
+    await _connectRealtimeBestEffort(
+      token: token,
+      logContext: 'resume realtime reconnect failed',
+    );
+    await _measurements.refreshSessionSnapshot();
   }
 
   /// 任意数据接口返回 401 时统一清理会话，避免 UI 停留在“假登录态”。
@@ -127,6 +145,7 @@ class AuthRepository extends ChangeNotifier {
       await _measurements.stopSessionSync();
       await _storage.clearToken();
       _api.setAuthToken(null);
+      _activeToken = null;
       _isLoggedIn = false;
       _username = null;
       notifyListeners();

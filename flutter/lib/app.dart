@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -37,17 +39,32 @@ class FlowmeterApp extends StatefulWidget {
   State<FlowmeterApp> createState() => _FlowmeterAppState();
 }
 
-class _FlowmeterAppState extends State<FlowmeterApp> {
+class _FlowmeterAppState extends State<FlowmeterApp>
+    with WidgetsBindingObserver {
   // GoRouter 只在 initState 构造一次，避免热重载时重复创建导致路由状态丢失。
   late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 取出 AuthRepository，用作 GoRouter 的刷新监听器：
     // 登录 / 退出时它会 notifyListeners，Router 收到后会重建当前路由。
     final auth = context.read<AuthRepository>();
     _router = _buildRouter(auth);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<AuthRepository>().refreshRealtimeSession());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override

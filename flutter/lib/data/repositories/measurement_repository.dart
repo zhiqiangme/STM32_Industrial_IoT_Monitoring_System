@@ -156,7 +156,7 @@ class MeasurementRepository {
   Future<void> startSessionSync() async {
     if (_statusPollEnabled) return;
     _statusPollEnabled = true;
-    await _refreshServerSnapshot();
+    await refreshSessionSnapshot();
     _statusPollTimer?.cancel();
     _statusPollTimer = Timer.periodic(_statusPollInterval, (_) {
       unawaited(_refreshServerSnapshot());
@@ -169,6 +169,12 @@ class MeasurementRepository {
     _statusPollTimer?.cancel();
     _statusPollTimer = null;
     _statusPollInFlight = false;
+  }
+
+  /// 在 App 回到前台时主动同步一次，避免依赖下一轮定时器才恢复状态。
+  Future<void> refreshSessionSnapshot() async {
+    if (!_statusPollEnabled) return;
+    await _refreshServerSnapshot();
   }
 
   /// 释放资源：取消定时器、取消订阅、关闭 controller。
