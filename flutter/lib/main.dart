@@ -65,16 +65,17 @@ Future<void> main() async {
 
   // 业务仓库层：负责把 ApiService + RealtimeService 的原始数据
   // 转换成上层 ViewModel 关心的领域模型。
-  final authRepo = AuthRepository(
-    api: api,
-    realtime: realtime,
-    storage: storage,
-  );
   final historyCache = createHistoryCacheService();
   final measurementRepo = MeasurementRepository(
     api: api,
     historyCache: historyCache,
     realtime: realtime,
+  );
+  final authRepo = AuthRepository(
+    api: api,
+    realtime: realtime,
+    measurements: measurementRepo,
+    storage: storage,
   );
   final alarmRepo = AlarmRepository(
     api: api,

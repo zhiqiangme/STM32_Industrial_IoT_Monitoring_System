@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../config/env.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/result.dart';
+import 'measurement_repository.dart';
 import '../services/api_service.dart';
 import '../services/realtime_service.dart';
 import '../services/secure_storage_service.dart';
@@ -16,9 +17,11 @@ class AuthRepository extends ChangeNotifier {
   AuthRepository({
     required ApiService api,
     required RealtimeService realtime,
+    required MeasurementRepository measurements,
     required SecureStorageService storage,
   })  : _api = api,
         _realtime = realtime,
+        _measurements = measurements,
         _storage = storage {
     _api.setUnauthorizedHandler(_handleUnauthorized);
     _realtime.setUnauthorizedHandler(_handleUnauthorized);
@@ -26,8 +29,8 @@ class AuthRepository extends ChangeNotifier {
 
   final ApiService _api;
   final RealtimeService _realtime;
+  final MeasurementRepository _measurements;
   final SecureStorageService _storage;
-
 
   bool _isLoggedIn = false;
   String? _username;
@@ -60,12 +63,14 @@ class AuthRepository extends ChangeNotifier {
         token: token,
         logContext: 'restore session realtime connect failed',
       );
+      await _measurements.startSessionSync();
       notifyListeners();
       return true;
     } catch (e) {
       appLog.w('restore session failed: $e');
       // 恢复失败：清掉脏 token，避免下一次启动继续踩同一个错误。
       await _realtime.disconnect();
+      await _measurements.stopSessionSync();
       await _storage.clearToken();
       _api.setAuthToken(null);
       _isLoggedIn = false;
@@ -91,6 +96,7 @@ class AuthRepository extends ChangeNotifier {
         token: token,
         logContext: 'login realtime connect failed',
       );
+      await _measurements.startSessionSync();
       notifyListeners();
       return const Ok(null);
     } catch (e, st) {
@@ -103,6 +109,7 @@ class AuthRepository extends ChangeNotifier {
   /// 退出登录：断开 WS、清除 token、回到未登录态并通知监听者。
   Future<void> logout() async {
     await _realtime.disconnect();
+    await _measurements.stopSessionSync();
     await _storage.clearToken();
     _api.setAuthToken(null);
     _isLoggedIn = false;
@@ -117,6 +124,7 @@ class AuthRepository extends ChangeNotifier {
     try {
       appLog.w('session expired, logout automatically');
       await _realtime.disconnect();
+      await _measurements.stopSessionSync();
       await _storage.clearToken();
       _api.setAuthToken(null);
       _isLoggedIn = false;

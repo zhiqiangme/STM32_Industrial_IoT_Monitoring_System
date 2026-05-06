@@ -18,6 +18,8 @@ import '../services/realtime_service.dart';
 ///   在"设备通常处于离线"的部署里，这是一类一等公民状态，**不是错误**。
 /// - 历史数据优先走普通 REST，同时合并本地缓存，支持离线回看。
 class MeasurementRepository {
+  static const Duration _statusPollInterval = Duration(seconds: 15);
+
   MeasurementRepository({
     required ApiService api,
     required HistoryCacheService historyCache,
@@ -43,11 +45,17 @@ class MeasurementRepository {
   DeviceStatus _status = DeviceStatus.unknown();
 
   /// 最近一次收到遥测帧的"本地接收时间"（不是设备时间戳）。
+  /// WS 实时帧或 HTTP 兜底轮询确认到新数据时都会刷新它，
   /// 用于计算超过 [Env.telemetryOfflineTimeout] 后是否应判定为离线。
   DateTime? _lastTelemetryReceivedAt;
 
   /// 离线判定的延时定时器。每次收到新帧后会重置。
   Timer? _offlineTimer;
+
+  /// 登录态下的 HTTP 轮询兜底：用于覆盖移动端长连被系统/NAT 静默掐断的情况。
+  Timer? _statusPollTimer;
+  bool _statusPollEnabled = false;
+  bool _statusPollInFlight = false;
 
   /// 设备状态变化时触发的回调，用于生成客户端告警。
   /// 由 [AlarmRepository] 注入。
@@ -144,8 +152,28 @@ class MeasurementRepository {
     }
   }
 
+  /// 登录后开启状态轮询兜底；重复调用幂等。
+  Future<void> startSessionSync() async {
+    if (_statusPollEnabled) return;
+    _statusPollEnabled = true;
+    await _refreshServerSnapshot();
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(_statusPollInterval, (_) {
+      unawaited(_refreshServerSnapshot());
+    });
+  }
+
+  /// 退出登录时停止轮询，避免未登录状态持续打接口。
+  Future<void> stopSessionSync() async {
+    _statusPollEnabled = false;
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
+    _statusPollInFlight = false;
+  }
+
   /// 释放资源：取消定时器、取消订阅、关闭 controller。
   Future<void> dispose() async {
+    await stopSessionSync();
     _offlineTimer?.cancel();
     await _sub?.cancel();
     await _historyCache.dispose();
@@ -183,6 +211,39 @@ class MeasurementRepository {
     _scheduleOfflineCheck(Env.telemetryOfflineTimeout);
   }
 
+  /// 会话级兜底：定期用 HTTP 确认服务端最近一帧与在线状态。
+  ///
+  /// 如果发现服务端的 lastSeen 继续前进，但本地 WS 一直没把最新遥测推过来，
+  /// 则补拉一次 `/api/latest`，避免 UI 因长连接静默失活而卡死在旧数据上。
+  Future<void> _refreshServerSnapshot() async {
+    if (!_statusPollEnabled || _statusPollInFlight) return;
+    _statusPollInFlight = true;
+    try {
+      final status = await _api.getStatus();
+      if (!_statusPollEnabled) return;
+
+      final normalized = _normalizeStatus(status);
+      if (normalized.online) {
+        _lastTelemetryReceivedAt = DateTime.now();
+      }
+      _setStatus(normalized);
+
+      final serverLastSeen = normalized.lastSeen;
+      if (serverLastSeen != null && _shouldPullLatestSnapshot(serverLastSeen)) {
+        final latest = await _api.getLatest();
+        if (!_statusPollEnabled) return;
+        _lastMeasurement = latest;
+        _lastTelemetryReceivedAt = DateTime.now();
+        _liveCtrl.add(latest);
+        unawaited(_persistMeasurementToCache(latest));
+      }
+    } catch (e) {
+      appLog.w('session sync failed: $e');
+    } finally {
+      _statusPollInFlight = false;
+    }
+  }
+
   /// 把后端给的状态结合本地最近一次帧时间做"消歧"：
   /// 即使 `mqttConnected=true`，如果最近一次设备数据距今太久，
   /// 也认为设备离线，避免出现"链路在线但数据陈旧"的迷惑提示。
@@ -216,6 +277,18 @@ class MeasurementRepository {
     return lastSeen.isAfter(
       DateTime.now().subtract(Env.telemetryOfflineTimeout),
     );
+  }
+
+  /// 仅当本地实时流已经沉默一小段时间，且服务端 lastSeen 明显更近时，
+  /// 才回源补拉最新值，避免在 WS 正常时重复请求 `/api/latest`。
+  bool _shouldPullLatestSnapshot(DateTime serverLastSeen) {
+    final localMeasurementTime = _lastMeasurement?.timestamp;
+    final wsAppearsStale = _lastTelemetryReceivedAt == null ||
+        DateTime.now().difference(_lastTelemetryReceivedAt!) >=
+            _statusPollInterval;
+    if (!wsAppearsStale) return false;
+    if (localMeasurementTime == null) return true;
+    return serverLastSeen.isAfter(localMeasurementTime);
   }
 
   /// 重新安排离线检测定时器。
