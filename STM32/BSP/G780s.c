@@ -33,6 +33,7 @@ static volatile uint8_t g_telemetry_pending_ready = 0u;
 static volatile uint8_t g_telemetry_waiting_ack = 0u;
 static uint32_t g_telemetry_last_send_tick = 0u;
 static uint32_t g_telemetry_last_prepare_tick = 0u;
+static volatile uint32_t g_json_upload_period_ms = 10000UL;
 static G780sJsonCommand g_pending_json_command = {0};
 static uint8_t g_json_command_pending = 0u;
 static uint8_t g_json_rx_active = 0u;
@@ -48,7 +49,7 @@ static char g_telemetry_tx_buffer[320];
 #define G780S_DIAG_VERSION          0x0002u
 #define G780S_JSON_DEVICE_ID        "FM002"
 #define G780S_JSON_ACK_TIMEOUT_MS   5000UL
-#define G780S_JSON_UPLOAD_PERIOD_MS 10000UL
+#define G780S_JSON_UPLOAD_PERIOD_DEFAULT_MS 10000UL
 
 typedef struct
 {
@@ -481,6 +482,7 @@ static void G780s_HandleJsonFrame(const char *json_text)
         g_pending_json_command.type = G780S_JSON_CMD_RELAY_SET;
         g_pending_json_command.cmd_seq = value;
         g_pending_json_command.relay_mask = (uint16_t)(relay_mask & 0xFFFFu);
+        g_pending_json_command.upload_period_s = 0u;
         g_json_command_pending = 1u;
     }
     else if (strcmp(type, "ota_prepare") == 0)
@@ -488,6 +490,22 @@ static void G780s_HandleJsonFrame(const char *json_text)
         g_pending_json_command.type = G780S_JSON_CMD_OTA_PREPARE;
         g_pending_json_command.cmd_seq = value;
         g_pending_json_command.relay_mask = 0u;
+        g_pending_json_command.upload_period_s = 0u;
+        g_json_command_pending = 1u;
+    }
+    else if (strcmp(type, "set_upload_period") == 0)
+    {
+        uint32_t seconds = 0u;
+
+        if (G780s_JsonExtractUint32(json_text, "seconds", &seconds) == 0u)
+        {
+            return;
+        }
+
+        g_pending_json_command.type = G780S_JSON_CMD_SET_UPLOAD_PERIOD;
+        g_pending_json_command.cmd_seq = value;
+        g_pending_json_command.relay_mask = 0u;
+        g_pending_json_command.upload_period_s = (uint16_t)seconds;
         g_json_command_pending = 1u;
     }
 }
@@ -1592,6 +1610,7 @@ void G780s_Init(void)
     g_telemetry_waiting_ack = 0u;
     g_telemetry_last_send_tick = 0u;
     g_telemetry_last_prepare_tick = 0u;
+    g_json_upload_period_ms = G780S_JSON_UPLOAD_PERIOD_DEFAULT_MS;
     g_json_command_pending = 0u;
     g_json_rx_active = 0u;
     g_json_rx_length = 0u;
@@ -1759,7 +1778,7 @@ void G780s_UpdateData(const G780sSlaveData *data)
         /* 首帧允许立即上送，避免开机后长时间没有云端可见数据。 */
         should_prepare = 1u;
     }
-    else if ((now - g_telemetry_last_prepare_tick) >= G780S_JSON_UPLOAD_PERIOD_MS)
+    else if ((now - g_telemetry_last_prepare_tick) >= g_json_upload_period_ms)
     {
         /* 采样仍保持 2 秒一次，但透明链路 telemetry 节流到 10 秒一次。 */
         should_prepare = 1u;
@@ -1841,6 +1860,24 @@ uint8_t G780s_ConsumeBootUpgradeRequest(void)
     return pending;
 }
 
+uint8_t G780s_SetJsonUploadPeriodSeconds(uint16_t seconds)
+{
+    uint32_t period_ms;
+
+    if (seconds != 2u && seconds != 10u && seconds != 30u && seconds != 60u)
+    {
+        return G780S_ERR_BAD_COMMAND;
+    }
+
+    period_ms = (uint32_t)seconds * 1000UL;
+    __disable_irq();
+    g_json_upload_period_ms = period_ms;
+    g_telemetry_last_prepare_tick = 0u;
+    __enable_irq();
+
+    return G780S_ERR_NONE;
+}
+
 uint8_t G780s_ConsumeJsonCommand(G780sJsonCommand *out_command)
 {
     uint8_t pending;
@@ -1885,6 +1922,10 @@ void G780s_ReportCommandAck(const G780sJsonCommand *command,
 
         case G780S_JSON_CMD_OTA_PREPARE:
             cmd_name = "ota_prepare";
+            break;
+
+        case G780S_JSON_CMD_SET_UPLOAD_PERIOD:
+            cmd_name = "set_upload_period";
             break;
 
         default:

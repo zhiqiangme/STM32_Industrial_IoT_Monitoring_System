@@ -365,6 +365,7 @@ typedef enum
     G780S_JSON_CMD_NONE = 0,
     G780S_JSON_CMD_RELAY_SET = 1,
     G780S_JSON_CMD_OTA_PREPARE = 2,
+    G780S_JSON_CMD_SET_UPLOAD_PERIOD = 3,
 } G780sJsonCommandType;
 
 typedef struct
@@ -372,6 +373,7 @@ typedef struct
     G780sJsonCommandType type;
     uint32_t cmd_seq;
     uint16_t relay_mask;
+    uint16_t upload_period_s;
 } G780sJsonCommand;
 
 /**
@@ -437,6 +439,7 @@ void G780s_GetActiveConfig(G780sRemoteConfig *out_config);
  */
 uint8_t G780s_IsAutoMode(void);
 uint8_t G780s_ConsumeBootUpgradeRequest(void);
+uint8_t G780s_SetJsonUploadPeriodSeconds(uint16_t seconds);
 uint8_t G780s_ConsumeJsonCommand(G780sJsonCommand *out_command);
 void G780s_ReportCommandAck(const G780sJsonCommand *command,
                             const char *result,

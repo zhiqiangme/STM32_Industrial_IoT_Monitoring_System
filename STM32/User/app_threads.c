@@ -662,6 +662,19 @@ static void App_HandleJsonCommands(const G780sRemoteConfig *runtime_config)
                 }
                 break;
 
+            case G780S_JSON_CMD_SET_UPLOAD_PERIOD:
+                printf("[JSON] set_upload_period %us\r\n",
+                       (unsigned int)command.upload_period_s);
+                if (G780s_SetJsonUploadPeriodSeconds(command.upload_period_s) == G780S_ERR_NONE)
+                {
+                    G780s_ReportCommandAck(&command, "ok", 0u, 0u);
+                }
+                else
+                {
+                    G780s_ReportCommandAck(&command, "invalid_period", 0u, 0u);
+                }
+                break;
+
             default:
                 break;
         }
