@@ -6,7 +6,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// （例如单测里用一个内存版本的 fake 实现）。
 class SecureStorageService {
   SecureStorageService({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+      : _storage = storage ??
+            const FlutterSecureStorage(
+              // EncryptedSharedPreferences 比默认 RSA Keystore 实现更稳：
+              // 调试期反复重装 / OS 升级时不易解密失败，避免 token 被误清。
+              aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            );
 
   final FlutterSecureStorage _storage;
 

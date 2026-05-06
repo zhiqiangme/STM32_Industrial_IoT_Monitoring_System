@@ -51,7 +51,6 @@ class HistoryViewModel extends ChangeNotifier {
   final MeasurementRepository _repo;
   final AuthRepository _auth;
   bool _wasLoggedIn = false;
-  bool _lastLoadFailed = false;
   bool _lastStatusOnline = false;
   int _loadRevision = 0;
   DateTime? _lastStatusSeen;
@@ -158,7 +157,6 @@ class HistoryViewModel extends ChangeNotifier {
     }
     _pointsByField = next;
     if (anySuccess) {
-      _lastLoadFailed = false;
       _error = null;
       appLog.i(
         'history loaded view=${view.name} from=${from.toIso8601String()} '
@@ -169,7 +167,6 @@ class HistoryViewModel extends ChangeNotifier {
       );
     } else {
       // 全部字段都失败：未登录的 401 静默吞掉，其余暴露给页面。
-      _lastLoadFailed = true;
       _error =
           firstError != null && _shouldHideHistoryError(firstError) ? null : firstError;
       appLog.w(
@@ -197,7 +194,6 @@ class HistoryViewModel extends ChangeNotifier {
       _pointsByField = const {};
       _error = null;
       _loading = false;
-      _lastLoadFailed = false;
       _safeNotifyListeners();
     }
   }
@@ -219,17 +215,18 @@ class HistoryViewModel extends ChangeNotifier {
   }
 
   void _scheduleAutoReload() {
-    if (!_auth.isLoggedIn || _loading || (!isEmpty && !_lastLoadFailed)) {
-      return;
-    }
+    if (!_auth.isLoggedIn || _loading) return;
 
-    // 补传恢复时可能连续收到多帧，防抖后再查历史，避免打爆 REST 接口。
+    // 实时帧到来即排一次重载：防抖窗口足够避免打爆 REST。
+    // 重载时把 _to / _from 推进到当前时间，让 7 天窗口右沿包住新点，
+    // 否则 fetchHistory 的 [from, to] 仍是构造时快照，新点落在区间外。
     _autoReloadTimer?.cancel();
     _autoReloadTimer = Timer(_autoReloadDebounce, () {
       if (_disposed) return;
-      if (_auth.isLoggedIn && !_loading && (isEmpty || _lastLoadFailed)) {
-        load();
-      }
+      if (!_auth.isLoggedIn || _loading) return;
+      _to = DateTime.now();
+      _from = _to.subtract(const Duration(days: 7));
+      load();
     });
   }
 

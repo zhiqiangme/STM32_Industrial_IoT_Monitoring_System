@@ -48,40 +48,48 @@ class AuthRepository extends ChangeNotifier {
   /// 返回值表示本次是否成功恢复会话。
   Future<bool> tryRestoreSession() async {
     _measurements.beginSessionBootstrap();
+
+    // 第一步：读 token。仅当存储介质本身坏了（PlatformException 等）才清掉，
+    // 避免把网络/后端抖动当成"token 失效"误清。
+    String? token;
     try {
-      final token = await _storage.readToken();
-      if (token == null || token.isEmpty) {
-        return false;
-      }
-      if (!Env.useMock && token.startsWith('mock-jwt-')) {
-        // 从旧 Mock 版本升级到真实后端时，丢弃本地假 token，强制重新登录。
-        await _storage.clearToken();
-        return false;
-      }
-      _username = null; // 暂未持久化用户名，留空；下次登录会填上。
-      _activeToken = token;
-      _isLoggedIn = true;
-      _api.setAuthToken(token);
-      await _connectRealtimeBestEffort(
-        token: token,
-        logContext: 'restore session realtime connect failed',
-      );
-      await _measurements.startSessionSync();
-      notifyListeners();
-      return true;
+      token = await _storage.readToken();
     } catch (e) {
-      appLog.w('restore session failed: $e');
-      // 恢复失败：清掉脏 token，避免下一次启动继续踩同一个错误。
-      await _realtime.disconnect();
-      await _measurements.stopSessionSync();
-      await _storage.clearToken();
-      _api.setAuthToken(null);
-      _activeToken = null;
-      _isLoggedIn = false;
-      _username = null;
-      // 这里不通知监听者，因为 App 还没渲染过登录态，状态本来就是未登录。
+      appLog.w('read token failed, clearing storage: $e');
+      try {
+        await _storage.clearToken();
+      } catch (_) {
+        // 清也清不掉就算了，下一次启动还会再试。
+      }
       return false;
     }
+    if (token == null || token.isEmpty) {
+      return false;
+    }
+    if (!Env.useMock && token.startsWith('mock-jwt-')) {
+      // 从旧 Mock 版本升级到真实后端时，丢弃本地假 token，强制重新登录。
+      await _storage.clearToken();
+      return false;
+    }
+
+    // 第二步：进入登录态并尽力建链。
+    // 网络/后端瞬时不可用时保留 token，由 401 拦截器或下次 refresh 处理真正失效。
+    _username = null; // 暂未持久化用户名，留空；下次登录会填上。
+    _activeToken = token;
+    _isLoggedIn = true;
+    _api.setAuthToken(token);
+    await _connectRealtimeBestEffort(
+      token: token,
+      logContext: 'restore session realtime connect failed',
+    );
+    try {
+      await _measurements.startSessionSync();
+    } catch (e) {
+      // 启动期 getStatus / getLatest 抖动不应触发登出，只记日志。
+      appLog.w('startSessionSync failed (keeping session): $e');
+    }
+    notifyListeners();
+    return true;
   }
 
   /// 用户名 / 密码登录。成功后写 token、连 WS、并通知监听者。
