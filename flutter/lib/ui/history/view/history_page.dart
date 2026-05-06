@@ -8,20 +8,20 @@ import 'package:provider/provider.dart';
 import '../../../data/models/history_point.dart';
 import '../view_model/history_view_model.dart';
 
-/// X 轴分度值预设：一个大格代表多少分钟，以及切到该档时一屏显示几个大格。
+/// X 轴分度值预设：一个大格代表多少秒，以及切到该档时一屏显示几个大格。
 /// 可见格数随分度值单调递增；24h 档目标 8 d 会被钳到 fullSpan，铺满整段 7 天。
-const _intervalPresets = <({int minutes, int visibleIntervals, String label})>[
-  (minutes: 5,    visibleIntervals: 6,  label: '5min'),
-  (minutes: 10,   visibleIntervals: 6,  label: '10min'),
-  (minutes: 30,   visibleIntervals: 8,  label: '30min'),
-  (minutes: 60,   visibleIntervals: 8,  label: '1h'),
-  (minutes: 360,  visibleIntervals: 8,  label: '6h'),
-  (minutes: 1440, visibleIntervals: 8,  label: '24h'),
+const _intervalPresets = <({int seconds, int visibleIntervals, String label})>[
+  (seconds: 30,    visibleIntervals: 6,  label: '30s'),
+  (seconds: 60,    visibleIntervals: 6,  label: '1min'),
+  (seconds: 300,   visibleIntervals: 6,  label: '5min'),
+  (seconds: 600,   visibleIntervals: 6,  label: '10min'),
+  (seconds: 3600,  visibleIntervals: 8,  label: '1h'),
+  (seconds: 86400, visibleIntervals: 8,  label: '24h'),
 ];
 
-int _visibleIntervalsFor(int intervalMinutes) {
+int _visibleIntervalsFor(int intervalSeconds) {
   for (final preset in _intervalPresets) {
-    if (preset.minutes == intervalMinutes) return preset.visibleIntervals;
+    if (preset.seconds == intervalSeconds) return preset.visibleIntervals;
   }
   return 6;
 }
@@ -78,11 +78,11 @@ class _Controls extends StatelessWidget {
             segments: [
               for (final preset in _intervalPresets)
                 ButtonSegment(
-                  value: preset.minutes,
+                  value: preset.seconds,
                   label: Text(preset.label),
                 ),
             ],
-            selected: {vm.intervalMinutes},
+            selected: {vm.intervalSeconds},
             showSelectedIcon: false,
             style: SegmentedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -93,7 +93,7 @@ class _Controls extends StatelessWidget {
               shape: const RoundedRectangleBorder(),
             ),
             onSelectionChanged: (s) {
-              vm.setIntervalMinutes(s.first);
+              vm.setIntervalSeconds(s.first);
             },
           );
           final scrollableSegmented = SingleChildScrollView(
@@ -142,6 +142,7 @@ class _Chart extends StatefulWidget {
 class _ChartState extends State<_Chart> {
   String? _lastViewportSignature;
   String? _lastRangeSignature;
+  int? _lastIntervalSeconds;
   double? _viewportMinX;
   double? _viewportMaxX;
 
@@ -197,16 +198,20 @@ class _ChartState extends State<_Chart> {
           final xFontSize = narrow ? 9.0 : 10.0;
           final xReserved = narrow ? 28.0 : 32.0;
           final yFontSize = narrow ? 9.0 : 11.0;
-          final xLabelFormat = _xAxisFormat(vm.from, vm.to);
+          final xLabelFormat = _xAxisFormat(
+            from: vm.from,
+            to: vm.to,
+            intervalSeconds: vm.intervalSeconds,
+          );
 
           final xAxis = _buildXAxisSpec(
             from: vm.from,
             to: vm.to,
-            intervalMinutes: vm.intervalMinutes,
+            intervalSeconds: vm.intervalSeconds,
           );
           final viewportSpan = _viewportSpanForAxis(
             xAxis: xAxis,
-            visibleIntervals: _visibleIntervalsFor(vm.intervalMinutes),
+            visibleIntervals: _visibleIntervalsFor(vm.intervalSeconds),
           );
           // rangeSignature 仅含时间范围；fullSignature 还包含分度值与字段集合。
           // 切换分度值时以视口中心为锚点缩放；时间范围变化时重置到最右端。
@@ -215,9 +220,10 @@ class _ChartState extends State<_Chart> {
           _ensureViewport(
             rangeSignature: rangeSignature,
             fullSignature:
-                '$rangeSignature:${vm.intervalMinutes}:${vm.view.name}',
+                '$rangeSignature:${vm.intervalSeconds}:${vm.view.name}',
             fullAxis: xAxis,
             viewportSpan: viewportSpan,
+            intervalSeconds: vm.intervalSeconds,
           );
           final visibleMinX = _viewportMinX ?? xAxis.minX;
           final visibleMaxX = _viewportMaxX ?? xAxis.maxX;
@@ -447,6 +453,7 @@ class _ChartState extends State<_Chart> {
     required String fullSignature,
     required _XAxisSpec fullAxis,
     required double viewportSpan,
+    required int intervalSeconds,
   }) {
     // 完全未变（含拖动后的状态）→ 保持当前视口。
     if (_lastViewportSignature == fullSignature &&
@@ -457,9 +464,15 @@ class _ChartState extends State<_Chart> {
     _lastViewportSignature = fullSignature;
 
     final rangeChanged = _lastRangeSignature != rangeSignature;
+    final resetToLatestOnPresetChange =
+        _lastIntervalSeconds == 86400 && intervalSeconds != 86400;
     _lastRangeSignature = rangeSignature;
+    _lastIntervalSeconds = intervalSeconds;
 
-    if (rangeChanged || _viewportMinX == null || _viewportMaxX == null) {
+    if (rangeChanged ||
+        resetToLatestOnPresetChange ||
+        _viewportMinX == null ||
+        _viewportMaxX == null) {
       // 时间范围变化或首次加载 → 重置到最右端。
       _viewportMaxX = fullAxis.maxX;
       _viewportMinX = math.max(fullAxis.minX, fullAxis.maxX - viewportSpan);
@@ -707,7 +720,14 @@ class _XAxisSpec {
 }
 
 /// 短区间只显示时分；跨天后再带日期，避免手机窄屏下横轴标签互相压住。
-String _xAxisFormat(DateTime from, DateTime to) {
+String _xAxisFormat({
+  required DateTime from,
+  required DateTime to,
+  required int intervalSeconds,
+}) {
+  if (intervalSeconds < 60) {
+    return 'HH:mm:ss';
+  }
   final span = to.difference(from);
   if (span <= const Duration(hours: 24)) {
     return 'HH:mm';
@@ -718,14 +738,15 @@ String _xAxisFormat(DateTime from, DateTime to) {
 _XAxisSpec _buildXAxisSpec({
   required DateTime from,
   required DateTime to,
-  required int intervalMinutes,
+  required int intervalSeconds,
 }) {
-  final intervalMs = Duration(minutes: intervalMinutes).inMilliseconds.toDouble();
-  final alignedFrom = _floorToMinuteBoundary(from, intervalMinutes);
-  final alignedTo = _ceilToMinuteBoundary(to, intervalMinutes);
+  final interval = Duration(seconds: intervalSeconds);
+  final intervalMs = interval.inMilliseconds.toDouble();
+  final alignedFrom = _floorToIntervalBoundary(from, interval);
+  final alignedTo = _ceilToIntervalBoundary(to, interval);
   final safeTo = alignedTo.isAfter(alignedFrom)
       ? alignedTo
-      : alignedFrom.add(Duration(minutes: intervalMinutes));
+      : alignedFrom.add(interval);
 
   return _XAxisSpec(
     minX: alignedFrom.millisecondsSinceEpoch.toDouble(),
@@ -749,22 +770,19 @@ double _viewportSpanForAxis({
   return desired.clamp(minSpan, fullSpan).toDouble();
 }
 
-DateTime _floorToMinuteBoundary(DateTime value, int intervalMinutes) {
-  final minuteOfDay = value.hour * 60 + value.minute;
-  final flooredMinuteOfDay = (minuteOfDay ~/ intervalMinutes) * intervalMinutes;
-  return DateTime(
-    value.year,
-    value.month,
-    value.day,
-  ).add(Duration(minutes: flooredMinuteOfDay));
+DateTime _floorToIntervalBoundary(DateTime value, Duration interval) {
+  final intervalMs = interval.inMilliseconds;
+  final valueMs = value.millisecondsSinceEpoch;
+  final flooredMs = (valueMs ~/ intervalMs) * intervalMs;
+  return DateTime.fromMillisecondsSinceEpoch(flooredMs, isUtc: false);
 }
 
-DateTime _ceilToMinuteBoundary(DateTime value, int intervalMinutes) {
-  final floored = _floorToMinuteBoundary(value, intervalMinutes);
+DateTime _ceilToIntervalBoundary(DateTime value, Duration interval) {
+  final floored = _floorToIntervalBoundary(value, interval);
   if (floored.isAtSameMomentAs(value)) {
     return value;
   }
-  return floored.add(Duration(minutes: intervalMinutes));
+  return floored.add(interval);
 }
 
 String _formatYAxisValue(HistoryField field, double value, TitleMeta meta) {

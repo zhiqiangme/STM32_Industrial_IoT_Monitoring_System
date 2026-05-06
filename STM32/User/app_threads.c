@@ -786,32 +786,26 @@ static void App_SensorThreadEntry(void *parameter)
             /* 现场总线采集仍是阻塞式，但已被拆到独立线程中运行。 */
             last_sensor_tick = now;
 
-            printf("[FLOW] %.2fL/min, %.3fL\r\n", flow_rate_lpm, flow_total_l);
-
             if (Temperature_Read(&sensor_temp) == 0u)
             {
-                printf("[TEMP] %.1fC\r\n", sensor_temp);
                 pt100_ok = 1u;
                 health_flags |= 0x01u;
             }
             else
             {
                 (void)LogService_SubmitErrorf("PT100 read failed");
-                printf("[TEMP] --\r\n");
             }
 
             (void)rt_thread_mdelay(APP_SENSOR_RETRY_DELAY_MS);
 
             if (Weight_Read(&sensor_weight) == 0u)
             {
-                printf("[WEIGHT] %ldg\r\n", (long)sensor_weight);
                 weight_ok = 1u;
                 health_flags |= 0x02u;
             }
             else
             {
                 (void)LogService_SubmitErrorf("Weight read failed");
-                printf("[WEIGHT] --\r\n");
             }
 
             (void)rt_thread_mdelay(APP_SENSOR_RETRY_DELAY_MS);
@@ -830,7 +824,6 @@ static void App_SensorThreadEntry(void *parameter)
 
             if (Relay_ReadInputPack(&relay_di_state) == 0u)
             {
-                printf("[IO] DO=0x%04X DI=0x%04X\r\n\r\n", relay_do_state, relay_di_state);
                 App_HandleRelayInputs(relay_di_state, &runtime_config, &di_state);
             }
             else

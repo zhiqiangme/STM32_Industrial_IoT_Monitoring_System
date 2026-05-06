@@ -47,6 +47,7 @@ class AuthRepository extends ChangeNotifier {
   /// 不主动调用接口验证 token；首次拉取数据若 401，会触发统一会话清理。
   /// 返回值表示本次是否成功恢复会话。
   Future<bool> tryRestoreSession() async {
+    _measurements.beginSessionBootstrap();
     try {
       final token = await _storage.readToken();
       if (token == null || token.isEmpty) {
@@ -96,6 +97,7 @@ class AuthRepository extends ChangeNotifier {
       _activeToken = token;
       _username = username;
       _isLoggedIn = true;
+      _measurements.beginSessionBootstrap();
       await _connectRealtimeBestEffort(
         token: token,
         logContext: 'login realtime connect failed',

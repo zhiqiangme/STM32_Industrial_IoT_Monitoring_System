@@ -494,6 +494,7 @@ static void G780s_TrySendTelemetry(uint8_t force_resend)
 {
     char local_buffer[sizeof(g_telemetry_tx_buffer)];
     size_t frame_length;
+    uint32_t pending_seq;
 
     if (g_telemetry_pending_ready == 0u)
     {
@@ -511,6 +512,7 @@ static void G780s_TrySendTelemetry(uint8_t force_resend)
                                                sizeof(g_telemetry_tx_buffer));
         frame_length = (eos != NULL) ? (size_t)(eos - g_telemetry_tx_buffer)
                                      : (sizeof(g_telemetry_tx_buffer) - 1u);
+        pending_seq = g_telemetry_pending_seq;
     }
     memcpy(local_buffer, g_telemetry_tx_buffer, frame_length);
     local_buffer[frame_length] = '\0';
@@ -519,6 +521,13 @@ static void G780s_TrySendTelemetry(uint8_t force_resend)
     if (frame_length == 0u)
     {
         return;
+    }
+
+    if (force_resend != 0u)
+    {
+        /* 只在 ACK 超时重发时打印，避免正常 telemetry 周期性刷屏。 */
+        printf("[Cloud][ERR] cloud_ack timeout, resend seq=%lu\r\n",
+               (unsigned long)pending_seq);
     }
 
     Modbus_Slave_SendRawBytes((const uint8_t *)local_buffer, (uint16_t)frame_length);

@@ -61,6 +61,10 @@ class MeasurementRepository {
   /// 由 [AlarmRepository] 注入。
   void Function(Alarm alarm)? onStatusAlarm;
 
+  /// 会话冷启动 / 恢复阶段先抑制在线状态告警，
+  /// 避免把"首次拿到当前在线状态"误判成"离线后恢复在线"。
+  bool _statusAlarmArmed = false;
+
   Stream<Measurement> get liveStream => _liveCtrl.stream;
   Stream<DeviceStatus> get statusStream => _statusCtrl.stream;
 
@@ -169,6 +173,11 @@ class MeasurementRepository {
     _statusPollTimer?.cancel();
     _statusPollTimer = null;
     _statusPollInFlight = false;
+  }
+
+  /// 会话建立期间先关闭状态边沿告警，等待首条状态作为基线。
+  void beginSessionBootstrap() {
+    _statusAlarmArmed = false;
   }
 
   /// 在 App 回到前台时主动同步一次，避免依赖下一轮定时器才恢复状态。
@@ -330,6 +339,10 @@ class MeasurementRepository {
     final wasOnline = _status.online;
     _status = status;
     _statusCtrl.add(status);
+    if (!_statusAlarmArmed) {
+      _statusAlarmArmed = true;
+      return;
+    }
     // 检测在线/离线状态变化，生成客户端告警。
     if (wasOnline && !status.online) {
       onStatusAlarm?.call(Alarm(

@@ -124,6 +124,8 @@ rt_err_t LogService_SubmitErrorf(const char *fmt, ...)
     }
 
     msg.payload.error_text[sizeof(msg.payload.error_text) - 1u] = '\0';
+    /* 异常信息除了落盘，也直接回显到串口1，便于现场快速判断。 */
+    printf("[ERR] %s\r\n", msg.payload.error_text);
     return LogService_SubmitMessage(&msg, rt_tick_from_millisecond(50));
 }
 
