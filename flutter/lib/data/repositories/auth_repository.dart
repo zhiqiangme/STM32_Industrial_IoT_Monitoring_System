@@ -150,6 +150,9 @@ class AuthRepository extends ChangeNotifier {
     if (_handlingUnauthorized || !_isLoggedIn) return;
     _handlingUnauthorized = true;
     try {
+      appLog.w(
+        '[token-trace] _handleUnauthorized fired\n${StackTrace.current}',
+      );
       appLog.w('session expired, logout automatically');
       await _realtime.disconnect();
       await _measurements.stopSessionSync();
