@@ -14,14 +14,15 @@ import 'realtime_service.dart';
 
 /// 基于 WebSocket Secure 的 [RealtimeService] 真实实现。
 ///
-/// 与 `server/services/pipe-monitor-api/src/ws-live.js` 中的服务端
+/// 与 `server/services/stm32-mill-api/src/ws-live.js` 中的服务端
 /// 帧格式对齐：
 /// - `hello` 帧：`{event:"hello", path, ts, latest:[…], stats:{…}}`
 /// - 普通消息帧：`{event:"message", kind:"tele"|"alarm"|"ack",
 ///   device, topic, payload:{…}, receivedAt}`
 ///
 /// 连接时将 JWT token 作为 query 参数拼接到 URL（`?token=<JWT>`），
-/// 服务端据此校验身份，缺失或无效时握手返回 401。
+/// 服务端据此校验身份。客户端只把 REST 401 当作会话失效信号，
+/// WS 首次连接失败或瞬时断线都走重连，不直接清空登录态。
 class WsRealtimeService implements RealtimeService {
   WsRealtimeService();
 
@@ -33,12 +34,6 @@ class WsRealtimeService implements RealtimeService {
 
   /// 当前连接使用的 JWT token，由 [connect] 传入。
   String? _token;
-
-  /// 连接是否曾成功接收过至少一帧。用于区分握手拒绝（401）与正常断线。
-  bool _everConnected = false;
-
-  /// 握手阶段鉴权失败时的回调（由 [AuthRepository] 注册）。
-  UnauthorizedHandler? _onUnauthorized;
 
   /// 重连退避：失败一次翻倍，封顶 [Env.wsReconnectMaxBackoff]。
   Duration _backoff = const Duration(seconds: 1);
@@ -55,7 +50,7 @@ class WsRealtimeService implements RealtimeService {
 
   @override
   void setUnauthorizedHandler(UnauthorizedHandler? handler) {
-    _onUnauthorized = handler;
+    // WebSocket 握手阶段拿不到稳定的 401 语义；这里避免把瞬时断线误判成登录失效。
   }
 
   @override
@@ -78,7 +73,6 @@ class WsRealtimeService implements RealtimeService {
   Future<void> _open() async {
     final uri = Uri.parse('${Env.wsUrl}?token=$_token');
     try {
-      _everConnected = false;
       _channel = WebSocketChannel.connect(uri);
       _sub = _channel!.stream.listen(
         _onMessage,
@@ -107,7 +101,6 @@ class WsRealtimeService implements RealtimeService {
 
   /// 接收一帧原始数据并尝试解析为 JSON。
   void _onMessage(dynamic data) {
-    _everConnected = true;
     try {
       // 服务端可能发字符串，也可能发二进制帧；都按 UTF-8 处理。
       final text = data is String ? data : utf8.decode(data as List<int>);
@@ -199,19 +192,11 @@ class WsRealtimeService implements RealtimeService {
   }
 
   /// 通道关闭：清理订阅并尝试重连。
-  ///
-  /// 如果连接从未成功接收过数据就关闭了（通常是握手阶段 401 拒绝），
-  /// 通知上层鉴权失败并停止重连，避免用过期 token 无限重试。
   void _onClosed() {
     _isConnected = false;
     _sub?.cancel();
     _sub = null;
     _channel = null;
-    if (!_everConnected && _shouldReconnect) {
-      appLog.w('WS closed before receiving any data — likely auth failure');
-      _onUnauthorized?.call();
-      return;
-    }
     if (_shouldReconnect) _scheduleReconnect();
   }
 

@@ -21,7 +21,7 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace = "com.varka.mill"
+    namespace = "cn.varka.mill"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -35,7 +35,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.varka.mill"
+        applicationId = "cn.varka.mill"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

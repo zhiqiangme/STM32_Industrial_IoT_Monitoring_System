@@ -172,8 +172,14 @@ class SqfliteHistoryCacheService implements HistoryCacheService {
     add(HistoryField.total.id, measurement.total);
     add(HistoryField.weight.id, measurement.weight);
 
+    const tempFields = [
+      HistoryField.t1,
+      HistoryField.t2,
+      HistoryField.t3,
+      HistoryField.t4,
+    ];
     for (var i = 0; i < measurement.temperatures.length && i < 4; i++) {
-      add(HistoryField.values[3 + i].id, measurement.temperatures[i]);
+      add(tempFields[i].id, measurement.temperatures[i]);
     }
     return rows;
   }

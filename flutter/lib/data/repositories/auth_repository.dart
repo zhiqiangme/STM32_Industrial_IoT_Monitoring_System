@@ -53,16 +53,19 @@ class AuthRepository extends ChangeNotifier {
         await _storage.clearToken();
         return false;
       }
-      _api.setAuthToken(token);
-      // 实时通道当前不强制鉴权，token 仅为接口对齐保留。
-      await _realtime.connect(token: token);
       _username = null; // 暂未持久化用户名，留空；下次登录会填上。
       _isLoggedIn = true;
+      _api.setAuthToken(token);
+      await _connectRealtimeBestEffort(
+        token: token,
+        logContext: 'restore session realtime connect failed',
+      );
       notifyListeners();
       return true;
     } catch (e) {
       appLog.w('restore session failed: $e');
       // 恢复失败：清掉脏 token，避免下一次启动继续踩同一个错误。
+      await _realtime.disconnect();
       await _storage.clearToken();
       _api.setAuthToken(null);
       _isLoggedIn = false;
@@ -79,12 +82,15 @@ class AuthRepository extends ChangeNotifier {
   }) async {
     try {
       final token = await _api.login(username: username, password: password);
-      // 先告诉 ApiService 后续请求要带上这个 token，再持久化与连 WS。
-      _api.setAuthToken(token);
+      // 先确保 token 能持久化，再切到已登录态，避免写存储失败时留下半登录状态。
       await _storage.writeToken(token);
-      await _realtime.connect(token: token);
+      _api.setAuthToken(token);
       _username = username;
       _isLoggedIn = true;
+      await _connectRealtimeBestEffort(
+        token: token,
+        logContext: 'login realtime connect failed',
+      );
       notifyListeners();
       return const Ok(null);
     } catch (e, st) {
@@ -118,6 +124,18 @@ class AuthRepository extends ChangeNotifier {
       notifyListeners();
     } finally {
       _handlingUnauthorized = false;
+    }
+  }
+
+  /// WS 仅作为实时能力补充；连接失败时保留当前登录态，等待内部自动重连。
+  Future<void> _connectRealtimeBestEffort({
+    required String token,
+    required String logContext,
+  }) async {
+    try {
+      await _realtime.connect(token: token);
+    } catch (e) {
+      appLog.w('$logContext: $e');
     }
   }
 

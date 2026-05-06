@@ -1,5 +1,5 @@
 name: mill
-description: "磨坊系统 — STM32 传感器实时监控 (com.varka.mill)。"
+description: "磨坊系统 — STM32 传感器实时监控 (cn.varka.mill)。"
 publish_to: 'none'
 
 version: 1.0.0+1

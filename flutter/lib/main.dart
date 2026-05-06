@@ -84,10 +84,6 @@ Future<void> main() async {
   );
   final commandRepo = CommandRepository(api: api, realtime: realtime);
 
-  // 启动时尝试用持久化的 token 直接恢复会话；
-  // 没 token 或失败时静默回到未登录态，App 仍能正常进入空壳界面。
-  await authRepo.tryRestoreSession();
-
   // 通过 MultiProvider 把全部依赖注入到 widget 树。
   // 用 Provider.value / Provider 区分：
   //   - .value：已经构造好的对象，由调用方负责生命周期；
@@ -121,4 +117,9 @@ Future<void> main() async {
       child: const FlowmeterApp(),
     ),
   );
+
+  // 启动时尝试用持久化的 token 直接恢复会话；
+  // 没 token 或失败时静默回到未登录态，App 仍能正常进入空壳界面。
+  // 放在 runApp 之后避免阻塞首帧渲染导致长时间白屏。
+  unawaited(authRepo.tryRestoreSession());
 }

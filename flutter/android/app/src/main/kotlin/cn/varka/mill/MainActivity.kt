@@ -1,4 +1,4 @@
-package com.varka.mill
+package cn.varka.mill
 
 import io.flutter.embedding.android.FlutterActivity
 
