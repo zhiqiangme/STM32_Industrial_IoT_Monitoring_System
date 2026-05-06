@@ -55,6 +55,14 @@ class DashboardViewModel extends ChangeNotifier {
 
   /// 首次 / 下拉刷新：主动拉一次最新值和设备状态。
   Future<void> _loadInitial() async {
+    // 未登录时保持空壳，不主动打需要鉴权的接口，
+    // 避免冷启动恢复会话前的匿名 401 与恢复中的真会话互相打架。
+    if (!_auth.isLoggedIn) {
+      _loading = false;
+      _error = null;
+      _safeNotifyListeners();
+      return;
+    }
     // 进入页面时先查一次真实状态，避免默认显示"在线"。
     await _repo.fetchStatus();
     // 已经有缓存值就不再多打一次 REST，直接等实时流推。
@@ -78,6 +86,7 @@ class DashboardViewModel extends ChangeNotifier {
 
   /// 下拉刷新：同时刷新状态和测量值。
   Future<void> refresh() async {
+    if (!_auth.isLoggedIn) return;
     await _repo.fetchStatus();
     if (_disposed) return;
     await _loadInitial();

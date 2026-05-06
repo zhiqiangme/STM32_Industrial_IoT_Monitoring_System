@@ -118,6 +118,13 @@ class HistoryViewModel extends ChangeNotifier {
   /// 重新拉取曲线数据：当前视图的所有字段并发拉取。
   Future<void> load() async {
     if (_disposed) return;
+    if (!_auth.isLoggedIn) {
+      _pointsByField = const {};
+      _loading = false;
+      _error = null;
+      _safeNotifyListeners();
+      return;
+    }
     final loadRevision = ++_loadRevision;
     final view = _view;
     final from = _from;

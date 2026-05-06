@@ -31,14 +31,20 @@ class HttpApiService implements ApiService {
         onRequest: (options, handler) {
           // 请求阶段统一注入 token；登录接口本身不依赖 token，多带也无妨。
           final token = _token;
-          if (token != null && token.isNotEmpty) {
+          final usedAuthToken = token != null && token.isNotEmpty;
+          // 记录本次请求是否真的带了本地 token。
+          // 冷启动恢复会话前发出的匿名请求若返回 401，不应误判成“已登录会话失效”。
+          options.extra['usedAuthToken'] = usedAuthToken;
+          if (usedAuthToken) {
             options.headers['Authorization'] = 'Bearer $token';
           }
           handler.next(options);
         },
         onError: (error, handler) {
+          final usedAuthToken = error.requestOptions.extra['usedAuthToken'] == true;
           if (error.response?.statusCode == 401 &&
-              error.requestOptions.path != '/api/auth/login') {
+              error.requestOptions.path != '/api/auth/login' &&
+              usedAuthToken) {
             final onUnauthorized = _unauthorizedHandler;
             if (onUnauthorized != null) {
               // 401 表示本地 token 已失效，异步通知仓库统一退出登录。

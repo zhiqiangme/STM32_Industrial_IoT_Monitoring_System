@@ -95,6 +95,13 @@ class AlarmViewModel extends ChangeNotifier {
   /// 拉取最近 30 天的历史告警。
   Future<void> load() async {
     if (_disposed) return;
+    if (!_auth.isLoggedIn) {
+      _items = const [];
+      _loading = false;
+      _error = null;
+      _safeNotifyListeners();
+      return;
+    }
     _loading = true;
     _error = null;
     _safeNotifyListeners();
