@@ -32,6 +32,7 @@ static volatile uint32_t g_telemetry_pending_seq = 0u;
 static volatile uint8_t g_telemetry_pending_ready = 0u;
 static volatile uint8_t g_telemetry_waiting_ack = 0u;
 static uint32_t g_telemetry_last_send_tick = 0u;
+static uint32_t g_telemetry_last_prepare_tick = 0u;
 static G780sJsonCommand g_pending_json_command = {0};
 static uint8_t g_json_command_pending = 0u;
 static uint8_t g_json_rx_active = 0u;
@@ -47,6 +48,7 @@ static char g_telemetry_tx_buffer[320];
 #define G780S_DIAG_VERSION          0x0002u
 #define G780S_JSON_DEVICE_ID        "FM002"
 #define G780S_JSON_ACK_TIMEOUT_MS   5000UL
+#define G780S_JSON_UPLOAD_PERIOD_MS 10000UL
 
 typedef struct
 {
@@ -1573,6 +1575,7 @@ void G780s_Init(void)
     g_telemetry_pending_ready = 0u;
     g_telemetry_waiting_ack = 0u;
     g_telemetry_last_send_tick = 0u;
+    g_telemetry_last_prepare_tick = 0u;
     g_json_command_pending = 0u;
     g_json_rx_active = 0u;
     g_json_rx_length = 0u;
@@ -1692,6 +1695,8 @@ void G780s_RxCallback(uint8_t byte)
 void G780s_UpdateData(const G780sSlaveData *data)
 {
     G780sSlaveData snapshot;
+    uint32_t now;
+    uint8_t should_prepare = 0u;
 
     if (data == NULL)
     {
@@ -1732,7 +1737,23 @@ void G780s_UpdateData(const G780sSlaveData *data)
 
     __enable_irq();
 
-    G780s_PrepareTelemetryFrame(&snapshot);
+    now = HAL_GetTick();
+    if (g_telemetry_last_prepare_tick == 0u)
+    {
+        /* 首帧允许立即上送，避免开机后长时间没有云端可见数据。 */
+        should_prepare = 1u;
+    }
+    else if ((now - g_telemetry_last_prepare_tick) >= G780S_JSON_UPLOAD_PERIOD_MS)
+    {
+        /* 采样仍保持 2 秒一次，但透明链路 telemetry 节流到 10 秒一次。 */
+        should_prepare = 1u;
+    }
+
+    if (should_prepare != 0u)
+    {
+        g_telemetry_last_prepare_tick = now;
+        G780s_PrepareTelemetryFrame(&snapshot);
+    }
 }
 
 /**
