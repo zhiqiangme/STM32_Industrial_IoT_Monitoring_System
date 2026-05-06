@@ -139,7 +139,7 @@ class _LoginFormViewState extends State<_LoginFormView> {
   }
 }
 
-/// 已登录态：账号信息 + 设置占位 + 退出登录。
+/// 已登录态：账号信息 + 功能入口 + 设置。
 class _LoggedInView extends StatelessWidget {
   const _LoggedInView({required this.vm});
 
@@ -148,6 +148,17 @@ class _LoggedInView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final username = vm.currentUsername ?? '已登录';
+    final message = vm.uploadMessage;
+    if (message != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+        vm.clearUploadMessage();
+      });
+    }
+
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       children: [
@@ -169,47 +180,72 @@ class _LoggedInView extends StatelessWidget {
           ),
         ),
         const Divider(),
+        _UploadPeriodTile(vm: vm),
+        const Divider(height: 1),
         ListTile(
           leading: const Icon(Icons.settings_outlined),
           title: const Text('设置'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.push('/user/settings'),
         ),
-        const Divider(),
-        // 退出登录：点击后回到未登录态，三个数据 Tab 同时清空。
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: FilledButton.tonalIcon(
-            onPressed: () => _confirmLogout(context),
-            icon: const Icon(Icons.logout),
-            label: const Text('退出登录'),
-          ),
-        ),
       ],
     );
   }
+}
 
-  /// 退出前给一个确认弹窗，避免误触。
-  Future<void> _confirmLogout(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确定要退出当前账号吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+class _UploadPeriodTile extends StatelessWidget {
+  const _UploadPeriodTile({required this.vm});
+
+  static const _periods = [2, 10, 30, 60];
+
+  final UserViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.schedule_outlined),
+            title: const Text('网关上报频率'),
+            subtitle: Text('当前 ${_formatPeriod(vm.uploadPeriodSeconds)}'),
+            trailing: vm.uploadBusy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : null,
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('退出'),
+          const SizedBox(height: 4),
+          SegmentedButton<int>(
+            segments: [
+              for (final seconds in _periods)
+                ButtonSegment<int>(
+                  value: seconds,
+                  label: Text(_formatPeriod(seconds)),
+                ),
+            ],
+            selected: {vm.uploadPeriodSeconds},
+            onSelectionChanged: vm.uploadBusy
+                ? null
+                : (values) => vm.setUploadPeriod(values.first),
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              side: WidgetStatePropertyAll(
+                BorderSide(color: color.outlineVariant),
+              ),
+            ),
           ),
         ],
       ),
     );
-    if (confirmed == true) {
-      await vm.logout();
-    }
   }
+
+  static String _formatPeriod(int seconds) =>
+      seconds == 60 ? '1 分钟' : '$seconds 秒';
 }

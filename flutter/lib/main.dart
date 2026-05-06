@@ -95,6 +95,7 @@ Future<void> main() async {
         Provider<SecureStorageService>.value(value: storage),
         ChangeNotifierProvider<ThemeModeController>.value(value: themeController),
         Provider<ApiService>.value(value: api),
+        Provider<SharedPreferences>.value(value: preferences),
         Provider<RealtimeService>(
           create: (_) => realtime,
           // dispose 用 unawaited 避免阻塞 widget 销毁。

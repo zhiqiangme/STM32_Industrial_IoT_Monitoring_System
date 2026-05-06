@@ -58,7 +58,7 @@ class CommandRepository {
     }
 
     final now = DateTime.now();
-    final pendingSeqs = _pending.keys.toList(growable: false);
+    final pendingSeqs = _expectedRelayMasks.keys.toList(growable: false);
     for (final seq in pendingSeqs) {
       final completer = _pending.remove(seq);
       final cmd = _inFlight.remove(seq);
@@ -156,6 +156,35 @@ class CommandRepository {
       return Ok(finished);
     } catch (e, st) {
       appLog.w('sendRelaySet failed: $e');
+      return Err(e, st);
+    }
+  }
+
+  /// 发起一次上报周期设置命令，并等待设备 ack。
+  Future<Result<Command>> sendUploadPeriod(int seconds) async {
+    try {
+      final cmd = await _api.sendUploadPeriod(seconds: seconds);
+      final completer = Completer<Command>();
+      _pending[cmd.seq] = completer;
+      _inFlight[cmd.seq] = cmd;
+
+      // 周期设置没有遥测字段可兜底，必须等设备 ack 或超时。
+      _timeoutTimers[cmd.seq] = Timer(Env.commandAckTimeout, () {
+        _timeoutTimers.remove(cmd.seq);
+        if (!completer.isCompleted) {
+          _pending.remove(cmd.seq);
+          _inFlight.remove(cmd.seq);
+          completer.complete(cmd.copyWith(
+            status: CommandStatus.failed,
+            result: 'timeout',
+          ));
+        }
+      });
+
+      final finished = await completer.future;
+      return Ok(finished);
+    } catch (e, st) {
+      appLog.w('sendUploadPeriod failed: $e');
       return Err(e, st);
     }
   }

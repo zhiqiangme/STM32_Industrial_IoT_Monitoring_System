@@ -155,8 +155,11 @@ class _FlowmeterAppState extends State<FlowmeterApp>
               GoRoute(
                 path: '/user',
                 builder: (context, state) => ChangeNotifierProvider(
-                  create: (c) =>
-                      UserViewModel(repository: c.read<AuthRepository>()),
+                  create: (c) => UserViewModel(
+                    repository: c.read<AuthRepository>(),
+                    commands: c.read(),
+                    preferences: c.read(),
+                  ),
                   child: const UserPage(),
                 ),
                 routes: [

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../../../data/repositories/auth_repository.dart';
 import '../theme_mode_controller.dart';
 
 /// 设置页：主题偏好 + 版本信息。
@@ -40,6 +42,12 @@ class _SettingsPageState extends State<SettingsPage> {
             leading: const Icon(Icons.info_outline),
             title: const Text('版本号'),
             subtitle: Text(_version),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('退出登录'),
+            onTap: () => _confirmLogout(context),
           ),
         ],
       ),
@@ -90,5 +98,32 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       },
     );
+  }
+
+  /// 退出登录放在设置页，避免用户首页功能入口被账号操作打断。
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确定要退出当前账号吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await context.read<AuthRepository>().logout();
+      if (context.mounted) {
+        context.go('/user');
+      }
+    }
   }
 }

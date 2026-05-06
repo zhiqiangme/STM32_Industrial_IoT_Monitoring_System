@@ -191,4 +191,20 @@ class HttpApiService implements ApiService {
     }
     return Command.fromJson(body);
   }
+
+  @override
+  Future<Command> sendUploadPeriod({required int seconds}) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/api/commands/upload-period',
+      data: {
+        'dev': Env.deviceId,
+        'seconds': seconds,
+      },
+    );
+    final body = res.data;
+    if (body == null) {
+      throw StateError('上报周期接口返回了空响应');
+    }
+    return Command.fromJson(body);
+  }
 }

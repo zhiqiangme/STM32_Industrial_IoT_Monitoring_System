@@ -47,4 +47,7 @@ abstract interface class ApiService {
 
   /// `POST /api/commands/relay-set` —— 下发继电器目标位图。
   Future<Command> sendRelaySet({required int mask});
+
+  /// `POST /api/commands/upload-period` —— 下发透明链路上报周期。
+  Future<Command> sendUploadPeriod({required int seconds});
 }

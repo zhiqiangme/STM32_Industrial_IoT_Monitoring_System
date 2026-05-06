@@ -154,6 +154,22 @@ class MockApiService implements ApiService {
     return cmd;
   }
 
+  @override
+  Future<Command> sendUploadPeriod({required int seconds}) async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final cmd = Command(
+      seq: DateTime.now().millisecondsSinceEpoch,
+      cmd: 'set_upload_period',
+      params: {'seconds': seconds},
+      sentAt: DateTime.now(),
+      status: CommandStatus.sent,
+    );
+    Timer(const Duration(milliseconds: 500), () {
+      realtime.simulateAck(cmd.seq, 'ok');
+    });
+    return cmd;
+  }
+
   /// 各字段的基线值（曲线均值）。CH2~CH4 与 CH1 略偏，保证 4 张小图视觉差异。
   double _baseFor(HistoryField f) => switch (f) {
         HistoryField.flow => 12.0,
