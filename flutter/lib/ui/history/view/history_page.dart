@@ -27,7 +27,7 @@ int _visibleIntervalsFor(int intervalSeconds) {
 }
 
 const double _chartDragSensitivity = 2.5;
-const double _multiChannelGap = 0.0;
+const double _multiChannelGap = 4.0;
 const Duration _historyMinGapBreakThreshold = Duration(seconds: 90);
 const int _historyGapBreakMultiplier = 3;
 
