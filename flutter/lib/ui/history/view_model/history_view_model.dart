@@ -84,13 +84,18 @@ class HistoryViewModel extends ChangeNotifier {
   bool get loading => _loading;
   Object? get error => _error;
 
+  /// 当前视图是否已经有可画的历史点；不掺入 loading / error 状态。
+  bool get hasCurrentViewPoints {
+    for (final f in _view.fields) {
+      if ((_pointsByField[f] ?? _emptyPoints).isNotEmpty) return true;
+    }
+    return false;
+  }
+
   /// 是否处于"加载完毕但无数据"的空态：所有字段都拿不到点。
   bool get isEmpty {
     if (_loading || _error != null) return false;
-    for (final f in _view.fields) {
-      if ((_pointsByField[f] ?? _emptyPoints).isNotEmpty) return false;
-    }
-    return true;
+    return !hasCurrentViewPoints;
   }
 
   /// 切换 UI 视图（流量 / 重量 / 温度组 等）。
