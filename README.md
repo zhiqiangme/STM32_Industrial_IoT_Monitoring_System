@@ -6,6 +6,7 @@ This repository contains the current codebase for the STM32 Mill control and mai
 
 - `STM32/`: embedded firmware, bootloader, and Keil project
 - `OTA/`: Windows desktop tool for local upgrade, remote upgrade, and remote maintenance
+- `flutter/`: cross-platform mobile app for real-time monitoring, history, alarms, and relay control
 
 The `Windows/` folder is kept only as historical code. It is no longer planned for active maintenance.
 
@@ -13,27 +14,29 @@ The `Windows/` folder is kept only as historical code. It is no longer planned f
 
 **What this project is**
 
-An industrial control and maintenance stack built around STM32 firmware plus a Windows OTA/maintenance tool.
+An industrial control and maintenance stack built around STM32 firmware, a Windows OTA/maintenance tool, and a Flutter mobile app for real-time monitoring.
 
 **What problem it solves**
 
-It brings field data acquisition, relay control, remote maintenance, and safer firmware upgrades into one practical workflow instead of splitting them across unrelated tools.
+It brings field data acquisition, relay control, remote maintenance, cloud-based monitoring, and safer firmware upgrades into one practical workflow instead of splitting them across unrelated tools.
 
 **Who it is for**
 
 - Engineers maintaining STM32-based field equipment
 - Developers building RS485 / Modbus industrial controllers
 - Teams that need local and remote firmware upgrade capability with rollback awareness
+- Operators who need mobile access to real-time data, history, and alarm notifications
 
 ## Overview
 
-The system combines an STM32F103-based controller, field devices on RS485/Modbus, and a G780S communication path for maintenance and upgrade operations.
+The system combines an STM32F103-based controller, field devices on RS485/Modbus, a G780S communication path for maintenance and upgrade operations, a cloud backend for data aggregation, and a Flutter mobile app for real-time monitoring.
 
-The current codebase covers three practical workflows:
+The current codebase covers four practical workflows:
 
 - Field data acquisition and relay control
 - Remote maintenance through Modbus registers exposed by the device
 - A/B firmware upgrade with bootloader verification and rollback logic
+- Cloud-based real-time monitoring, history, alarms, and mobile relay control via Flutter
 
 ## Features
 
@@ -43,6 +46,8 @@ The current codebase covers three practical workflows:
 - A/B slot firmware upgrade with bootloader-side integrity checks
 - CRC32, SHA-256, vector-table validation, and fallback / rollback logic
 - Desktop OTA tool for local upgrade, remote upgrade, and raw Modbus maintenance frames
+- Flutter mobile app with real-time dashboard, multi-channel history, alarm monitoring, and remote relay control
+- Cloud backend API with WebSocket live telemetry and REST endpoints for history and commands
 
 ## System Architecture
 
@@ -54,13 +59,19 @@ flowchart LR
     F["OTA Desktop Tool"] --> D
     E --> G["Bootloader"]
     G --> H["A/B Firmware Slots"]
+    B --> I["G780S<br/>MQTT / JSON Uplink"]
+    I --> J["Cloud Backend<br/>mill-api.varka.cn"]
+    J --> K["Flutter Mobile App<br/>Dashboard / History / Alarm"]
+    K -->|Commands| J
+    J -->|Relay Set / OTA Prepare| I
 ```
 
 ## Real-World Scenarios
 
 - On-site commissioning: connect through RS485, verify sensor readings, drive relays, and load the correct firmware slot.
 - Remote maintenance: expose Modbus registers through G780S, adjust runtime parameters, and inspect diagnostic state without opening the enclosure.
-- Safer firmware rollout: upgrade the inactive slot first, verify the image in bootloader, then trial-boot with rollback protection.
+- Safer firmware rollout: upgrade the inactive slot first, verify the image in bootloader, then trial-boot with rollback control.
+- Mobile monitoring: open the Flutter app to view real-time dashboard data, browse multi-channel history curves, receive alarm notifications, and toggle relays remotely.
 
 ## Project Status
 
@@ -70,6 +81,7 @@ Current focus:
 
 - Keep `STM32/` evolving as the production firmware path
 - Keep `OTA/` improving as the primary maintenance and upgrade tool
+- Keep `flutter/` evolving as the mobile monitoring and control client
 - Keep `Windows/` available only as legacy reference
 
 This repository is still moving forward. The current README is intentionally written around the code that is actively being used, not around the older historical layout.
@@ -80,6 +92,7 @@ This repository is still moving forward. The current README is intentionally wri
 - Improve OTA usability for field deployment and virtual-COM remote upgrade
 - Expand engineering documentation and operator-facing examples
 - Clean up packaging and release outputs under `Deploy/`
+- Stabilize Flutter app: complete cloud backend integration, add push notifications
 - Gradually retire the legacy `Windows/` path from the main workflow
 
 ## Hardware / Software Environment
@@ -97,6 +110,7 @@ This repository is still moving forward. The current README is intentionally wri
 - `Keil MDK-ARM` for embedded firmware builds
 - `.NET SDK 10` for the OTA desktop application
 - Windows 10/11 for the WPF toolchain
+- `Flutter SDK` and `Android SDK` for the mobile app
 - Optional Modbus debugging tools for maintenance and validation
 
 ## License
@@ -177,6 +191,26 @@ Notable behavior in the current implementation:
 - The UI recommends `App_A.bin` or `App_B.bin` based on the running slot
 - Remote maintenance can generate and correct raw Modbus RTU frames for direct use in external debugging or cloud tools
 
+### `flutter/`
+
+`flutter/` is the Flutter mobile application for real-time monitoring and control. It connects to a cloud backend at `mill-api.varka.cn` via REST API and WebSocket.
+
+The application provides:
+
+- **Dashboard**: real-time telemetry display (temperature, weight, flow, relay status) via WebSocket
+- **History**: multi-channel historical data with time-range selection and curves
+- **Alarms**: alarm event list and monitoring
+- **Control**: remote relay control with command acknowledgment
+- **Settings**: theme selection, device management, and user profile
+
+Notable implementation details:
+
+- Default backend: `https://mill-api.varka.cn` (REST) and `wss://mill-api.varka.cn/ws/live` (WebSocket)
+- All backend URLs and device IDs are configurable via `--dart-define` at build time
+- Supports mock/demo mode for offline UI preview (`--dart-define=USE_MOCK=true`)
+- Login token persisted in `flutter_secure_storage`; login survives same-signature overlay installs
+- Android-only currently, with `com.varka.mill` as the application ID
+
 ## Directory Layout
 
 ```text
@@ -195,7 +229,15 @@ OTA/
   OTA.UI/           WPF desktop app
   OTA.ViewModels/   UI state and commands
 
+flutter/
+  lib/
+    config/         Theme and environment configuration
+    data/           Models, repositories, and services (API, WebSocket, cache)
+    ui/             Pages: dashboard, history, alarm, control, settings, user
+    utils/          Logging and result helpers
+
 Deploy/       Installer and packaging assets
+archive/      Archived planning documents
 文档/         Reference documents and vendor materials
 Windows/      Legacy desktop application, not maintained
 ```
@@ -232,6 +274,31 @@ dotnet build OTA\OTA.slnx -c Release -p:Platform=x64
 
 The solution is configured to avoid parallel project builds because the repository currently relies on serialized MSBuild behavior for stable .NET 10 builds.
 
+### Flutter mobile app
+
+Requirements:
+
+- Flutter SDK
+- Android SDK (Android-only currently)
+
+Run on device:
+
+```powershell
+flutter run --dart-define=API_BASE=https://mill-api.varka.cn --dart-define=WS_URL=wss://mill-api.varka.cn/ws/live --dart-define=DEVICE_ID=FM002
+```
+
+Build release APK:
+
+```powershell
+flutter build apk --release --dart-define=API_BASE=https://mill-api.varka.cn --dart-define=WS_URL=wss://mill-api.varka.cn/ws/live --dart-define=DEVICE_ID=FM002
+```
+
+For offline demo without a backend:
+
+```powershell
+flutter run --dart-define=USE_MOCK=true
+```
+
 ### Legacy Windows desktop app
 
 The legacy Windows application still exists in:
@@ -259,9 +326,10 @@ Current priority:
 
 - `STM32/`
 - `OTA/`
+- `flutter/`
 
 Deprioritized / no longer planned for continued maintenance:
 
 - `Windows/`
 
-If you are new to the repository, start with `STM32/` for device behavior and `OTA/` for upgrade/maintenance tooling. The old README mentioned scripts and document names that no longer exist; this version reflects the current repository state instead.
+If you are new to the repository, start with `STM32/` for device behavior, `OTA/` for upgrade/maintenance tooling, and `flutter/` for the mobile monitoring app. The old README mentioned scripts and document names that no longer exist; this version reflects the current repository state instead.

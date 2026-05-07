@@ -2,10 +2,11 @@
 
 [English](README.md) | 中文
 
-这个仓库保存的是 STM32 Mill 控制与维护系统的当前代码。现在仍然作为主线维护的部分只有两个：
+这个仓库保存的是 STM32 Mill 控制与维护系统的当前代码。现在仍然作为主线维护的部分有三个：
 
 - `STM32/`：嵌入式固件、Bootloader、Keil 工程
 - `OTA/`：Windows 桌面工具，负责本地升级、远程升级和远程维护
+- `flutter/`：跨平台手机端，负责实时监控、历史查询、告警和继电器远程控制
 
 `Windows/` 目录目前仅作为历史代码保留，不再计划继续维护。
 
@@ -13,25 +14,27 @@
 
 **这个项目是干什么的**
 
-这是一个围绕 STM32 固件和 Windows OTA/维护工具构建的工业控制与维护方案。
+这是一个围绕 STM32 固件、Windows OTA/维护工具和 Flutter 手机端构建的工业控制与维护方案。
 
 **它解决什么问题**
 
-它把现场采集、继电器控制、远程维护、固件升级这些原本分散的事情，收敛到一套可以真正落地的工程链路里。
+它把现场采集、继电器控制、远程维护、云端监控、固件升级这些原本分散的事情，收敛到一套可以真正落地的工程链路里。
 
 **适合谁用**
 
 - 维护 STM32 现场设备的工程师
 - 开发 RS485 / Modbus 工业控制器的开发者
 - 需要本地升级、远程升级和回退保护能力的团队
+- 需要通过手机实时查看数据、历史曲线和告警的操作人员
 
 ## 仓库概览
 
-整个系统围绕 `STM32F103` 控制器、RS485/Modbus 现场设备，以及 `G780S` 通信链路展开，当前源码对应的实际能力主要有三条：
+整个系统围绕 `STM32F103` 控制器、RS485/Modbus 现场设备、`G780S` 通信链路、云端后端，以及 Flutter 手机端展开，当前源码对应的实际能力主要有四条：
 
 - 现场数据采集与继电器控制
 - 通过设备寄存器进行远程维护
 - 基于 A/B 槽位的固件升级、校验与回退
+- 基于云端的实时监控、历史查询、告警和手机端继电器控制
 
 ## Features
 
@@ -41,6 +44,8 @@
 - 支持 A/B 槽位固件升级
 - Bootloader 侧具备 CRC32、SHA-256、向量表校验与回退逻辑
 - 提供桌面 OTA 工具，覆盖本地升级、远程升级和原始 Modbus 维护帧生成
+- Flutter 手机端：实时仪表盘、多通道历史曲线、告警监控、远程继电器控制
+- 云端后端 API：WebSocket 实时遥测、REST 接口提供历史数据和命令下发
 
 ## 系统架构图
 
@@ -52,6 +57,11 @@ flowchart LR
     F["OTA 桌面工具"] --> D
     E --> G["Bootloader"]
     G --> H["A/B 固件槽位"]
+    B --> I["G780S<br/>MQTT / JSON 上行"]
+    I --> J["云端后端<br/>mill-api.varka.cn"]
+    J --> K["Flutter 手机端<br/>仪表盘 / 历史 / 告警"]
+    K -->|命令下发| J
+    J -->|继电器控制 / OTA 准备| I
 ```
 
 ## 真实应用场景
@@ -59,6 +69,7 @@ flowchart LR
 - 现场调试：工程师通过 RS485 接入设备，确认传感器数据、继电器输出和当前运行槽位。
 - 远程维护：通过 G780S 暴露维护寄存器，在线调整参数、读取诊断状态，而不必拆机。
 - 安全升级：先刷写非运行槽位，再由 Bootloader 做完整性校验和试运行确认，降低升级失败风险。
+- 手机监控：打开 Flutter 应用查看实时仪表盘、浏览多通道历史曲线、接收告警通知、远程切换继电器。
 
 ## 项目状态
 
@@ -68,6 +79,7 @@ flowchart LR
 
 - 持续推进 `STM32/` 作为生产固件主线
 - 持续完善 `OTA/` 作为主要维护和升级工具
+- 持续完善 `flutter/` 作为手机端监控和控制客户端
 - `Windows/` 仅保留历史参考，不再作为后续重点开发对象
 
 这个仓库不是“归档状态”，而是还会继续迭代。现在这份 README 的定位，就是让第一次看到项目的人能立刻知道主线还在推进。
@@ -78,6 +90,7 @@ flowchart LR
 - 改进 OTA 工具在现场部署和虚拟串口远程升级下的可用性
 - 补充更多工程文档、操作说明和示例
 - 继续整理 `Deploy/` 下的打包与发布产物
+- 稳定 Flutter 应用：完成云端后端集成，增加推送通知
 - 逐步把历史 `Windows/` 路径退出主工作流
 
 ## 硬件 / 软件环境
@@ -95,6 +108,7 @@ flowchart LR
 - `Keil MDK-ARM` 用于嵌入式固件构建
 - `.NET SDK 10` 用于 OTA 桌面工具构建
 - Windows 10/11 用于 WPF 工具链运行
+- `Flutter SDK` 和 `Android SDK` 用于手机端构建
 - 可选 Modbus 调试工具用于联调和维护
 
 ## License
@@ -175,6 +189,26 @@ flowchart LR
 - 会根据当前运行槽位推荐 `App_A.bin` 或 `App_B.bin`
 - 远程维护页可以生成、导入并纠正 Modbus RTU 原始帧，便于粘贴到外部调试或云平台工具
 
+### `flutter/`
+
+`flutter/` 是 Flutter 跨平台手机应用，用于实时监控和远程控制。通过 REST API 和 WebSocket 连接云端后端 `mill-api.varka.cn`。
+
+当前应用提供的主要页面：
+
+- **仪表盘**：通过 WebSocket 实时显示遥测数据（温度、称重、流量、继电器状态）
+- **历史**：多通道历史数据，支持时间范围选择和曲线展示
+- **告警**：告警事件列表与监控
+- **控制**：远程继电器控制，支持命令回执确认
+- **设置**：主题切换、设备管理、用户信息
+
+关键实现细节：
+
+- 默认后端地址：`https://mill-api.varka.cn`（REST）和 `wss://mill-api.varka.cn/ws/live`（WebSocket）
+- 所有后端地址和设备 ID 均可通过构建时 `--dart-define` 参数配置
+- 支持 Mock 演示模式，可在无后端环境下预览界面（`--dart-define=USE_MOCK=true`）
+- 登录 token 保存在 `flutter_secure_storage` 中，同签名覆盖安装可保持登录态
+- 当前仅支持 Android，应用 ID 为 `com.varka.mill`
+
 ## 目录结构
 
 ```text
@@ -193,7 +227,15 @@ OTA/
   OTA.UI/           WPF 桌面程序
   OTA.ViewModels/   UI 状态与命令
 
+flutter/
+  lib/
+    config/         主题与环境配置
+    data/           模型、仓库、服务（API、WebSocket、缓存）
+    ui/             页面：仪表盘、历史、告警、控制、设置、用户
+    utils/          日志与结果辅助
+
 Deploy/       安装包与发布资源
+archive/      归档的规划文档
 文档/         参考资料与第三方文档
 Windows/      历史桌面程序，不再维护
 ```
@@ -230,6 +272,31 @@ dotnet build OTA\OTA.slnx -c Release -p:Platform=x64
 
 当前仓库已经在 `Directory.Build.props` 中关闭了解决方案级并行构建，以规避 .NET 10 下该方案的并行解析问题。
 
+### Flutter 手机端
+
+环境要求：
+
+- Flutter SDK
+- Android SDK（当前仅支持 Android）
+
+在设备上运行：
+
+```powershell
+flutter run --dart-define=API_BASE=https://mill-api.varka.cn --dart-define=WS_URL=wss://mill-api.varka.cn/ws/live --dart-define=DEVICE_ID=FM002
+```
+
+构建 release APK：
+
+```powershell
+flutter build apk --release --dart-define=API_BASE=https://mill-api.varka.cn --dart-define=WS_URL=wss://mill-api.varka.cn/ws/live --dart-define=DEVICE_ID=FM002
+```
+
+离线演示模式（无需后端）：
+
+```powershell
+flutter run --dart-define=USE_MOCK=true
+```
+
 ### 历史 Windows 上位机
 
 历史 Windows 程序仍然保留在：
@@ -257,9 +324,10 @@ dotnet build OTA\OTA.slnx -c Release -p:Platform=x64
 
 - `STM32/`
 - `OTA/`
+- `flutter/`
 
 当前不再计划继续维护：
 
 - `Windows/`
 
-如果第一次接手这个仓库，建议优先阅读 `STM32/` 了解设备行为，再阅读 `OTA/` 了解升级与维护工具链。旧版 README 中提到的一些脚本、目录职责和文档名已经与仓库实际状态不一致，这个版本已经按当前代码重新整理。
+如果第一次接手这个仓库，建议优先阅读 `STM32/` 了解设备行为，再阅读 `OTA/` 了解升级与维护工具链，以及 `flutter/` 了解手机端监控应用。旧版 README 中提到的一些脚本、目录职责和文档名已经与仓库实际状态不一致，这个版本已经按当前代码重新整理。
