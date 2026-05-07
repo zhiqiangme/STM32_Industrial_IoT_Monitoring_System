@@ -181,21 +181,30 @@ class MeasurementRepository {
     _statusAlarmArmed = false;
   }
 
-  /// App 进入后台时暂停本地离线定时器。
+  /// App 进入后台时暂停本地离线定时器与 HTTP 兜底轮询。
   ///
   /// 手机息屏后 Dart Timer 和 WebSocket 都可能被系统挂起，不能把这段时间
   /// 当作设备真实离线时间；恢复前台后以服务端状态重新建立基线。
+  /// 同时取消轮询定时器，避免后台仍持续打 `/api/status`、`/api/latest`。
   void suspendForAppBackground() {
     _suspendedForBackground = true;
     _offlineTimer?.cancel();
     _offlineTimer = null;
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
     beginSessionBootstrap();
   }
 
   /// App 回到前台前重新打开离线检测，并让下一条状态只作为基线。
+  /// 若挂起期间取消了轮询定时器，这里把它重新拉起。
   void prepareForAppForeground() {
     _suspendedForBackground = false;
     beginSessionBootstrap();
+    if (_statusPollEnabled && _statusPollTimer == null) {
+      _statusPollTimer = Timer.periodic(_statusPollInterval, (_) {
+        unawaited(_refreshServerSnapshot());
+      });
+    }
   }
 
   /// 在 App 回到前台时主动同步一次，避免依赖下一轮定时器才恢复状态。
@@ -249,7 +258,9 @@ class MeasurementRepository {
   /// 如果发现服务端的 lastSeen 继续前进，但本地 WS 一直没把最新遥测推过来，
   /// 则补拉一次 `/api/latest`，避免 UI 因长连接静默失活而卡死在旧数据上。
   Future<void> _refreshServerSnapshot() async {
-    if (!_statusPollEnabled || _statusPollInFlight) return;
+    if (!_statusPollEnabled || _statusPollInFlight || _suspendedForBackground) {
+      return;
+    }
     _statusPollInFlight = true;
     try {
       final status = await _api.getStatus();

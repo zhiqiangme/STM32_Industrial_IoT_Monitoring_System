@@ -286,11 +286,11 @@ class _UploadPeriodTile extends StatelessWidget {
         title: const Text('确认修改上报频率'),
         content: Text('确定要把网关上报频率改为 ${_formatPeriod(selected)} 吗？'),
         actions: [
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('取消'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('确定'),
           ),

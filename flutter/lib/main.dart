@@ -82,6 +82,7 @@ Future<void> main() async {
     realtime: realtime,
     preferences: preferences,
     measurementRepo: measurementRepo,
+    auth: authRepo,
   );
   final commandRepo = CommandRepository(api: api, realtime: realtime);
 

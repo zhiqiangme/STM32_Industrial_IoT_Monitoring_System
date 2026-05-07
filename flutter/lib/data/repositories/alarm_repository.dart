@@ -8,6 +8,7 @@ import '../../utils/result.dart';
 import '../models/alarm.dart';
 import '../services/api_service.dart';
 import '../services/realtime_service.dart';
+import 'auth_repository.dart';
 import 'measurement_repository.dart';
 
 /// 告警仓库：聚合实时告警 + 历史告警 + 未读计数。
@@ -19,23 +20,34 @@ class AlarmRepository {
     required RealtimeService realtime,
     required SharedPreferences preferences,
     MeasurementRepository? measurementRepo,
+    AuthRepository? auth,
   })  : _api = api,
         _realtime = realtime,
-        _preferences = preferences {
+        _preferences = preferences,
+        _auth = auth {
     // 从持久化存储恢复未读计数和本地告警列表。
     _unread = preferences.getInt(_unreadKey) ?? 0;
     _loadLocalAlarms();
-    // 只关心告警事件，其它事件忽略。
+    // 服务端推送的告警：只转发与累加未读，不写入本地缓存（服务端已持久化，
+    // 否则下次 fetchHistory 合并时会重复出现）。
     _sub = _realtime.events.listen((evt) {
-      if (evt is AlarmEvent) _onAlarm(evt.alarm);
+      if (evt is AlarmEvent) _onServerAlarm(evt.alarm);
     });
-    // 接收 MeasurementRepository 的客户端告警（设备离线/恢复在线）。
-    measurementRepo?.onStatusAlarm = _onAlarm;
+    // 客户端生成的告警（DEVICE_OFFLINE/ONLINE）：服务端不会持久化，
+    // 必须本地缓存才能在历史区间内回看。
+    measurementRepo?.onStatusAlarm = _onClientAlarm;
+    // 退出登录或会话失效时清掉本地告警与未读计数，避免下个用户看到上个会话的痕迹。
+    if (_auth != null) {
+      _wasLoggedIn = _auth.isLoggedIn;
+      _auth.addListener(_onAuthChanged);
+    }
   }
 
   final ApiService _api;
   final RealtimeService _realtime;
   final SharedPreferences _preferences;
+  final AuthRepository? _auth;
+  bool _wasLoggedIn = false;
   StreamSubscription<RealtimeEvent>? _sub;
 
   /// 未读计数的持久化 key。
@@ -65,8 +77,16 @@ class AlarmRepository {
     return (a) => !a.timestamp.isBefore(from) && !a.timestamp.isAfter(to);
   }
 
-  /// 收到一条新告警：保存到本地列表、转发到 live 流并增加未读数。
-  void _onAlarm(Alarm a) {
+  /// 服务端实时告警：只转发并累加未读，不入本地缓存。
+  void _onServerAlarm(Alarm a) {
+    _liveCtrl.add(a);
+    _unread++;
+    _unreadCtrl.add(_unread);
+    _persistUnread();
+  }
+
+  /// 客户端生成的状态告警：写入本地缓存，并按服务端告警一样转发与计数。
+  void _onClientAlarm(Alarm a) {
     _localAlarms.add(a);
     _liveCtrl.add(a);
     _unread++;
@@ -105,6 +125,27 @@ class AlarmRepository {
     _unread = 0;
     _unreadCtrl.add(0);
     _persistUnread();
+  }
+
+  /// 清除本地缓存的客户端告警与未读计数。退出登录 / 会话失效时调用。
+  void clearLocalAlarms() {
+    _localAlarms.clear();
+    _unread = 0;
+    _unreadCtrl.add(0);
+    _persistUnread();
+    _persistLocalAlarms();
+  }
+
+  /// 监听登录态切换：从已登录切到未登录时清空本地告警，避免跨账号串扰。
+  void _onAuthChanged() {
+    final auth = _auth;
+    if (auth == null) return;
+    final nowLoggedIn = auth.isLoggedIn;
+    if (nowLoggedIn == _wasLoggedIn) return;
+    _wasLoggedIn = nowLoggedIn;
+    if (!nowLoggedIn) {
+      clearLocalAlarms();
+    }
   }
 
   /// 持久化未读计数到 SharedPreferences。
@@ -146,6 +187,7 @@ class AlarmRepository {
   }
 
   Future<void> dispose() async {
+    _auth?.removeListener(_onAuthChanged);
     await _sub?.cancel();
     await _liveCtrl.close();
     await _unreadCtrl.close();

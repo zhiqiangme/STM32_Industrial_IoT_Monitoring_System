@@ -29,6 +29,7 @@ int _visibleIntervalsFor(int intervalSeconds) {
 const double _chartDragSensitivity = 2.5;
 const double _multiChannelGap = 4.0;
 const Duration _historyMinGapBreakThreshold = Duration(seconds: 90);
+const Duration _historyMaxGapBreakThreshold = Duration(minutes: 10);
 const int _historyGapBreakMultiplier = 3;
 
 /// 历史曲线页：顶部一行选项（字段 + 时间段）+ 下方填满剩余空间的折线图。
@@ -247,7 +248,9 @@ class _ChartState extends State<_Chart> {
             }
           }
 
-          final yReserved = _yReservedSize(nonEmpty.first.field, narrow);
+          // 多通道下各小图的字段同族，预留宽度按视图字段表的首项算更稳；
+          // 单字段视图同样落在 fields.first 上。
+          final yReserved = _yReservedSize(fields.first, narrow);
 
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -461,6 +464,7 @@ class _ChartState extends State<_Chart> {
           xAxis: xAxis,
           visibleMinX: visibleMinX,
           visibleMaxX: visibleMaxX,
+          // 多通道时各小图同族，这里复用视图字段表首项保持口径一致。
           yReserved: _yReservedSize(series.first.field, narrow),
           xReserved: xReserved,
           xFontSize: xFontSize,
@@ -820,12 +824,13 @@ Duration _historyGapBreakThreshold(List<HistoryPoint> points) {
       ? gaps[mid]
       : (gaps[mid - 1] + gaps[mid]) ~/ 2;
   final dynamicThresholdMs = normalGapMs * _historyGapBreakMultiplier;
-  return Duration(
-    milliseconds: math.max(
-      _historyMinGapBreakThreshold.inMilliseconds,
-      dynamicThresholdMs,
-    ),
+  // 同时给阈值上下限：稀疏数据下中位数本身可能就是真实离线间隙，
+  // 没有上限会导致整段离线被画成连续直线。
+  final clampedMs = dynamicThresholdMs.clamp(
+    _historyMinGapBreakThreshold.inMilliseconds,
+    _historyMaxGapBreakThreshold.inMilliseconds,
   );
+  return Duration(milliseconds: clampedMs);
 }
 
 class _XAxisSpec {
