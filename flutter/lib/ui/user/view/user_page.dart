@@ -183,9 +183,16 @@ class _LoggedInView extends StatelessWidget {
         _UploadPeriodTile(vm: vm),
         const Divider(height: 1),
         ListTile(
+          contentPadding: _settingsTilePadding,
           leading: const Icon(Icons.settings_outlined),
           title: const Text('设置'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const SizedBox(
+            width: _settingsTrailingIconBox,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Icon(Icons.chevron_right),
+            ),
+          ),
           onTap: () => context.push('/user/settings'),
         ),
       ],
@@ -202,29 +209,43 @@ class _UploadPeriodTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        enabled: !vm.uploadBusy,
-        leading: const Icon(Icons.schedule_outlined),
-        title: const Text('网关上报频率'),
-        trailing: vm.uploadBusy
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_formatPeriod(vm.uploadPeriodSeconds)),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.expand_more),
-                ],
+    final titleStyle = Theme.of(context).textTheme.titleMedium;
+    return ListTile(
+      contentPadding: _settingsTilePadding,
+      enabled: !vm.uploadBusy,
+      leading: const Icon(Icons.schedule_outlined),
+      title: const Text('网关上报频率'),
+      trailing: vm.uploadBusy
+          ? const SizedBox(
+              width: _settingsTrailingIconBox,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               ),
-        onTap: vm.uploadBusy ? null : () => _changeUploadPeriod(context),
-      ),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _formatPeriod(vm.uploadPeriodSeconds),
+                  // 右侧数值与左侧标题使用同一字号，避免视觉上偏小。
+                  style: titleStyle,
+                ),
+                const SizedBox(width: 8),
+                const SizedBox(
+                  width: _settingsTrailingIconBox,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Icon(Icons.expand_more),
+                  ),
+                ),
+              ],
+            ),
+      onTap: vm.uploadBusy ? null : () => _changeUploadPeriod(context),
     );
   }
 
@@ -284,3 +305,6 @@ class _UploadPeriodTile extends StatelessWidget {
   static String _formatPeriod(int seconds) =>
       seconds == 60 ? '1 分钟' : '$seconds 秒';
 }
+
+const _settingsTilePadding = EdgeInsets.symmetric(horizontal: 16);
+const double _settingsTrailingIconBox = 24;

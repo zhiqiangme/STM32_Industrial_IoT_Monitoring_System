@@ -27,7 +27,7 @@ int _visibleIntervalsFor(int intervalSeconds) {
 }
 
 const double _chartDragSensitivity = 2.5;
-const double _multiChannelGap = 2.0;
+const double _multiChannelGap = 0.0;
 const Duration _historyMinGapBreakThreshold = Duration(seconds: 90);
 const int _historyGapBreakMultiplier = 3;
 
@@ -385,73 +385,87 @@ class _ChartState extends State<_Chart> {
     const chartLabelTop = 4.0;
     return Column(
       children: [
-        for (var i = 0; i < series.length; i++) ...[
-          Expanded(
-            child: Stack(
-              children: [
-                _LineChartSection(
-                  series: series[i],
-                  xAxis: xAxis,
-                  visibleMinX: visibleMinX,
-                  visibleMaxX: visibleMaxX,
-                  yInterval: yInterval,
-                  // 仅最后一张小图显示 X 轴时间标签，避免上下重复占用空间。
-                  showBottomTitles: i == series.length - 1,
-                  // 每张小图都预留同样的 X 轴高度，避免最后一张绘图区更小。
-                  reserveBottomTitles: true,
-                  narrow: narrow,
-                  xFontSize: xFontSize,
-                  xReserved: xReserved,
-                  yFontSize: yFontSize,
-                  xLabelFormat: xLabelFormat,
-                ),
-                Positioned(
-                  left: _yReservedSize(series[i].field, narrow) + 6,
-                  // 通道名和单位保持同一高度，避免多通道小图标题错位。
-                  top: chartLabelTop,
-                  child: Text(
-                    _channelTag(series[i].field),
-                    style: TextStyle(
-                      fontSize: narrow ? 10.0 : 11.0,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 2,
-                  top: chartLabelTop,
-                  child: Text(
-                    series[i].field.unit,
-                    style: TextStyle(
-                      fontSize: narrow ? 10.0 : 11.0,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                if (series[i].hasSinglePoint)
-                  const Positioned(
-                    top: 4,
-                    right: 24,
-                    child: _SinglePointBadge(),
-                  ),
-                if (series[i].spots.isEmpty)
-                  const Positioned.fill(
-                    child: Center(
-                      child: Text(
-                        '无数据',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0x99000000),
+        Expanded(
+          child: Column(
+            children: [
+              for (var i = 0; i < series.length; i++) ...[
+                Expanded(
+                  child: Stack(
+                    children: [
+                      _LineChartSection(
+                        series: series[i],
+                        xAxis: xAxis,
+                        visibleMinX: visibleMinX,
+                        visibleMaxX: visibleMaxX,
+                        yInterval: yInterval,
+                        // 多通道的时间轴统一放在最底部，避免每张小图都预留空白。
+                        showBottomTitles: false,
+                        reserveBottomTitles: false,
+                        narrow: narrow,
+                        xFontSize: xFontSize,
+                        xReserved: xReserved,
+                        yFontSize: yFontSize,
+                        xLabelFormat: xLabelFormat,
+                      ),
+                      Positioned(
+                        left: _yReservedSize(series[i].field, narrow) + 6,
+                        // 通道名和单位保持同一高度，避免多通道小图标题错位。
+                        top: chartLabelTop,
+                        child: Text(
+                          _channelTag(series[i].field),
+                          style: TextStyle(
+                            fontSize: narrow ? 10.0 : 11.0,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
+                      Positioned(
+                        right: 2,
+                        top: chartLabelTop,
+                        child: Text(
+                          series[i].field.unit,
+                          style: TextStyle(
+                            fontSize: narrow ? 10.0 : 11.0,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (series[i].hasSinglePoint)
+                        const Positioned(
+                          top: 4,
+                          right: 24,
+                          child: _SinglePointBadge(),
+                        ),
+                      if (series[i].spots.isEmpty)
+                        const Positioned.fill(
+                          child: Center(
+                            child: Text(
+                              '无数据',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0x99000000),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
+                if (i != series.length - 1)
+                  const SizedBox(height: _multiChannelGap),
               ],
-            ),
+            ],
           ),
-          if (i != series.length - 1)
-            const SizedBox(height: _multiChannelGap),
-        ],
+        ),
+        _MultiChannelBottomTitles(
+          xAxis: xAxis,
+          visibleMinX: visibleMinX,
+          visibleMaxX: visibleMaxX,
+          yReserved: _yReservedSize(series.first.field, narrow),
+          xReserved: xReserved,
+          xFontSize: xFontSize,
+          xLabelFormat: xLabelFormat,
+        ),
       ],
     );
   }
@@ -492,6 +506,74 @@ class _ChartState extends State<_Chart> {
           (center - halfSpan).clamp(fullAxis.minX, fullAxis.maxX - viewportSpan);
       _viewportMaxX = _viewportMinX! + viewportSpan;
     }
+  }
+}
+
+/// 多通道图共用的底部时间轴。
+///
+/// 时间文字从每张小图内移到这里，四张小图本体就不用为隐藏的 X 轴标签预留空白。
+class _MultiChannelBottomTitles extends StatelessWidget {
+  const _MultiChannelBottomTitles({
+    required this.xAxis,
+    required this.visibleMinX,
+    required this.visibleMaxX,
+    required this.yReserved,
+    required this.xReserved,
+    required this.xFontSize,
+    required this.xLabelFormat,
+  });
+
+  final _XAxisSpec xAxis;
+  final double visibleMinX;
+  final double visibleMaxX;
+  final double yReserved;
+  final double xReserved;
+  final double xFontSize;
+  final String xLabelFormat;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: xReserved,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final plotLeft = yReserved;
+          final plotWidth = math.max(1.0, constraints.maxWidth - plotLeft);
+          final visibleSpan = math.max(1.0, visibleMaxX - visibleMinX);
+          final firstTick =
+              (visibleMinX / xAxis.interval).ceil() * xAxis.interval;
+          final labelWidth = xAxis.interval >= 86400000 ? 64.0 : 72.0;
+          final labels = <Widget>[];
+
+          for (var value = firstTick;
+              value <= visibleMaxX;
+              value += xAxis.interval) {
+            if (_isVisibleAxisEdgeLabel(value, visibleMinX, visibleMaxX)) {
+              continue;
+            }
+            final d = DateTime.fromMillisecondsSinceEpoch(value.toInt());
+            final centerX =
+                plotLeft + ((value - visibleMinX) / visibleSpan) * plotWidth;
+            labels.add(
+              Positioned(
+                left: (centerX - labelWidth / 2)
+                    .clamp(0.0, constraints.maxWidth - labelWidth)
+                    .toDouble(),
+                top: 4,
+                width: labelWidth,
+                child: Text(
+                  DateFormat(xLabelFormat).format(d),
+                  style: TextStyle(fontSize: xFontSize),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          return Stack(clipBehavior: Clip.none, children: labels);
+        },
+      ),
+    );
   }
 }
 
@@ -977,4 +1059,9 @@ bool _isAxisEdgeLabel(double value, TitleMeta meta) {
   const epsilon = 0.000001;
   return (value - meta.min).abs() < epsilon ||
       (value - meta.max).abs() < epsilon;
+}
+
+bool _isVisibleAxisEdgeLabel(double value, double min, double max) {
+  const epsilon = 1.0;
+  return (value - min).abs() < epsilon || (value - max).abs() < epsilon;
 }
