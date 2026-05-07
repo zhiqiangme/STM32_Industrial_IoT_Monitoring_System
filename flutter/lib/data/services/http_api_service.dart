@@ -149,7 +149,7 @@ class HttpApiService implements ApiService {
           // 后端要求 Unix 秒，不是毫秒。
           'from': _unixSec(from),
           'to': _unixSec(to),
-          if (beforeId != null) 'before_id': beforeId,
+          ...?(beforeId == null ? null : {'before_id': beforeId}),
         },
       );
       final body = res.data;
