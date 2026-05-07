@@ -137,12 +137,19 @@ class AuthRepository extends ChangeNotifier {
     if (!_isLoggedIn) return;
     final token = _activeToken;
     if (token == null || token.isEmpty) return;
+    _measurements.prepareForAppForeground();
     await _realtime.disconnect();
     await _connectRealtimeBestEffort(
       token: token,
       logContext: 'resume realtime reconnect failed',
     );
     await _measurements.refreshSessionSnapshot();
+  }
+
+  /// App 进入后台时暂停本地离线判定，避免息屏期间生成假离线告警。
+  void suspendRealtimeSessionForBackground() {
+    if (!_isLoggedIn) return;
+    _measurements.suspendForAppBackground();
   }
 
   /// 任意数据接口返回 401 时统一清理会话，避免 UI 停留在“假登录态”。

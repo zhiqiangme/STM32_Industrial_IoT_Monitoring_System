@@ -58,6 +58,9 @@ class _FlowmeterAppState extends State<FlowmeterApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(context.read<AuthRepository>().refreshRealtimeSession());
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      context.read<AuthRepository>().suspendRealtimeSessionForBackground();
     }
   }
 

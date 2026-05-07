@@ -17,11 +17,11 @@ class ControlPage extends StatelessWidget {
         title: Text('确认全部$action'),
         content: Text('确定要将所有 16 路继电器全部$action吗？'),
         actions: [
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('取消'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('确定'),
           ),

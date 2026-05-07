@@ -402,8 +402,8 @@ class _ChartState extends State<_Chart> {
                   xLabelFormat: xLabelFormat,
                 ),
                 Positioned(
-                  left: 2,
-                  top: 2,
+                  left: _yReservedSize(series[i].field, narrow) + 6,
+                  top: 8,
                   child: Text(
                     _channelTag(series[i].field),
                     style: TextStyle(

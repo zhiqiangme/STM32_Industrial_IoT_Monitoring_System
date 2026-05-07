@@ -56,6 +56,7 @@ class MeasurementRepository {
   Timer? _statusPollTimer;
   bool _statusPollEnabled = false;
   bool _statusPollInFlight = false;
+  bool _suspendedForBackground = false;
 
   /// 设备状态变化时触发的回调，用于生成客户端告警。
   /// 由 [AlarmRepository] 注入。
@@ -178,6 +179,23 @@ class MeasurementRepository {
   /// 会话建立期间先关闭状态边沿告警，等待首条状态作为基线。
   void beginSessionBootstrap() {
     _statusAlarmArmed = false;
+  }
+
+  /// App 进入后台时暂停本地离线定时器。
+  ///
+  /// 手机息屏后 Dart Timer 和 WebSocket 都可能被系统挂起，不能把这段时间
+  /// 当作设备真实离线时间；恢复前台后以服务端状态重新建立基线。
+  void suspendForAppBackground() {
+    _suspendedForBackground = true;
+    _offlineTimer?.cancel();
+    _offlineTimer = null;
+    beginSessionBootstrap();
+  }
+
+  /// App 回到前台前重新打开离线检测，并让下一条状态只作为基线。
+  void prepareForAppForeground() {
+    _suspendedForBackground = false;
+    beginSessionBootstrap();
   }
 
   /// 在 App 回到前台时主动同步一次，避免依赖下一轮定时器才恢复状态。
@@ -308,6 +326,7 @@ class MeasurementRepository {
 
   /// 重新安排离线检测定时器。
   void _scheduleOfflineCheck(Duration delay) {
+    if (_suspendedForBackground) return;
     _offlineTimer?.cancel();
     _offlineTimer = Timer(delay, _markOfflineIfTelemetryStale);
   }
@@ -315,6 +334,7 @@ class MeasurementRepository {
   /// 定时器到点后的回调：
   /// 如果在等待期间又来了新帧，则推迟重新计时；否则把状态设为离线。
   void _markOfflineIfTelemetryStale() {
+    if (_suspendedForBackground) return;
     final receivedAt = _lastTelemetryReceivedAt;
     if (receivedAt != null &&
         DateTime.now().difference(receivedAt) < Env.telemetryOfflineTimeout) {
@@ -343,6 +363,7 @@ class MeasurementRepository {
       _statusAlarmArmed = true;
       return;
     }
+    if (_suspendedForBackground) return;
     // 检测在线/离线状态变化，生成客户端告警。
     if (wasOnline && !status.online) {
       onStatusAlarm?.call(Alarm(
