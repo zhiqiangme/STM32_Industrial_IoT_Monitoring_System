@@ -338,6 +338,7 @@ class _ChartState extends State<_Chart> {
           visibleMaxX: visibleMaxX,
           yInterval: yInterval,
           showBottomTitles: true,
+          reserveBottomTitles: true,
           narrow: narrow,
           xFontSize: xFontSize,
           xReserved: xReserved,
@@ -392,6 +393,8 @@ class _ChartState extends State<_Chart> {
                   yInterval: yInterval,
                   // 仅最后一张小图显示 X 轴时间标签，避免上下重复占用空间。
                   showBottomTitles: i == series.length - 1,
+                  // 每张小图都预留同样的 X 轴高度，避免最后一张绘图区更小。
+                  reserveBottomTitles: true,
                   narrow: narrow,
                   xFontSize: xFontSize,
                   xReserved: xReserved,
@@ -409,18 +412,17 @@ class _ChartState extends State<_Chart> {
                     ),
                   ),
                 ),
-                if (i == 0)
-                  Positioned(
-                    right: 2,
-                    top: 2,
-                    child: Text(
-                      series[i].field.unit,
-                      style: TextStyle(
-                        fontSize: narrow ? 10.0 : 11.0,
-                        fontWeight: FontWeight.w500,
-                      ),
+                Positioned(
+                  right: 2,
+                  top: 2,
+                  child: Text(
+                    series[i].field.unit,
+                    style: TextStyle(
+                      fontSize: narrow ? 10.0 : 11.0,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
+                ),
                 if (series[i].hasSinglePoint)
                   const Positioned(
                     top: 4,
@@ -496,6 +498,7 @@ class _LineChartSection extends StatelessWidget {
     required this.visibleMaxX,
     required this.yInterval,
     required this.showBottomTitles,
+    required this.reserveBottomTitles,
     required this.narrow,
     required this.xFontSize,
     required this.xReserved,
@@ -509,6 +512,7 @@ class _LineChartSection extends StatelessWidget {
   final double visibleMaxX;
   final double? yInterval;
   final bool showBottomTitles;
+  final bool reserveBottomTitles;
   final bool narrow;
   final double xFontSize;
   final double xReserved;
@@ -534,12 +538,15 @@ class _LineChartSection extends StatelessWidget {
             sideTitles: SideTitles(showTitles: false),
           ),
           bottomTitles: AxisTitles(
-            sideTitles: showBottomTitles
+            sideTitles: reserveBottomTitles
                 ? SideTitles(
                     showTitles: true,
                     reservedSize: xReserved,
                     interval: xAxis.interval,
                     getTitlesWidget: (value, meta) {
+                      if (!showBottomTitles) {
+                        return const SizedBox.shrink();
+                      }
                       if (_isAxisEdgeLabel(value, meta)) {
                         return const SizedBox.shrink();
                       }

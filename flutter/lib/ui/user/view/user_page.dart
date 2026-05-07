@@ -202,48 +202,84 @@ class _UploadPeriodTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.schedule_outlined),
-            title: const Text('网关上报频率'),
-            subtitle: Text('当前 ${_formatPeriod(vm.uploadPeriodSeconds)}'),
-            trailing: vm.uploadBusy
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
-          ),
-          const SizedBox(height: 4),
-          SegmentedButton<int>(
-            segments: [
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        enabled: !vm.uploadBusy,
+        leading: const Icon(Icons.schedule_outlined),
+        title: const Text('网关上报频率'),
+        subtitle: Text('当前 ${_formatPeriod(vm.uploadPeriodSeconds)}'),
+        trailing: vm.uploadBusy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_formatPeriod(vm.uploadPeriodSeconds)),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.expand_more),
+                ],
+              ),
+        onTap: vm.uploadBusy ? null : () => _changeUploadPeriod(context),
+      ),
+    );
+  }
+
+  Future<void> _changeUploadPeriod(BuildContext context) async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      builder: (sheetContext) {
+        final current = vm.uploadPeriodSeconds;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('选择网关上报频率'),
+              ),
               for (final seconds in _periods)
-                ButtonSegment<int>(
-                  value: seconds,
-                  label: Text(_formatPeriod(seconds)),
+                ListTile(
+                  title: Text(_formatPeriod(seconds)),
+                  selected: seconds == current,
+                  trailing: seconds == current ? const Icon(Icons.check) : null,
+                  onTap: () => Navigator.of(sheetContext).pop(seconds),
                 ),
             ],
-            selected: {vm.uploadPeriodSeconds},
-            onSelectionChanged: vm.uploadBusy
-                ? null
-                : (values) => vm.setUploadPeriod(values.first),
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              side: WidgetStatePropertyAll(
-                BorderSide(color: color.outlineVariant),
-              ),
-            ),
+          ),
+        );
+      },
+    );
+    if (!context.mounted ||
+        selected == null ||
+        selected == vm.uploadPeriodSeconds) {
+      return;
+    }
+
+    // 选择后再二次确认，确认前不下发设备命令。
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认修改上报频率'),
+        content: Text('确定要把网关上报频率改为 ${_formatPeriod(selected)} 吗？'),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确定'),
           ),
         ],
       ),
     );
+    if (confirmed == true && context.mounted) {
+      await vm.setUploadPeriod(selected);
+    }
   }
 
   static String _formatPeriod(int seconds) =>
