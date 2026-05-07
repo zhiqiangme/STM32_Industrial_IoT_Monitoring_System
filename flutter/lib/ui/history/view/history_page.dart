@@ -28,6 +28,8 @@ int _visibleIntervalsFor(int intervalSeconds) {
 
 const double _chartDragSensitivity = 2.5;
 const double _multiChannelGap = 4.0;
+const int _relayChannelCount = 16;
+const int _relayEventLimit = 6;
 const Duration _historyMinGapBreakThreshold = Duration(seconds: 90);
 const Duration _historyMaxGapBreakThreshold = Duration(minutes: 10);
 const int _historyGapBreakMultiplier = 3;
@@ -183,15 +185,8 @@ class _ChartState extends State<_Chart> {
   Widget build(BuildContext context) {
     final vm = widget.vm;
 
-    // 三种空 / 错状态分支：loading / error / 空数据。
-    if (vm.loading && vm.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
     if (vm.error != null) {
       return Center(child: Text('加载失败：${vm.error}'));
-    }
-    if (vm.isEmpty) {
-      return const Center(child: Text('此时间段内无数据'));
     }
 
     final fields = vm.fields;
@@ -204,15 +199,26 @@ class _ChartState extends State<_Chart> {
         byField[f] = s;
       }
     }
-    if (nonEmpty.isEmpty) {
+    final showLoadingPlaceholder = vm.loading && !vm.hasCurrentViewPoints;
+    if (nonEmpty.isEmpty && !showLoadingPlaceholder) {
       return const Center(child: Text('此时间段内无数据'));
     }
 
+    final placeholderRange = _defaultPlaceholderRange(fields.first);
     // 多通道视图里给"无数据"的通道一个公共 Y 范围，让占位小图的纵轴看起来和兄弟一致。
-    final globalChartMinY =
-        nonEmpty.map((s) => s.chartMinY).reduce((a, b) => a < b ? a : b);
-    final globalChartMaxY =
-        nonEmpty.map((s) => s.chartMaxY).reduce((a, b) => a > b ? a : b);
+    final globalChartMinY = nonEmpty.isEmpty
+        ? placeholderRange.minY
+        : nonEmpty.map((s) => s.chartMinY).reduce((a, b) => a < b ? a : b);
+    final globalChartMaxY = nonEmpty.isEmpty
+        ? placeholderRange.maxY
+        : nonEmpty.map((s) => s.chartMaxY).reduce((a, b) => a > b ? a : b);
+    final singleSeries = nonEmpty.isNotEmpty
+        ? nonEmpty.first
+        : _FieldSeries.placeholder(
+            fields.first,
+            placeholderRange.minY,
+            placeholderRange.maxY,
+          );
     // 多通道视图：按 vm.fields 顺序铺满 N 张小图；空通道用占位 series，渲染空图加"无数据"标签。
     final multiSeries = vm.view.isMulti
         ? [
@@ -260,6 +266,7 @@ class _ChartState extends State<_Chart> {
           );
           final visibleMinX = _viewportMinX ?? xAxis.minX;
           final visibleMaxX = _viewportMaxX ?? xAxis.maxX;
+          final isRelayView = fields.length == 1 && _isRelayField(fields.first);
 
           // 多字段下 Y 分度值统一为各非空通道需求的最大值；空通道沿用这个值即可。
           double? unifiedYInterval;
@@ -280,12 +287,14 @@ class _ChartState extends State<_Chart> {
           // 多通道下各小图的字段同族，预留宽度按视图字段表的首项算更稳；
           // 单字段视图同样落在 fields.first 上。
           final yReserved = _yReservedSize(fields.first, narrow);
+          final dragYReserved =
+              isRelayView ? _relayYReservedSize(narrow) : yReserved;
 
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
             onHorizontalDragUpdate: (details) {
               final plotWidth =
-                  math.max(1.0, constraints.maxWidth - yReserved - 24.0);
+                  math.max(1.0, constraints.maxWidth - dragYReserved - 24.0);
               final visibleSpan = visibleMaxX - visibleMinX;
               final shift = -details.delta.dx *
                   (visibleSpan / plotWidth) *
@@ -315,7 +324,21 @@ class _ChartState extends State<_Chart> {
                 _viewportMaxX = nextMax;
               });
             },
-            child: vm.view.isMulti
+            child: isRelayView
+                ? _buildRelayTimeline(
+                    context: context,
+                    field: fields.first,
+                    points: vm.pointsOf(fields.first),
+                    xAxis: xAxis,
+                    visibleMinX: visibleMinX,
+                    visibleMaxX: visibleMaxX,
+                    narrow: narrow,
+                    xFontSize: xFontSize,
+                    xReserved: xReserved,
+                    xLabelFormat: xLabelFormat,
+                    loading: vm.loading,
+                  )
+                : vm.view.isMulti
                 ? _buildMultiChannel(
                     context: context,
                     series: multiSeries,
@@ -331,7 +354,7 @@ class _ChartState extends State<_Chart> {
                   )
                 : _buildSingle(
                     context: context,
-                    s: nonEmpty.first,
+                    s: singleSeries,
                     xAxis: xAxis,
                     visibleMinX: visibleMinX,
                     visibleMaxX: visibleMaxX,
@@ -503,6 +526,93 @@ class _ChartState extends State<_Chart> {
     );
   }
 
+  Widget _buildRelayTimeline({
+    required BuildContext context,
+    required HistoryField field,
+    required List<HistoryPoint> points,
+    required _XAxisSpec xAxis,
+    required double visibleMinX,
+    required double visibleMaxX,
+    required bool narrow,
+    required double xFontSize,
+    required double xReserved,
+    required String xLabelFormat,
+    required bool loading,
+  }) {
+    final data = _RelayTimelineData.from(points);
+    if (data == null) {
+      if (loading) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return const Center(child: Text('此时间段内无数据'));
+    }
+
+    final currentMask = data.maskAt(visibleMaxX);
+    final visibleEvents = data.eventsIn(visibleMinX, visibleMaxX);
+    final scheme = Theme.of(context).colorScheme;
+    final yReserved = _relayYReservedSize(narrow);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: yReserved, right: 8, bottom: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  field.label,
+                  style: TextStyle(
+                    fontSize: narrow ? 12.0 : 13.0,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                '当前：${_formatRelayMask(currentMask)}',
+                style: TextStyle(
+                  fontSize: narrow ? 11.0 : 12.0,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: CustomPaint(
+            painter: _RelayTimelinePainter(
+              data: data,
+              xAxis: xAxis,
+              visibleMinX: visibleMinX,
+              visibleMaxX: visibleMaxX,
+              yReserved: yReserved,
+              onColor: scheme.primary,
+              offColor: scheme.surfaceContainerHighest,
+              gridColor: scheme.outlineVariant,
+              labelColor: scheme.onSurfaceVariant,
+              gapColor: scheme.surface,
+              fontSize: narrow ? 9.0 : 10.0,
+            ),
+          ),
+        ),
+        _MultiChannelBottomTitles(
+          xAxis: xAxis,
+          visibleMinX: visibleMinX,
+          visibleMaxX: visibleMaxX,
+          yReserved: yReserved,
+          xReserved: xReserved,
+          xFontSize: xFontSize,
+          xLabelFormat: xLabelFormat,
+        ),
+        _RelayEventSummary(
+          events: visibleEvents,
+          field: field,
+          narrow: narrow,
+        ),
+      ],
+    );
+  }
+
   void _ensureViewport({
     required String rangeSignature,
     required String fullSignature,
@@ -539,6 +649,212 @@ class _ChartState extends State<_Chart> {
           (center - halfSpan).clamp(fullAxis.minX, fullAxis.maxX - viewportSpan);
       _viewportMaxX = _viewportMinX! + viewportSpan;
     }
+  }
+}
+
+class _RelayEventSummary extends StatelessWidget {
+  const _RelayEventSummary({
+    required this.events,
+    required this.field,
+    required this.narrow,
+  });
+
+  final List<_RelayChangeEvent> events;
+  final HistoryField field;
+  final bool narrow;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final prefix = field == HistoryField.relayDo ? 'DO' : 'DI';
+    final shown = events.length > _relayEventLimit
+        ? events.sublist(events.length - _relayEventLimit)
+        : events;
+
+    return Container(
+      height: narrow ? 96.0 : 108.0,
+      margin: const EdgeInsets.fromLTRB(8, 4, 4, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+      ),
+      child: shown.isEmpty
+          ? Center(
+              child: Text(
+                '当前可见区间无状态变化',
+                style: TextStyle(
+                  fontSize: narrow ? 11.0 : 12.0,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          : ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: shown.length,
+              itemBuilder: (context, index) {
+                final event = shown[shown.length - 1 - index];
+                final from = event.fromOn ? 'ON' : 'OFF';
+                final to = event.toOn ? 'ON' : 'OFF';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Text(
+                    '${DateFormat('HH:mm:ss').format(event.timestamp)} '
+                    '$prefix CH${event.channel} $from -> $to',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: narrow ? 11.0 : 12.0),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _RelayTimelinePainter extends CustomPainter {
+  const _RelayTimelinePainter({
+    required this.data,
+    required this.xAxis,
+    required this.visibleMinX,
+    required this.visibleMaxX,
+    required this.yReserved,
+    required this.onColor,
+    required this.offColor,
+    required this.gridColor,
+    required this.labelColor,
+    required this.gapColor,
+    required this.fontSize,
+  });
+
+  final _RelayTimelineData data;
+  final _XAxisSpec xAxis;
+  final double visibleMinX;
+  final double visibleMaxX;
+  final double yReserved;
+  final Color onColor;
+  final Color offColor;
+  final Color gridColor;
+  final Color labelColor;
+  final Color gapColor;
+  final double fontSize;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final plotLeft = yReserved;
+    final plotRight = size.width - 4.0;
+    final plotTop = 2.0;
+    final plotBottom = size.height - 2.0;
+    final plotWidth = math.max(1.0, plotRight - plotLeft);
+    final plotHeight = math.max(1.0, plotBottom - plotTop);
+    final rowHeight = plotHeight / _relayChannelCount;
+    final visibleSpan = math.max(1.0, visibleMaxX - visibleMinX);
+    final textStyle = TextStyle(color: labelColor, fontSize: fontSize);
+    final borderPaint = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    final gapPaint = Paint()..color = gapColor;
+
+    double mapX(double value) {
+      return plotLeft + ((value - visibleMinX) / visibleSpan) * plotWidth;
+    }
+
+    canvas.drawRect(
+      Rect.fromLTWH(plotLeft, plotTop, plotWidth, plotHeight),
+      gapPaint,
+    );
+
+    for (var channel = 1; channel <= _relayChannelCount; channel++) {
+      final rowTop = plotTop + (channel - 1) * rowHeight;
+      final rowRect = Rect.fromLTWH(plotLeft, rowTop, plotWidth, rowHeight);
+      canvas.drawRect(rowRect, gapPaint);
+      _drawLabel(canvas, 'CH$channel', 2, rowTop, rowHeight, textStyle);
+      canvas.drawLine(
+        Offset(plotLeft, rowTop),
+        Offset(plotRight, rowTop),
+        borderPaint,
+      );
+    }
+    canvas.drawLine(
+      Offset(plotLeft, plotBottom),
+      Offset(plotRight, plotBottom),
+      borderPaint,
+    );
+
+    for (var i = 0; i < data.samples.length; i++) {
+      final sample = data.samples[i];
+      final start = sample.x;
+      final rawEnd = i + 1 < data.samples.length
+          ? data.samples[i + 1].x
+          : start + xAxis.interval;
+      final gapMs = i + 1 < data.samples.length ? rawEnd - start : 0.0;
+      final end = gapMs > data.gapBreakThreshold.inMilliseconds
+          ? start + math.min(xAxis.interval, data.gapBreakThreshold.inMilliseconds)
+          : rawEnd;
+      if (end < visibleMinX || start > visibleMaxX) continue;
+
+      final left = mapX(math.max(start, visibleMinX));
+      final right = mapX(math.min(end, visibleMaxX));
+      final width = math.max(2.0, right - left);
+
+      for (var channel = 1; channel <= _relayChannelCount; channel++) {
+        final on = sample.isOn(channel);
+        final rowTop = plotTop + (channel - 1) * rowHeight;
+        final rect = Rect.fromLTWH(
+          left,
+          rowTop + 1,
+          width,
+          math.max(1.0, rowHeight - 2),
+        );
+        final paint = Paint()..color = on ? onColor : offColor;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+          paint,
+        );
+      }
+    }
+
+    final firstTick = (visibleMinX / xAxis.interval).ceil() * xAxis.interval;
+    for (var value = firstTick; value <= visibleMaxX; value += xAxis.interval) {
+      if (_isVisibleAxisEdgeLabel(value, visibleMinX, visibleMaxX)) continue;
+      final x = mapX(value);
+      canvas.drawLine(Offset(x, plotTop), Offset(x, plotBottom), borderPaint);
+    }
+    canvas.drawRect(
+      Rect.fromLTWH(plotLeft, plotTop, plotWidth, plotHeight),
+      borderPaint..style = PaintingStyle.stroke,
+    );
+  }
+
+  void _drawLabel(
+    Canvas canvas,
+    String text,
+    double left,
+    double rowTop,
+    double rowHeight,
+    TextStyle style,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: yReserved - 4);
+    painter.paint(
+      canvas,
+      Offset(left, rowTop + (rowHeight - painter.height) / 2),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RelayTimelinePainter oldDelegate) {
+    return oldDelegate.data != data ||
+        oldDelegate.visibleMinX != visibleMinX ||
+        oldDelegate.visibleMaxX != visibleMaxX ||
+        oldDelegate.xAxis != xAxis ||
+        oldDelegate.onColor != onColor ||
+        oldDelegate.offColor != offColor ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.labelColor != labelColor;
   }
 }
 
@@ -768,6 +1084,105 @@ class _SinglePointBadge extends StatelessWidget {
   }
 }
 
+class _RelayTimelineSample {
+  const _RelayTimelineSample({
+    required this.timestamp,
+    required this.mask,
+  });
+
+  final DateTime timestamp;
+  final int mask;
+
+  double get x => timestamp.millisecondsSinceEpoch.toDouble();
+
+  bool isOn(int channel) => (mask & (1 << (channel - 1))) != 0;
+}
+
+class _RelayChangeEvent {
+  const _RelayChangeEvent({
+    required this.timestamp,
+    required this.channel,
+    required this.fromOn,
+    required this.toOn,
+  });
+
+  final DateTime timestamp;
+  final int channel;
+  final bool fromOn;
+  final bool toOn;
+}
+
+class _RelayTimelineData {
+  const _RelayTimelineData({
+    required this.samples,
+    required this.events,
+    required this.gapBreakThreshold,
+  });
+
+  final List<_RelayTimelineSample> samples;
+  final List<_RelayChangeEvent> events;
+  final Duration gapBreakThreshold;
+
+  static _RelayTimelineData? from(List<HistoryPoint> points) {
+    final validPoints = points.where((p) => p.value.isFinite).toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    if (validPoints.isEmpty) return null;
+
+    // 继电器历史仍来自 relay_do / relay_di bitmask；这里在前端拆成 16 路开关量。
+    final samples = [
+      for (final point in validPoints)
+        _RelayTimelineSample(
+          timestamp: point.timestamp,
+          mask: point.value.toInt() & 0xFFFF,
+        ),
+    ];
+    final events = <_RelayChangeEvent>[];
+    for (var i = 1; i < samples.length; i++) {
+      final previous = samples[i - 1];
+      final current = samples[i];
+      final changed = previous.mask ^ current.mask;
+      if (changed == 0) continue;
+      // bit0 对应 CH1，bit15 对应 CH16；事件只记录发生翻转的通道。
+      for (var channel = 1; channel <= _relayChannelCount; channel++) {
+        final bit = 1 << (channel - 1);
+        if ((changed & bit) == 0) continue;
+        events.add(
+          _RelayChangeEvent(
+            timestamp: current.timestamp,
+            channel: channel,
+            fromOn: (previous.mask & bit) != 0,
+            toOn: (current.mask & bit) != 0,
+          ),
+        );
+      }
+    }
+
+    return _RelayTimelineData(
+      samples: samples,
+      events: events,
+      gapBreakThreshold: _historyGapBreakThreshold(validPoints),
+    );
+  }
+
+  int? maskAt(double x) {
+    int? selected;
+    for (final sample in samples) {
+      if (sample.x > x) break;
+      selected = sample.mask;
+    }
+    return selected;
+  }
+
+  List<_RelayChangeEvent> eventsIn(double minX, double maxX) {
+    return [
+      for (final event in events)
+        if (event.timestamp.millisecondsSinceEpoch >= minX &&
+            event.timestamp.millisecondsSinceEpoch <= maxX)
+          event,
+    ];
+  }
+}
+
 /// 单个字段已转好的曲线数据 + Y 范围。
 class _FieldSeries {
   _FieldSeries._({
@@ -833,6 +1248,35 @@ class _FieldSeries {
       chartMinY: minY - ySpan * 0.1,
       chartMaxY: maxY + ySpan * 0.1,
     );
+  }
+}
+
+typedef _ChartRange = ({double minY, double maxY});
+
+_ChartRange _defaultPlaceholderRange(HistoryField field) {
+  switch (field) {
+    case HistoryField.flow:
+    case HistoryField.flow2:
+    case HistoryField.flow3:
+    case HistoryField.flow4:
+      return (minY: 0.0, maxY: 20.0);
+    case HistoryField.total:
+    case HistoryField.total2:
+    case HistoryField.total3:
+    case HistoryField.total4:
+    case HistoryField.weight:
+    case HistoryField.weight2:
+    case HistoryField.weight3:
+    case HistoryField.weight4:
+      return (minY: 0.0, maxY: 200.0);
+    case HistoryField.t1:
+    case HistoryField.t2:
+    case HistoryField.t3:
+    case HistoryField.t4:
+      return (minY: 0.0, maxY: 50.0);
+    case HistoryField.relayDo:
+    case HistoryField.relayDi:
+      return (minY: 0.0, maxY: 1.0);
   }
 }
 
@@ -975,6 +1419,17 @@ double _yReservedSize(HistoryField field, bool narrow) {
     return narrow ? 40.0 : 38.0;
   }
   return narrow ? 34.0 : 32.0;
+}
+
+bool _isRelayField(HistoryField field) {
+  return field == HistoryField.relayDo || field == HistoryField.relayDi;
+}
+
+double _relayYReservedSize(bool narrow) => narrow ? 34.0 : 40.0;
+
+String _formatRelayMask(int? mask) {
+  if (mask == null) return '--';
+  return '0x${mask.toRadixString(16).padLeft(4, '0').toUpperCase()}';
 }
 
 double? _yAxisInterval({
