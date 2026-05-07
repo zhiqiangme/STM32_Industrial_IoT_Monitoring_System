@@ -209,7 +209,6 @@ class _UploadPeriodTile extends StatelessWidget {
         enabled: !vm.uploadBusy,
         leading: const Icon(Icons.schedule_outlined),
         title: const Text('网关上报频率'),
-        subtitle: Text('当前 ${_formatPeriod(vm.uploadPeriodSeconds)}'),
         trailing: vm.uploadBusy
             ? const SizedBox(
                 width: 22,

@@ -87,7 +87,7 @@ class AlarmViewModel extends ChangeNotifier {
     if (_items.any((existing) => existing.seq == a.seq)) {
       return;
     }
-    _items = [a, ..._items];
+    _items = _sortNewestFirst([a, ..._items]);
     _liveAlarms.add(a);
     _safeNotifyListeners();
   }
@@ -111,11 +111,11 @@ class AlarmViewModel extends ChangeNotifier {
     if (_disposed) return;
     switch (res) {
       case Ok(:final value):
-        // 合并服务端历史与实时告警，实时告警排在前面。
+        // 合并后统一按时间倒序，确保最新告警始终显示在列表最上方。
         final serverSeqs = value.map((a) => a.seq).toSet();
         final preserved =
             _liveAlarms.where((a) => !serverSeqs.contains(a.seq)).toList();
-        _items = [...preserved, ...value];
+        _items = _sortNewestFirst([...preserved, ...value]);
       case Err():
         // 未登录时接口返回 401；保持列表为空、不展示错误，
         // 让页面在登录前一直保持"暂无报警"空壳状态。
@@ -149,6 +149,16 @@ class AlarmViewModel extends ChangeNotifier {
     if (!_disposed) {
       notifyListeners();
     }
+  }
+
+  static List<Alarm> _sortNewestFirst(Iterable<Alarm> alarms) {
+    final sorted = alarms.toList(growable: false);
+    sorted.sort((a, b) {
+      final byTime = b.timestamp.compareTo(a.timestamp);
+      if (byTime != 0) return byTime;
+      return b.seq.compareTo(a.seq);
+    });
+    return sorted;
   }
 
   @override
