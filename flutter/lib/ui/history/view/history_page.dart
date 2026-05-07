@@ -27,6 +27,9 @@ int _visibleIntervalsFor(int intervalSeconds) {
 }
 
 const double _chartDragSensitivity = 2.5;
+const double _multiChannelGap = 2.0;
+const Duration _historyMinGapBreakThreshold = Duration(seconds: 90);
+const int _historyGapBreakMultiplier = 3;
 
 /// 历史曲线页：顶部一行选项（字段 + 时间段）+ 下方填满剩余空间的折线图。
 class HistoryPage extends StatelessWidget {
@@ -379,6 +382,7 @@ class _ChartState extends State<_Chart> {
     required double yFontSize,
     required String xLabelFormat,
   }) {
+    const chartLabelTop = 4.0;
     return Column(
       children: [
         for (var i = 0; i < series.length; i++) ...[
@@ -403,7 +407,8 @@ class _ChartState extends State<_Chart> {
                 ),
                 Positioned(
                   left: _yReservedSize(series[i].field, narrow) + 6,
-                  top: 8,
+                  // 通道名和单位保持同一高度，避免多通道小图标题错位。
+                  top: chartLabelTop,
                   child: Text(
                     _channelTag(series[i].field),
                     style: TextStyle(
@@ -414,7 +419,7 @@ class _ChartState extends State<_Chart> {
                 ),
                 Positioned(
                   right: 2,
-                  top: 2,
+                  top: chartLabelTop,
                   child: Text(
                     series[i].field.unit,
                     style: TextStyle(
@@ -444,7 +449,8 @@ class _ChartState extends State<_Chart> {
               ],
             ),
           ),
-          if (i != series.length - 1) const SizedBox(height: 4),
+          if (i != series.length - 1)
+            const SizedBox(height: _multiChannelGap),
         ],
       ],
     );
@@ -687,14 +693,15 @@ class _FieldSeries {
         )
         .toList();
     final hasSinglePoint = rawSpots.length == 1;
+    final gapBreakThreshold = _historyGapBreakThreshold(points);
     final spots = <FlSpot>[];
     for (var i = 0; i < rawSpots.length; i++) {
       spots.add(rawSpots[i]);
       if (i == rawSpots.length - 1) continue;
       final current = points[i].timestamp;
       final next = points[i + 1].timestamp;
-      if (next.difference(current) > const Duration(seconds: 20)) {
-        // 中间缺了一段历史点时插入断点，避免前后两段折线被强行连起来。
+      if (next.difference(current) > gapBreakThreshold) {
+        // 断点阈值按服务器历史点间隔动态估算，避免 App 后台期间的正常服务器数据被误断开。
         spots.add(FlSpot.nullSpot);
       }
     }
@@ -712,6 +719,31 @@ class _FieldSeries {
       chartMaxY: maxY + ySpan * 0.1,
     );
   }
+}
+
+Duration _historyGapBreakThreshold(List<HistoryPoint> points) {
+  if (points.length < 2) return _historyMinGapBreakThreshold;
+
+  final gaps = <int>[];
+  for (var i = 0; i < points.length - 1; i++) {
+    final gapMs =
+        points[i + 1].timestamp.difference(points[i].timestamp).inMilliseconds;
+    if (gapMs > 0) gaps.add(gapMs);
+  }
+  if (gaps.isEmpty) return _historyMinGapBreakThreshold;
+
+  gaps.sort();
+  final mid = gaps.length ~/ 2;
+  final normalGapMs = gaps.length.isOdd
+      ? gaps[mid]
+      : (gaps[mid - 1] + gaps[mid]) ~/ 2;
+  final dynamicThresholdMs = normalGapMs * _historyGapBreakMultiplier;
+  return Duration(
+    milliseconds: math.max(
+      _historyMinGapBreakThreshold.inMilliseconds,
+      dynamicThresholdMs,
+    ),
+  );
 }
 
 class _XAxisSpec {
