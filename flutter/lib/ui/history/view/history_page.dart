@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -836,7 +837,7 @@ class _RelayTimelinePainter extends CustomPainter {
   ) {
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
       maxLines: 1,
     )..layout(maxWidth: yReserved - 4);
     painter.paint(
