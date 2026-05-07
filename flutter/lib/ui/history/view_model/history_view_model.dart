@@ -115,6 +115,17 @@ class HistoryViewModel extends ChangeNotifier {
     load();
   }
 
+  /// 立即按"最近 7 天"窗口重拉一次，绕过实时帧驱动的 4 秒防抖。
+  /// App 从后台返回前台时调用，用于补齐离线期间设备已上报的历史数据。
+  void refreshNow() {
+    if (_disposed) return;
+    if (!_auth.isLoggedIn) return;
+    _autoReloadTimer?.cancel();
+    _to = DateTime.now();
+    _from = _to.subtract(const Duration(days: 7));
+    load();
+  }
+
   /// 重新拉取曲线数据：当前视图的所有字段并发拉取。
   Future<void> load() async {
     if (_disposed) return;

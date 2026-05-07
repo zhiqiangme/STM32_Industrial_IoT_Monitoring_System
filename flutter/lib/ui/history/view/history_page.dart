@@ -33,8 +33,37 @@ const Duration _historyMaxGapBreakThreshold = Duration(minutes: 10);
 const int _historyGapBreakMultiplier = 3;
 
 /// 历史曲线页：顶部一行选项（字段 + 时间段）+ 下方填满剩余空间的折线图。
-class HistoryPage extends StatelessWidget {
+///
+/// 监听 App 生命周期：从后台返回前台时立即调用 [HistoryViewModel.refreshNow]，
+/// 不等实时帧的 4 秒防抖，确保离线期间设备已上报的数据立刻补齐到曲线上。
+class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
+
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // context.read 在 dispose 后访问会抛错；用 mounted 守卫一下。
+      if (!mounted) return;
+      context.read<HistoryViewModel>().refreshNow();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

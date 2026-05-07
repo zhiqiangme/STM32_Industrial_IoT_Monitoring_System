@@ -126,24 +126,51 @@ class HttpApiService implements ApiService {
     required DateTime to,
     int limit = 200,
   }) async {
-    final res = await _dio.get<Map<String, dynamic>>(
-      '/api/history',
-      queryParameters: {
-        'dev': Env.deviceId,
-        'limit': limit,
-        // 后端要求 Unix 秒，不是毫秒。
-        'from': _unixSec(from),
-        'to': _unixSec(to),
-      },
-    );
-    final rows = (res.data!['data'] as List).cast<Map<String, dynamic>>();
+    // 后端单次响应受 MAX_LIMIT 限制（当前 5000）。当客户端要求的范围
+    // 超过单页时，使用 nextCursor / before_id 游标向更老的记录翻页，
+    // 直到拉满 [limit] 或服务端不再返回 nextCursor。
+    const pageSize = 5000;
+    const safetyCap = 50000;
+    final effectiveLimit = limit <= 0 ? safetyCap : limit;
+    final maxRows = effectiveLimit > safetyCap ? safetyCap : effectiveLimit;
+
+    final points = <HistoryPoint>[];
+    int? beforeId;
+    var fetched = 0;
+
+    while (fetched < maxRows) {
+      final remaining = maxRows - fetched;
+      final pageLimit = remaining < pageSize ? remaining : pageSize;
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/history',
+        queryParameters: {
+          'dev': Env.deviceId,
+          'limit': pageLimit,
+          // 后端要求 Unix 秒，不是毫秒。
+          'from': _unixSec(from),
+          'to': _unixSec(to),
+          if (beforeId != null) 'before_id': beforeId,
+        },
+      );
+      final body = res.data;
+      if (body == null) break;
+      final rows = (body['data'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+      if (rows.isEmpty) break;
+      for (final row in rows) {
+        final p = HistoryPoint.fromJson(row, field);
+        if (!p.value.isNaN) points.add(p);
+      }
+      fetched += rows.length;
+      final next = body['nextCursor'];
+      if (next is num) {
+        beforeId = next.toInt();
+      } else {
+        break;
+      }
+    }
+
     // 服务端返回的是"最新优先"，但绘图需要时间正序。
-    // 同时把 NaN 点过滤掉，避免折线断裂处出现伪标签。
-    final points = rows
-        .map((j) => HistoryPoint.fromJson(j, field))
-        .where((p) => !p.value.isNaN)
-        .toList()
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    points.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return points;
   }
 
